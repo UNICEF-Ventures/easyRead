@@ -89,13 +89,13 @@ For two sets, no models were able to perform minimally well, with recall and MRR
 ### Hard Sets Examples
 
 <p align="center">
-**Assembly Point (Guemil set)**  
-<img src="img/guemil_assembly_point.png" alt="Assembly point symbol from Guemil set" width="200">
+<img src="img/guemil_assembly_point.png" alt="Assembly point symbol from Guemil set" width="200"><br>
+Assembly Point (Guemil set)  
 </p>
 
 <p align="center">
-**Accessory (Blissymbolics set)**  
-<img src="img/blissymbolics_accessory.png" alt="Accessory symbol from Blissymbolics set" width="200">
+<img src="img/blissymbolics_accessory.png" alt="Accessory symbol from Blissymbolics set" width="200"><br>
+Accessory (Blissymbolics set)  
 </p>
 
 
@@ -108,28 +108,28 @@ Surprisingly, Sclera performed well (best Recall@5 of 74%), even though it conta
 ### Easy Sets Examples
 
 <p align="center">
-**Aeroplane (Mulberry set)**  
-<img src="img/mulberry_aeroplane.png" alt="Aeroplane symbol from Mulberry set" width="200">
+<img src="img/mulberry_aeroplane.png" alt="Aeroplane symbol from Mulberry set" width="200"><br>
+Aeroplane (Mulberry set)  
 </p>
 
 <p align="center">
-**Bed (OpenMoji set)**  
-<img src="img/openmoji_bed.png" alt="Bed symbol from OpenMoji set" width="200">
+<img src="img/openmoji_bed.png" alt="Bed symbol from OpenMoji set" width="200"><br>
+Bed (OpenMoji set)
 </p>
 
 <p align="center">
-**Barn Owl (Birds set)**  
-<img src="img/birds_barn_owl.png" alt="Barn owl symbol from Birds set" width="200">
+<img src="img/birds_barn_owl.png" alt="Barn owl symbol from Birds set" width="200"><br>
+Barn Owl (Birds set)
 </p>
 
 <p align="center">
-**Lightning (Weather dataset)**  
-<img src="img/weather_lightning.png" alt="Lightning symbol from Weather dataset" width="200">
+<img src="img/weather_lightning.png" alt="Lightning symbol from Weather dataset" width="200"><br>
+Lightning (Weather dataset)
 </p>
 
 <p align="center">
-**Accept Criticism (Sclera set)**  
-<img src="img/sclera_accept_criticism.png" alt="Accept criticism symbol from Sclera set" width="200">
+<img src="img/sclera_accept_criticism.png" alt="Accept criticism symbol from Sclera set" width="200"><br>
+Accept Criticism (Sclera set)
 </p>
 
 ## Conclusions
