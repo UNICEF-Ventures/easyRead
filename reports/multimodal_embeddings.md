@@ -1,8 +1,11 @@
+<p align="center">
+<img src="img/unicef_ooi.png" alt="UNICEF Office of Innovation" width="300">
+</p>
+
 # Symbol Retrieval Using Multimodal Embeddings: An Evaluation on Global Symbols 
 
 Ricardo Matsumura Araujo (AI Advisor), Katherine Hoffmann Pham (AI Lead) \
 Frontier Tech Team, Office of Innovation, UNICEF
-
 
 ## Introduction
 
@@ -29,7 +32,7 @@ Multimodal embeddings extend this idea by jointly representing different data ty
 
 ## Methods
 
-**Data: **The data was obtained from Global Symbols. Each symbol contains the image and a single keyword describing it. The keyword was obtained from the `name` field in the metadata, which for some sets is the same keyword used in the file name.
+**Data:** The data was obtained from Global Symbols. Each symbol contains the image and a single keyword describing it. The keyword was obtained from the `name` field in the metadata, which for some sets is the same keyword used in the file name.
 
 **Embedding models**: both open and closed multimodal models were evaluated. Open-weight models from Hugging Face's SentenceTransformers were used. Closed models chosen were Cohere's (*embed-v4.0*) and Google's (*multimodalembedding*) models, which are multimodal models. Neither Anthropic nor OpenAI provide a multimodal embedding model.
 
@@ -37,13 +40,11 @@ Multimodal embeddings extend this idea by jointly representing different data ty
 
 To evaluate retrieval effectiveness, we used two standard metrics: Mean Reciprocal Rank (MRR) and Recall@5. MRR measures the average position of the first relevant result across queries, placing greater emphasis on highly ranked correct matches. It captures how early in the ranked list a correct symbol appears. A higher MRR indicates that the correct symbol is retrieved closer to the top.
 
-MRR =
+$$
+\text{MRR} = \frac{1}{N} \sum_{i=1}^{N} \frac{1}{\text{rank}_i}
+$$
 
-where 
-
- is the number of queries and 
-
- is the rank position of the first relevant (correct) result for the 𝑖-th query. 
+where $N$ is the number of queries and $i$ is the rank position of the first relevant (correct) result for the i-th query. 
 
 Recall@5, on the other hand, quantifies how often the correct image appears within the top five retrieved results. It reflects the model's ability to include relevant results among the top-ranked candidates, regardless of their exact positions. While MRR focuses on where the match occurs, Recall@5 captures whether it occurs within a small, practical shortlist.
 
@@ -87,11 +88,15 @@ For two sets, no models were able to perform minimally well, with recall and MRR
 
 ### Hard Sets Examples
 
+<p align="center">
 **Assembly Point (Guemil set)**  
 <img src="img/guemil_assembly_point.png" alt="Assembly point symbol from Guemil set" width="200">
+</p>
 
+<p align="center">
 **Accessory (Blissymbolics set)**  
 <img src="img/blissymbolics_accessory.png" alt="Accessory symbol from Blissymbolics set" width="200">
+</p>
 
 
 **Easy sets**
@@ -102,28 +107,34 @@ Surprisingly, Sclera performed well (best Recall@5 of 74%), even though it conta
 
 ### Easy Sets Examples
 
+<p align="center">
 **Aeroplane (Mulberry set)**  
 <img src="img/mulberry_aeroplane.png" alt="Aeroplane symbol from Mulberry set" width="200">
+</p>
 
+<p align="center">
 **Bed (OpenMoji set)**  
 <img src="img/openmoji_bed.png" alt="Bed symbol from OpenMoji set" width="200">
+</p>
 
+<p align="center">
 **Barn Owl (Birds set)**  
 <img src="img/birds_barn_owl.png" alt="Barn owl symbol from Birds set" width="200">
+</p>
 
+<p align="center">
 **Lightning (Weather dataset)**  
 <img src="img/weather_lightning.png" alt="Lightning symbol from Weather dataset" width="200">
+</p>
 
+<p align="center">
 **Accept Criticism (Sclera set)**  
 <img src="img/sclera_accept_criticism.png" alt="Accept criticism symbol from Sclera set" width="200">
-
-
+</p>
 
 ## Conclusions
 
-
-
-* Closed-weight models outperform open-weight models: both Cohere's and Google's models performed better than all open-weight models in most sets; nonetheless, Open-Weight models, in particular *openclip-vit-bigG-14,* can be competitive in most cases but are less consistent across sets.
+* Closed-weight models outperform open-weight models: both Cohere's and Google's models performed better than all open-weight models in most sets; nonetheless, Open-Weight models, in particular *openclip-vit-bigG-14*, can be competitive in most cases but are less consistent across sets.
 * Non-English performance is a major weakness: at least for the languages evaluated (English, Bulgarian, Macedonian, Serbian, Montenegrin and Albanian), models performed much worse in non-English sets. Cohere's model is by far the best model for these languages. However, it would be expected that all models would perform much better in higher-resource languages such as Spanish or French, so further testing is needed. 
 * Symbol abstractness impacts performance: all models perform better on more concrete representations. They fail to retrieve relevant results on highly abstract sets.
 
