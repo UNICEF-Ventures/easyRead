@@ -53,7 +53,7 @@ A maximum of 500 images were used for each symbol set. The images were randomly 
 
 ## Results
 
-The mean MRR and Recall@5 for each model is represented in the table below (higher is better), with the best closed-weight and open-weight models highlighted.  Google's multimodal model provides the best overall performance, while *openclip-vit-bigG-14 *is the best open-weight model ranking in third place overall. Cohere's embed-v4.0, another closed-weight model, ranks second. 
+The mean MRR and Recall@5 for each model is represented in the table below (higher is better), with the best closed-weight and open-weight models highlighted.  Google's multimodal model provides the best overall performance, while *openclip-vit-bigG-14* is the best open-weight model ranking in third place overall. Cohere's embed-v4.0, another closed-weight model, ranks second. 
 
 Concretely, a Recall@5 of .581 for Google’s multimodalembedding model means that 58% of the time, when searching a keyword, the image originally associated with the keyword is among the top 5 results. This is only an approximate indicator of the quality of the results retrieved, as the other images in the top 5 might be equally good or better matches for the keyword.
 
@@ -76,11 +76,11 @@ Concretely, a Recall@5 of .581 for Google’s multimodalembedding model means th
 
 Most symbol sets contain English keywords, but five are non-English: Bulgarian, Macedonian, Serbian, Montenegrin and Albanian. The first four are closely related, being Slavic languages. 
 
-All models have a significant decrease in performance for non-English sets. Cohere's model outperforms Google's in non-English symbols, by a significant margin, but is still much worse than for English sets (mean Recall@5 is 0.38 vs 0.6 on all sets). No closed model came close to Cohere's model in these sets, including the model *clip-vit-b-32-multilingual* that was explicitly trained for multilingual settings. *openclip-vit-bigG-14 *performed slightly worse than Google's model for these sets (mean Recall@5 is 0.21 vs 0.24).
+All models have a significant decrease in performance for non-English sets. Cohere's model outperforms Google's in non-English symbols, by a significant margin, but is still much worse than for English sets (mean Recall@5 is 0.38 vs 0.6 on all sets). No closed model came close to Cohere's model in these sets, including the model *clip-vit-b-32-multilingual* that was explicitly trained for multilingual settings. *openclip-vit-bigG-14* performed slightly worse than Google's model for these sets (mean Recall@5 is 0.21 vs 0.24).
 
 **Open-weight performance**
 
-Compared to Google's *multimodalembedding* on individual sets, *openclip-vit-bigG-14 *is slightly better in two sets – Birds (+2%) and SEA (+10%)  and underperform significantly in a few, notably Dyvogra (-44%), Link (-59%), Otsimo (-35%)  and Tawasol (-34%).
+Compared to Google's *multimodalembedding* on individual sets, *openclip-vit-bigG-14* is slightly better in two sets – Birds (+2%) and SEA (+10%)  and underperform significantly in a few, notably Dyvogra (-44%), Link (-59%), Otsimo (-35%)  and Tawasol (-34%).
 
 **Hard sets**
 
@@ -150,7 +150,7 @@ In this project, we can control for language and ensure that all retrieval is co
 
 ### Conclusion for Global Symbols
 
-Using *image *embeddings as the primary method for symbol retrieval does not appear to be the most effective approach in this context. This is because all Global Symbols include associated textual labels or descriptions, which already provide a rich source of information for matching queries. Instead of relying on the visual features of the images, it is more appropriate to work with these textual representations directly. 
+Using *image* embeddings as the primary method for symbol retrieval does not appear to be the most effective approach in this context. This is because all Global Symbols include associated textual labels or descriptions, which already provide a rich source of information for matching queries. Instead of relying on the visual features of the images, it is more appropriate to work with these textual representations directly. 
 
 Creating embeddings for the text associated with each symbol—such as keywords, labels, or captions—can still be valuable. These text embeddings allow for semantic search, enabling the system to interpret the meaning behind a user's query and return relevant symbols even when the exact wording does not match. For instance, a search for "doctor" could retrieve symbols labeled "physician" or "medical professional," as their embeddings would be close in the semantic space. This approach supports more flexible and meaningful retrieval without depending on image similarity, which may be less reliable or informative given the nature of the symbol set.
 
