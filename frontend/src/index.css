@@ -1,0 +1,131 @@
+/* Global Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* CSS Variables */
+:root {
+  --color-primary: #4285F4; /* Google Blue */
+  --color-primary-light: #8bb4f7;
+  --color-primary-dark: #2a75f3;
+  
+  --color-accent: #0F9D58; /* Google Green */
+  --color-accent-light: #34c17c;
+  --color-accent-dark: #0b8043;
+  
+  --dark-gray: #2d3748;
+  --medium-gray: #4a5568;
+  --light-gray: #a0aec0;
+  --lighter-gray: #edf2f7;
+  
+  --background-color: #f8fafc;
+  --card-background: #ffffff;
+  --error-color: #e53e3e;
+  --warning-color: #dd6b20;
+  --success-color: #38a169;
+  
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 16px;
+  
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.05);
+  
+  --font-family-primary: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+}
+
+/* Global Styles */
+body {
+  font-family: var(--font-family-primary);
+  background-color: var(--background-color);
+  color: var(--dark-gray);
+  line-height: 1.6;
+  font-size: var(--font-size-md);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.3;
+  margin-bottom: var(--spacing-md);
+  font-weight: 600;
+  color: var(--dark-gray);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+}
+
+/* Custom Utility Classes (Examples - Add more as needed) */
+.card {
+  background-color: var(--card-background);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.btn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-weight: 500;
+  text-transform: uppercase;
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-primary-dark);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.btn-accent {
+  background-color: var(--color-accent);
+  color: white;
+}
+
+.btn-accent:hover {
+  background-color: var(--color-accent-dark);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.form-control {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-control label {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+  font-weight: 500;
+  color: var(--medium-gray);
+}
+
+/* Style MUI components using these classes */

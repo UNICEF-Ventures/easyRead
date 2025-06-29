@@ -1,0 +1,15 @@
+google-genai
+cohere
+openai
+chromadb
+django
+python-dotenv
+Pillow
+requests
+docling
+djangorestframework
+reportlab
+litellm
+PyYAML
+django-cors-headers
+sentence-transformers

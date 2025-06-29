@@ -1,0 +1,2 @@
+model: "gpt-image-1" 
+prompt_template: "Generate an image depicting {user_prompt} and that follows closely the style of the reference pictures. The image will be used in UNICEF content. When representing people, use a diverse range of skin tones, hair colors, and clothing styles. Ensure the image is culturally sensitive and diverse, appropriate for a global audience. Use white background."

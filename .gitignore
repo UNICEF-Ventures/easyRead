@@ -1,0 +1,17 @@
+node_modules
+clipart_images/
+chroma_db/
+image_references/
+media/
+resources/
+create_embeddings.py
+embed_images.py
+test_api_flow.py
+*.pyc
+.DS_Store
+.env
+venv/
+find_similar_image.py
+db.sqlite3
+images/*
+CLAUDE.md
