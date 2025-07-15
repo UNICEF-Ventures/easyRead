@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -7,10 +7,16 @@ import {
   Button,
   CircularProgress,
   Paper,
+  Checkbox,
+  FormControlLabel,
+  Card,
+  CardMedia,
+  Grid,
+  Divider,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import { extractMarkdown, generateEasyRead } from '../apiClient';
+import { extractMarkdown, generateEasyRead, getImageSets, listImages } from '../apiClient';
 
 // Styled component for the drop zone
 const DropZone = styled(Box)(({ theme }) => ({
@@ -39,43 +45,78 @@ function HomePage({
   currentMarkdown,
   onProcessingComplete
 }) {
-  const [selectedFile, setSelectedFile] = useState(null);
   const [fileName, setFileName] = useState('');
+  const [imageSets, setImageSets] = useState([]);
+  const [selectedSets, setSelectedSets] = useState(new Set());
+  const [setsLoading, setSetsLoading] = useState(false);
+  const [preventDuplicateImages, setPreventDuplicateImages] = useState(true);
+
+  // Load image sets and sample images on component mount
+  useEffect(() => {
+    const loadImageSets = async () => {
+      setSetsLoading(true);
+      try {
+        const response = await listImages();
+        const imagesBySet = response.data.images_by_set || {};
+        
+        // Convert to array with random sample images
+        const setsArray = Object.keys(imagesBySet).map(setName => {
+          const images = imagesBySet[setName];
+          // Get 3 random images from the set
+          const shuffled = [...images].sort(() => 0.5 - Math.random());
+          const sampleImages = shuffled.slice(0, 3);
+          
+          return {
+            name: setName,
+            imageCount: images.length,
+            sampleImages
+          };
+        });
+
+        setImageSets(setsArray);
+        // Select all sets by default
+        setSelectedSets(new Set(setsArray.map(set => set.name)));
+      } catch (error) {
+        console.error('Error loading image sets:', error);
+        setError('Failed to load image sets');
+      } finally {
+        setSetsLoading(false);
+      }
+    };
+
+    loadImageSets();
+  }, [setError]);
+
+  const handleSetSelection = (setName) => {
+    const newSelectedSets = new Set(selectedSets);
+    if (newSelectedSets.has(setName)) {
+      newSelectedSets.delete(setName);
+    } else {
+      newSelectedSets.add(setName);
+    }
+    setSelectedSets(newSelectedSets);
+  };
+
+  const handleSelectAll = () => {
+    setSelectedSets(new Set(imageSets.map(set => set.name)));
+  };
+
+  const handleSelectNone = () => {
+    setSelectedSets(new Set());
+  };
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (file && file.type === 'application/pdf') {
-      setSelectedFile(file);
       setFileName(file.name);
       handlePdfUpload(file);
     } else {
       setError('Please select a valid PDF file.');
-      setSelectedFile(null);
       setFileName('');
     }
   };
 
-  const handleDrop = useCallback((event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const file = event.dataTransfer.files[0];
-    if (file && file.type === 'application/pdf') {
-      setSelectedFile(file);
-      setFileName(file.name);
-      handlePdfUpload(file);
-    } else {
-      setError('Please drop a valid PDF file.');
-      setSelectedFile(null);
-      setFileName('');
-    }
-  }, []); // Dependencies need to be checked/added if needed
-
-  const handleDragOver = useCallback((event) => {
-    event.preventDefault();
-    event.stopPropagation();
-  }, []);
-
-  const handlePdfUpload = async (file) => {
+  const handlePdfUpload = useCallback(async (file) => {
     setIsLoading(true);
     setError(null);
     setTotalPages(0); // Reset progress
@@ -83,8 +124,8 @@ function HomePage({
     try {
       const response = await extractMarkdown(file);
       // Assuming backend returns { pages: ["page1", "page2", ...] }
-      console.log("Received response from /markdown-extraction/:", response); // Log successful response
-      const pageBreak = "\n\n---DOCLING_PAGE_BREAK---\n\n";
+      console.log("Received response from /pdf-to-markdown/:", response); // Log successful response
+      const pageBreak = "\n\n---PAGE_BREAK---\n\n";
       const fullMarkdown = response.data.pages.join(pageBreak);
       setMarkdownContent(fullMarkdown);
     } catch (err) {
@@ -114,11 +155,29 @@ function HomePage({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [setIsLoading, setError, setTotalPages, setPagesProcessed, setMarkdownContent]);
+
+  const handleDrop = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const file = event.dataTransfer.files[0];
+    if (file && file.type === 'application/pdf') {
+      setFileName(file.name);
+      handlePdfUpload(file);
+    } else {
+      setError('Please drop a valid PDF file.');
+      setFileName('');
+    }
+  }, [setError, handlePdfUpload]);
+
+  const handleDragOver = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+
 
   const handleMarkdownChange = (event) => {
     setMarkdownContent(event.target.value);
-    setSelectedFile(null);
     setFileName('');
     setTotalPages(0); // Reset progress
     setPagesProcessed(0); // Reset progress
@@ -127,6 +186,11 @@ function HomePage({
   const handleProcessContent = async () => {
      if (!currentMarkdown || currentMarkdown.trim() === '') {
       setError('No content to process. Please upload a PDF or enter text.');
+      return;
+    }
+    
+    if (selectedSets.size === 0) {
+      setError('Please select at least one symbol set for image retrieval.');
       return;
     }
     // Make sure loading indicator from PDF extraction is off
@@ -143,9 +207,11 @@ function HomePage({
     let allEasyReadSentences = [];
     let finalTitle = 'Untitled'; // Initialize title
     let firstPage = true; // Flag to capture title from the first page
+    let capturedSelectedSets = Array.from(selectedSets); // Capture selected sets for image retrieval
+    let capturedPreventDuplicates = preventDuplicateImages; // Capture duplicate prevention setting
 
     try {
-        const pageBreak = "\n\n---DOCLING_PAGE_BREAK---\n\n";
+        const pageBreak = "\n\n---PAGE_BREAK---\n\n";
         const markdownPages = currentMarkdown.split(pageBreak).filter(page => page.trim() !== ''); // Filter empty pages
         console.log(`Total pages: ${markdownPages.length}`);
         setTotalPages(markdownPages.length); // Set total pages
@@ -155,7 +221,7 @@ function HomePage({
             // No need to check for empty page again due to filter
             console.log(`Processing page ${i+1} of ${markdownPages.length}`);
             try {
-              const response = await generateEasyRead(page);
+              const response = await generateEasyRead(page, Array.from(selectedSets));
               
               // Check response structure
               if (response.data && typeof response.data === 'object' && response.data.easy_read_sentences) {
@@ -165,8 +231,12 @@ function HomePage({
                     firstPage = false; // Only capture title once
                   }
                   
-                  // Accumulate sentences
-                  allEasyReadSentences.push(...response.data.easy_read_sentences); 
+                  // Accumulate sentences only if there are any
+                  if (response.data.easy_read_sentences.length > 0) {
+                    allEasyReadSentences.push(...response.data.easy_read_sentences); 
+                  } else {
+                    console.info(`Page ${i+1} had no meaningful content to process - skipping`);
+                  }
               } else { // Handle page-specific error or invalid format
                   console.warn("Invalid or missing easy_read_sentences for page:", response.data);
                    allEasyReadSentences.push({
@@ -195,7 +265,9 @@ function HomePage({
         // Prepare the final structured result for the callback
         const finalResult = {
           title: finalTitle,
-          easy_read_sentences: allEasyReadSentences
+          easy_read_sentences: allEasyReadSentences,
+          selected_sets: capturedSelectedSets,
+          prevent_duplicate_images: capturedPreventDuplicates
         };
 
         // Call the completion callback with the final structured result
@@ -323,12 +395,165 @@ function HomePage({
           }}
         />
 
+        {/* Symbol Sets Selection Section */}
+        <Box sx={{ mt: 4, mb: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Select Symbol Sets for Image Retrieval
+            </Typography>
+            {!setsLoading && imageSets.length > 0 && (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button 
+                  variant="outlined" 
+                  size="small" 
+                  onClick={handleSelectAll}
+                  disabled={selectedSets.size === imageSets.length}
+                >
+                  Select All
+                </Button>
+                <Button 
+                  variant="outlined" 
+                  size="small" 
+                  onClick={handleSelectNone}
+                  disabled={selectedSets.size === 0}
+                >
+                  Select None
+                </Button>
+              </Box>
+            )}
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Choose which symbol sets will be used to find relevant images for your content.
+          </Typography>
+          
+          {setsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <Grid container spacing={2}>
+              {imageSets.map((set) => (
+                <Grid item xs={12} sm={6} md={4} key={set.name}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      border: selectedSets.has(set.name) ? '3px solid #1976d2' : '2px solid #e0e0e0',
+                      borderRadius: 2,
+                      backgroundColor: selectedSets.has(set.name) ? '#f3f7ff' : 'white',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      textAlign: 'center',
+                      '&:hover': {
+                        backgroundColor: selectedSets.has(set.name) ? '#e8f2ff' : '#f9f9f9',
+                        transform: 'translateY(-2px)',
+                        boxShadow: 2
+                      }
+                    }}
+                    onClick={() => handleSetSelection(set.name)}
+                  >
+                    {/* Sample Images in a 3-image grid */}
+                    <Box sx={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: 'repeat(3, 1fr)', 
+                      gap: 1, 
+                      mb: 2,
+                      minHeight: 60
+                    }}>
+                      {set.sampleImages.map((image, index) => (
+                        <Box
+                          key={image.id || index}
+                          sx={{
+                            width: '100%',
+                            height: 60,
+                            border: '1px solid #e0e0e0',
+                            borderRadius: 1,
+                            overflow: 'hidden',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: '#fafafa'
+                          }}
+                        >
+                          <CardMedia
+                            component="img"
+                            height="60"
+                            image={image.image_url || 'https://via.placeholder.com/60x60?text=No+Image'}
+                            alt={image.description || 'Sample image'}
+                            sx={{ 
+                              objectFit: 'contain',
+                              maxWidth: '100%',
+                              maxHeight: '100%'
+                            }}
+                            onError={(e) => { 
+                              e.target.src = 'https://via.placeholder.com/60x60?text=Error'; 
+                            }}
+                          />
+                        </Box>
+                      ))}
+                    </Box>
+                    
+                    {/* Set Name and Count */}
+                    <Typography 
+                      variant="subtitle2" 
+                      sx={{ 
+                        fontWeight: selectedSets.has(set.name) ? 600 : 500,
+                        color: selectedSets.has(set.name) ? '#1976d2' : 'text.primary',
+                        fontSize: '0.9rem'
+                      }}
+                    >
+                      {set.name}
+                    </Typography>
+                    <Typography 
+                      variant="caption" 
+                      color="text.secondary"
+                      sx={{ display: 'block', mt: 0.5 }}
+                    >
+                      {set.imageCount} images
+                    </Typography>
+                  </Box>
+                </Grid>
+              ))}
+            </Grid>
+          )}
+          
+          <Box sx={{ mt: 2, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              Selected: {selectedSets.size} of {imageSets.length} sets
+            </Typography>
+          </Box>
+          
+          {/* Duplicate Prevention Setting */}
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={preventDuplicateImages}
+                  onChange={(e) => setPreventDuplicateImages(e.target.checked)}
+                  color="primary"
+                />
+              }
+              label={
+                <Box>
+                  <Typography variant="body2" component="span">
+                    Disallow duplicate images
+                  </Typography>
+                  <Typography variant="caption" display="block" color="text.secondary">
+                    Try to avoid using the same image for different sentences
+                  </Typography>
+                </Box>
+              }
+            />
+          </Box>
+        </Box>
+
+        <Divider sx={{ my: 3 }} />
+
         <Box sx={{ mt: 4, textAlign: 'center' }}>
           <Button
             variant="contained"
             size="large"
             onClick={handleProcessContent}
-            disabled={!currentMarkdown || currentMarkdown.trim() === ''}
+            disabled={!currentMarkdown || currentMarkdown.trim() === '' || selectedSets.size === 0}
             sx={{ 
               px: 4, 
               py: 1.5,
@@ -343,7 +568,7 @@ function HomePage({
               transition: 'all 0.2s ease'
             }}
           >
-            Process Content
+            Process Content ({selectedSets.size} sets selected)
           </Button>
         </Box>
       </Paper>

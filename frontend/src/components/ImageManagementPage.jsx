@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { 
   Box, 
@@ -21,12 +21,20 @@ import {
   ListItemText,
   ListItemAvatar,
   Avatar,
-  IconButton
+  IconButton,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { listImages, uploadImage, batchUploadImages } from '../apiClient';
+import { listImages, uploadImage, batchUploadImages, getImageSets } from '../apiClient';
 
 // Maximum file size in bytes (5MB)
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -61,14 +69,18 @@ const DropZone = styled(Box)(({ theme, isDragging }) => ({
 
 const ImageManagementPage = () => {
   // Separate state for uploaded and generated images
-  const [uploadedImages, setUploadedImages] = useState([]);
+  const [uploadedImages, setUploadedImages] = useState({}); // Now stores images by set
   const [generatedImages, setGeneratedImages] = useState([]);
   
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [selectedFiles, setSelectedFiles] = useState([]);
-  const [description, setDescription] = useState('');
+  const [imageLabels, setImageLabels] = useState({}); // Track individual image labels
+  const [imageSets, setImageSets] = useState([]);
+  const [selectedSet, setSelectedSet] = useState('');
+  const [newSetName, setNewSetName] = useState('');
+  const [showNewSetDialog, setShowNewSetDialog] = useState(false);
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
 
   // Clean up object URLs when component unmounts
@@ -83,26 +95,53 @@ const ImageManagementPage = () => {
     };
   }, [selectedFiles]);
 
-  // Fetch all images on component mount
-  useEffect(() => {
-    fetchImages();
-  }, []);
-
-  const fetchImages = async () => {
+  const fetchImages = useCallback(async () => {
     setLoading(true);
     try {
       const response = await listImages();
-      // Set state based on the new API response structure
-      setUploadedImages(response.data.uploaded_images || []);
-      setGeneratedImages(response.data.generated_images || []); 
+      console.log('API Response:', response.data);
+      
+      // Process the new API response structure - images_by_set
+      const imagesBySet = response.data.images_by_set || {};
+      
+      // Store images grouped by set
+      setUploadedImages(imagesBySet);
+      
+      // For backward compatibility, also store generated images separately
+      const generatedImages = imagesBySet.Generated || [];
+      setGeneratedImages(generatedImages); 
     } catch (error) {
       console.error('Error fetching images:', error);
       showAlert('Error loading images', 'error');
-      setUploadedImages([]); // Clear on error
+      setUploadedImages({}); // Clear on error
       setGeneratedImages([]); // Clear on error
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const fetchImageSets = useCallback(async () => {
+    try {
+      const response = await getImageSets();
+      setImageSets(response.data.sets);
+    } catch (error) {
+      console.error('Error fetching image sets:', error);
+    }
+  }, []);
+
+  // Fetch all images and sets on component mount
+  useEffect(() => {
+    fetchImages();
+    fetchImageSets();
+  }, [fetchImages, fetchImageSets]);
+
+  // Generate default label from filename
+  const generateDefaultLabel = (filename) => {
+    const nameWithoutExtension = filename.replace(/\.[^/.]+$/, '');
+    if (nameWithoutExtension.includes('_')) {
+      return nameWithoutExtension.split('_')[0];
+    }
+    return nameWithoutExtension;
   };
 
   const onDrop = (acceptedFiles) => {
@@ -115,10 +154,21 @@ const ImageManagementPage = () => {
       return true;
     });
 
-    // Create preview URLs for valid files
-    const filesWithPreviews = validFiles.map(file => Object.assign(file, {
-      preview: URL.createObjectURL(file)
-    }));
+    // Create preview URLs and default labels for valid files
+    const filesWithPreviews = validFiles.map((file, index) => {
+      const fileWithPreview = Object.assign(file, {
+        preview: URL.createObjectURL(file),
+        id: Date.now() + index // Unique ID for tracking
+      });
+      
+      // Set default label
+      setImageLabels(prev => ({
+        ...prev,
+        [fileWithPreview.id]: generateDefaultLabel(file.name)
+      }));
+      
+      return fileWithPreview;
+    });
 
     setSelectedFiles(prev => [...prev, ...filesWithPreviews]);
   };
@@ -137,17 +187,53 @@ const ImageManagementPage = () => {
   const handleRemoveFile = (index) => {
     setSelectedFiles(prev => {
       const newFiles = [...prev];
+      const fileToRemove = newFiles[index];
+      
       // Revoke the URL to prevent memory leaks
-      if (newFiles[index].preview) {
-        URL.revokeObjectURL(newFiles[index].preview);
+      if (fileToRemove.preview) {
+        URL.revokeObjectURL(fileToRemove.preview);
       }
+      
+      // Remove the label for this file
+      setImageLabels(prevLabels => {
+        const newLabels = { ...prevLabels };
+        delete newLabels[fileToRemove.id];
+        return newLabels;
+      });
+      
       newFiles.splice(index, 1);
       return newFiles;
     });
   };
 
-  const handleDescriptionChange = (event) => {
-    setDescription(event.target.value);
+  const handleLabelChange = (fileId, newLabel) => {
+    setImageLabels(prev => ({
+      ...prev,
+      [fileId]: newLabel
+    }));
+  };
+
+  const handleSetChange = (event) => {
+    const value = event.target.value;
+    if (value === 'CREATE_NEW') {
+      setShowNewSetDialog(true);
+    } else {
+      setSelectedSet(value);
+    }
+  };
+
+  const handleCreateNewSet = () => {
+    if (newSetName.trim()) {
+      setSelectedSet(newSetName.trim());
+      setImageSets(prev => [...prev, { name: newSetName.trim(), imageCount: 0 }]);
+      setNewSetName('');
+      setShowNewSetDialog(false);
+    }
+  };
+
+  const handleCancelNewSet = () => {
+    setNewSetName('');
+    setShowNewSetDialog(false);
   };
 
   const handleUpload = async () => {
@@ -156,18 +242,25 @@ const ImageManagementPage = () => {
       return;
     }
 
+    if (!selectedSet) {
+      showAlert('Please select an image set', 'warning');
+      return;
+    }
+
     setUploading(true);
     setUploadingCount(0);
     
     try {
-      // If only one file, use single upload
-      if (selectedFiles.length === 1) {
-        await uploadImage(selectedFiles[0], description);
-        setUploadingCount(1);
-      } else {
-        // For multiple files, use batch upload
-        await batchUploadImages(selectedFiles, description);
-        setUploadingCount(selectedFiles.length);
+      // Upload each file individually with its specific label and set
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const label = imageLabels[file.id] || generateDefaultLabel(file.name);
+        
+        // Create a clean File object to avoid issues with react-dropzone properties
+        const cleanFile = new File([file], file.name, { type: file.type });
+        
+        await uploadImage(cleanFile, label, selectedSet);
+        setUploadingCount(i + 1);
       }
       
       showAlert(`Successfully uploaded ${selectedFiles.length} image(s)`, 'success');
@@ -177,10 +270,12 @@ const ImageManagementPage = () => {
         if (file.preview) URL.revokeObjectURL(file.preview);
       });
       setSelectedFiles([]);
-      setDescription('');
+      setImageLabels({});
+      setSelectedSet('');
       
-      // Refresh image list
+      // Refresh image list and sets
       fetchImages();
+      fetchImageSets();
     } catch (error) {
       console.error('Error uploading images:', error);
       showAlert('Error uploading images', 'error');
@@ -205,7 +300,13 @@ const ImageManagementPage = () => {
   // Helper function to render an image list section
   const renderImageList = (title, imageList) => (
     <Box sx={{ mb: 4 }}>
-      <Typography variant="h5" component="h2" gutterBottom>
+      <Typography variant="h5" component="h2" gutterBottom sx={{ 
+        borderBottom: '2px solid #e0e0e0', 
+        pb: 1,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1
+      }}>
         {title}
       </Typography>
       {loading ? (
@@ -230,7 +331,7 @@ const ImageManagementPage = () => {
                     {image.description || 'No description'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Uploaded: {image.uploaded_at ? new Date(image.uploaded_at).toLocaleString() : 'N/A'}
+                    Uploaded: {image.created_at ? new Date(image.created_at).toLocaleString() : 'N/A'}
                   </Typography>
                    {/* Optional: Add delete button here if needed */}
                 </CardContent>
@@ -241,6 +342,26 @@ const ImageManagementPage = () => {
       )}
     </Box>
   );
+
+  const renderImagesBySet = (imagesBySet) => {
+    if (loading) {
+      return <CircularProgress />;
+    }
+
+    const setNames = Object.keys(imagesBySet);
+    if (setNames.length === 0) {
+      return <Typography color="textSecondary">No images found.</Typography>;
+    }
+
+    return setNames.map((setName) => {
+      const images = imagesBySet[setName];
+      return (
+        <Box key={setName}>
+          {renderImageList(`${setName} (${images.length} images)`, images)}
+        </Box>
+      );
+    });
+  };
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -292,27 +413,35 @@ const ImageManagementPage = () => {
                   </Typography>
                 </Box>
                 
-                <TextField
-                  fullWidth
-                  label="Image Description (applies to all uploads)"
-                  variant="outlined"
-                  value={description}
-                  onChange={handleDescriptionChange}
-                  disabled={uploading}
-                  multiline
-                  rows={3}
-                />
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel>Select Image Set</InputLabel>
+                  <Select
+                    value={selectedSet}
+                    onChange={handleSetChange}
+                    disabled={uploading}
+                    label="Select Image Set"
+                  >
+                    {imageSets.map((set) => (
+                      <MenuItem key={set.name} value={set.name}>
+                        {set.name} ({set.imageCount} images)
+                      </MenuItem>
+                    ))}
+                    <MenuItem value="CREATE_NEW">
+                      <em>Create New Set...</em>
+                    </MenuItem>
+                  </Select>
+                </FormControl>
                 
                 <Button 
                   variant="contained" 
                   color="primary" 
                   onClick={handleUpload}
-                  disabled={selectedFiles.length === 0 || uploading}
+                  disabled={selectedFiles.length === 0 || !selectedSet || uploading}
                   startIcon={uploading ? <CircularProgress size={20} /> : null}
                 >
                   {uploading 
                     ? `Uploading (${uploadingCount}/${selectedFiles.length})` 
-                    : `Upload ${selectedFiles.length} Image${selectedFiles.length !== 1 ? 's' : ''}`}
+                    : `Upload ${selectedFiles.length} Image${selectedFiles.length !== 1 ? 's' : ''} to ${selectedSet || 'Set'}`}
                 </Button>
               </Box>
             </Grid>
@@ -326,46 +455,58 @@ const ImageManagementPage = () => {
                   <List dense>
                     {selectedFiles.map((file, index) => (
                       <ListItem 
-                        key={index}
-                        secondaryAction={
-                          <IconButton 
-                            edge="end" 
-                            aria-label="delete" 
-                            onClick={() => handleRemoveFile(index)}
-                            disabled={uploading}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        }
+                        key={file.id || index}
+                        sx={{ 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          alignItems: 'stretch', 
+                          py: 2 
+                        }}
                       >
                         <Box sx={{ 
                           display: 'flex', 
                           alignItems: 'center', 
                           width: '100%', 
-                          pr: 2
+                          mb: 1
                         }}>
                           <Box sx={{ 
-                            width: 40, 
-                            height: 40, 
+                            width: 60, 
+                            height: 60, 
                             mr: 2, 
                             backgroundImage: `url(${file.preview})`,
                             backgroundSize: 'cover',
                             backgroundPosition: 'center',
-                            borderRadius: 1
+                            borderRadius: 1,
+                            border: '1px solid #ddd'
                           }} />
-                          <ListItemText 
-                            primary={file.name} 
-                            secondary={`${(file.size / 1024).toFixed(1)} KB`} 
-                            sx={{ 
-                              overflow: 'hidden',
-                              '& .MuiListItemText-primary': {
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis'
-                              }
-                            }}
-                          />
+                          <Box sx={{ flexGrow: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                              {file.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {`${(file.size / 1024).toFixed(1)} KB`}
+                            </Typography>
+                          </Box>
+                          <IconButton 
+                            edge="end" 
+                            aria-label="delete" 
+                            onClick={() => handleRemoveFile(index)}
+                            disabled={uploading}
+                            sx={{ ml: 1 }}
+                          >
+                            <DeleteIcon />
+                          </IconButton>
                         </Box>
+                        <TextField
+                          label="Image Label"
+                          value={imageLabels[file.id] || ''}
+                          onChange={(e) => handleLabelChange(file.id, e.target.value)}
+                          disabled={uploading}
+                          size="small"
+                          fullWidth
+                          sx={{ mt: 1 }}
+                          helperText="This will be used as the image description"
+                        />
                       </ListItem>
                     ))}
                   </List>
@@ -383,13 +524,40 @@ const ImageManagementPage = () => {
             Image Gallery
           </Typography>
           
-          {renderImageList("Generated Images", generatedImages)}
-          
-          <Divider sx={{ my: 4 }} />
-          
-          {renderImageList("Uploaded Images", uploadedImages)}
+          {renderImagesBySet(uploadedImages)}
         </Paper>
       </Paper>
+      
+      {/* New Set Creation Dialog */}
+      <Dialog open={showNewSetDialog} onClose={handleCancelNewSet}>
+        <DialogTitle>Create New Image Set</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Set Name"
+            fullWidth
+            variant="outlined"
+            value={newSetName}
+            onChange={(e) => setNewSetName(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handleCreateNewSet();
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelNewSet}>Cancel</Button>
+          <Button 
+            onClick={handleCreateNewSet} 
+            variant="contained"
+            disabled={!newSetName.trim()}
+          >
+            Create Set
+          </Button>
+        </DialogActions>
+      </Dialog>
       
       {/* Alert Snackbar */}
       <Snackbar 

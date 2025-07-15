@@ -9,21 +9,18 @@ import {
   Snackbar,
   Alert,
   CircularProgress,
-  FormControlLabel,
-  Checkbox,
-  LinearProgress
 } from '@mui/material';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import { saveContent } from '../apiClient'; // Removed unused findSimilarImages, generateNewImage
 import EasyReadContentList from './EasyReadContentList';
 import useEasyReadImageManager from '../hooks/useEasyReadImageManager'; // Import the custom hook
+import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
-const MEDIA_BASE_URL = 'http://localhost:8000';
+const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
 
 // Wrap the component function directly
-const ResultPageComponent = ({ title, markdownContent, easyReadContent }) => {
+const ResultPageComponent = ({ title, markdownContent, easyReadContent, selectedSets = [], preventDuplicateImages = true }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -46,16 +43,11 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent }) => {
   // Use the custom hook for image management
   const {
     imageState,
-    preventDuplicateImages,
-    setPreventDuplicateImages,
-    refreshingAll,
-    refreshProgress,
     notification,
     handleImageSelectionChange,
     handleGenerateImage,
-    handleRefreshAllImages,
     handleCloseNotification
-  } = useEasyReadImageManager(memoizedEasyReadContent, null); // Pass memoized content
+  } = useEasyReadImageManager(memoizedEasyReadContent, null, selectedSets, preventDuplicateImages); // Pass memoized content, selected sets, and duplicate prevention setting
 
   // State for saving feedback (remains specific to this page)
   const [isSaving, setIsSaving] = useState(false);
@@ -116,11 +108,9 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent }) => {
     setSaveError(null);
   };
 
-  // Refresh function is now provided by the hook (handleRefreshAllImages)
   // Generate function is now provided by the hook (handleGenerateImage)
   // Image selection change is now provided by the hook (handleImageSelectionChange)
 
-  console.log('ResultPage render:', { isEmpty, imageState });
   
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 6 }}>
@@ -180,77 +170,23 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent }) => {
                 {title || 'Untitled Content'}
               </Typography>
               
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                  <Button
-                    startIcon={<RefreshIcon />}
-                    variant="outlined"
-                    onClick={handleRefreshAllImages} // From hook
-                    disabled={refreshingAll} // From hook
-                    sx={{
-                      borderColor: 'var(--color-primary)',
-                      color: 'var(--color-primary)',
-                      borderRadius: 'var(--border-radius-md)',
-                      '&:hover': {
-                        borderColor: '#357ae8',
-                        backgroundColor: 'rgba(66, 133, 244, 0.04)',
-                      }
-                    }}
-                  >
-                    Refresh Images
-                  </Button>
-                  <Button
-                    startIcon={isSaving ? <CircularProgress size={20}/> : <SaveIcon />}
-                    variant="contained"
-                    onClick={handleSave} // Page-specific save
-                    disabled={isSaving || refreshingAll} // Use hook's refreshingAll
-                    sx={{
-                      backgroundColor: 'var(--color-accent)',
-                      borderRadius: 'var(--border-radius-md)',
-                      '&:hover': {
-                        backgroundColor: '#0b8043',
-                      }
-                    }}
-                  >
-                    {isSaving ? 'Saving...' : 'Save Content'}
-                  </Button>
-                </Box>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={preventDuplicateImages} // From hook
-                      onChange={(e) => setPreventDuplicateImages(e.target.checked)} // From hook
-                      color="primary"
-                      size="small"
-                      disabled={refreshingAll} // From hook
-                    />
+              <Button
+                startIcon={isSaving ? <CircularProgress size={20}/> : <SaveIcon />}
+                variant="contained"
+                onClick={handleSave} // Page-specific save
+                disabled={isSaving}
+                sx={{
+                  backgroundColor: 'var(--color-accent)',
+                  borderRadius: 'var(--border-radius-md)',
+                  '&:hover': {
+                    backgroundColor: '#0b8043',
                   }
-                  label="Avoid duplicate images when refreshing"
-                  sx={{ mb: 0 }}
-                />
-              </Box>
+                }}
+              >
+                {isSaving ? 'Saving...' : 'Save Content'}
+              </Button>
           </Box>
           
-          {refreshingAll && (
-              <Box sx={{ width: '100%', mb: 4 }}>
-                <Typography sx={{ mb: 1, color: 'var(--medium-gray)' }}>
-                  Refreshing images... {Math.round(refreshProgress)}% 
-                </Typography>
-              <LinearProgress 
-                variant="determinate" 
-                  value={refreshProgress} // From hook
-                  sx={{ 
-                    height: 8, 
-                    borderRadius: 4,
-                    backgroundColor: 'var(--lighter-gray)',
-                    '& .MuiLinearProgress-bar': {
-                      backgroundColor: 'var(--color-primary)',
-                      borderRadius: 4
-                    }
-                  }}
-              />
-            </Box>
-          )}
 
             <EasyReadContentList 
               easyReadContent={easyReadContent}
