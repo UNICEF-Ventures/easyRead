@@ -11,6 +11,8 @@ function App() {
   const [markdownContent, setMarkdownContent] = useState('');
   const [easyReadContent, setEasyReadContent] = useState([]);
   const [contentTitle, setContentTitle] = useState('');
+  const [selectedSets, setSelectedSets] = useState([]);
+  const [preventDuplicateImages, setPreventDuplicateImages] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingPages, setIsProcessingPages] = useState(false);
   const [totalPages, setTotalPages] = useState(0);
@@ -44,17 +46,21 @@ function App() {
     console.log("App: Processing complete");
     let newTitle = 'Untitled';
     let newContent = [];
-    let errorOccurred = false;
+    let newSelectedSets = [];
+    let newPreventDuplicates = true;
     let errorMsg = null;
 
     // Determine final state values based on the result
     if (finalEasyRead && typeof finalEasyRead === 'object' && finalEasyRead.easy_read_sentences) {
       newTitle = finalEasyRead.title || 'Untitled';
       newContent = finalEasyRead.easy_read_sentences; // Get the final array reference
+      newSelectedSets = finalEasyRead.selected_sets || [];
+      newPreventDuplicates = finalEasyRead.prevent_duplicate_images ?? true;
     } else {
       newTitle = 'Processing Error'; 
       newContent = []; 
-      errorOccurred = true; // Mark that an error occurred
+      newSelectedSets = [];
+      newPreventDuplicates = true;
       errorMsg = 'Received invalid format from easy read generation.';
       console.error('Invalid easy read content format:', finalEasyRead);
     }
@@ -63,6 +69,8 @@ function App() {
     setMarkdownContent(finalMarkdown);
     setContentTitle(newTitle);
     setEasyReadContent(newContent); // Use the reference stored above
+    setSelectedSets(newSelectedSets);
+    setPreventDuplicateImages(newPreventDuplicates);
     setIsLoading(false);
     setIsProcessingPages(false);
     setTotalPages(0);
@@ -127,6 +135,8 @@ function App() {
                 title={contentTitle}
                 markdownContent={markdownContent}
                 easyReadContent={easyReadContent}
+                selectedSets={selectedSets}
+                preventDuplicateImages={preventDuplicateImages}
              />
             }
         />

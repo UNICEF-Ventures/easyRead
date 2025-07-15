@@ -22,9 +22,10 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import { format } from 'date-fns';
 import { getSavedContent, deleteSavedContent } from '../apiClient';
+import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
-const MEDIA_BASE_URL = 'http://localhost:8000';
+const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
 
 const SavedContentPage = () => {
   const [savedContent, setSavedContent] = useState([]);

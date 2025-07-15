@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -6,25 +6,21 @@ import {
   Container,
   Paper,
   CircularProgress,
-  Button,
   Alert,
   IconButton,
   Snackbar,
-  LinearProgress,
-  FormControlLabel,
-  Checkbox,
   Collapse
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { format } from 'date-fns';
+// Removed unused import: format from 'date-fns'
 import apiClient from '../apiClient';
 import EasyReadContentList from './EasyReadContentList';
 import useEasyReadImageManager from '../hooks/useEasyReadImageManager';
+import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
-const MEDIA_BASE_URL = 'http://localhost:8000';
+const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
 
 const SavedContentDetailPage = () => {
   const { id } = useParams();
@@ -36,27 +32,8 @@ const SavedContentDetailPage = () => {
   const [error, setError] = useState(null);
   const [originalContentExpanded, setOriginalContentExpanded] = useState(false);
 
-  // Use the custom hook for image management
-  const {
-    imageState,
-    setImageState, // Potentially needed if fetch logic changes imageState directly?
-    preventDuplicateImages,
-    setPreventDuplicateImages,
-    refreshingAll,
-    refreshProgress,
-    notification,
-    handleImageSelectionChange,
-    handleGenerateImage,
-    handleRefreshAllImages,
-    handleCloseNotification
-  } = useEasyReadImageManager(content?.easy_read_content || [], id); // Pass content and id to the hook
-
   // Fetch the saved content details (remains specific to this page)
-  useEffect(() => {
-    fetchSavedContentDetail();
-  }, [id]);
-
-  const fetchSavedContentDetail = async () => {
+  const fetchSavedContentDetail = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -70,7 +47,21 @@ const SavedContentDetailPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  // Use the custom hook for image management
+  const {
+    imageState,
+    notification,
+    handleImageSelectionChange,
+    handleGenerateImage,
+    handleCloseNotification
+  } = useEasyReadImageManager(content?.easy_read_content || [], id); // Pass content and id to the hook
+
+  // Call fetch function after hook is initialized
+  useEffect(() => {
+    fetchSavedContentDetail();
+  }, [fetchSavedContentDetail]);
 
   // Handlers related to image state (selection, generation, refresh) are now provided by the hook.
   // handleImageSelectionChange - from hook
@@ -103,46 +94,8 @@ const SavedContentDetailPage = () => {
           <Typography variant="h5" component="h1" sx={{ flexGrow: 1 }}>
             {content?.title || `Saved Conversion #${id}`}
           </Typography>
-          
-          {/* Use state and handlers from the hook */} 
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-            <Button 
-              variant="contained" 
-              startIcon={refreshingAll ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
-              onClick={handleRefreshAllImages} // From hook
-              disabled={loading || !content || refreshingAll} // Use hook's refreshingAll
-              size="small"
-              sx={{ mb: 1 }}
-            >
-              {refreshingAll ? 'Refreshing...' : 'Refresh All Images'}
-            </Button>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={preventDuplicateImages} // From hook
-                  onChange={(e) => setPreventDuplicateImages(e.target.checked)} // From hook
-                  size="small"
-                  disabled={refreshingAll} // From hook
-                />
-              }
-              label="Prevent duplicate images"
-              sx={{ m: 0 }}
-            />
-          </Box>
         </Box>
 
-        {refreshingAll && (
-          <Box sx={{ width: '100%', mb: 3 }}>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              Refreshing images: {Math.round(refreshProgress)}% 
-            </Typography>
-            <LinearProgress 
-              variant="determinate" 
-              value={refreshProgress} // From hook
-              sx={{ height: 8, borderRadius: 4 }}
-            />
-          </Box>
-        )}
 
         {error ? (
           <Alert severity="error" sx={{ my: 2 }}>{error}</Alert>

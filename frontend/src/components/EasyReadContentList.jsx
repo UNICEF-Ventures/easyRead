@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   Box,
   List,
@@ -16,9 +16,10 @@ import {
   IconButton
 } from '@mui/material';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
-const MEDIA_BASE_URL = 'http://localhost:8000';
+const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
 
 // Helper function to normalize image URLs
 const normalizeImageUrl = (url) => {
@@ -40,6 +41,45 @@ function EasyReadContentList({
   isLoading = false // Prop to indicate parent loading state
 }) {
   
+  // Memoize the image selection change handler to prevent unnecessary re-renders
+  const handleImageSelectionChange = useCallback((index, value) => {
+    if (onImageSelectionChange) {
+      onImageSelectionChange(index, value);
+    }
+  }, [onImageSelectionChange]);
+  
+  // Memoize the generate image handler to prevent unnecessary re-renders
+  const handleGenerateImage = useCallback((index, retrieval) => {
+    if (onGenerateImage) {
+      onGenerateImage(index, retrieval);
+    }
+  }, [onGenerateImage]);
+  
+  // Memoize the content list to prevent unnecessary re-renders when imageState changes
+  const memoizedContentList = useMemo(() => {
+    if (!easyReadContent || easyReadContent.length === 0) {
+      return [];
+    }
+    
+    return easyReadContent.map((item, index) => {
+      const currentImageState = imageState[index] || { 
+        images: [], 
+        selectedPath: item.selected_image_path,
+        isLoading: false, 
+        isGenerating: false,
+        error: null 
+      };
+      
+      
+      return {
+        ...item,
+        index,
+        currentImageState,
+        canGenerate: item.image_retrieval && item.image_retrieval !== 'error'
+      };
+    });
+  }, [easyReadContent, imageState]);
+  
   // If parent is loading, show a single spinner
   if (isLoading) {
     return (
@@ -60,23 +100,15 @@ function EasyReadContentList({
 
   return (
     <List disablePadding>
-      {easyReadContent.map((item, index) => {
-        const currentImageState = imageState[index] || { 
-          images: [], 
-          selectedPath: item.selected_image_path, // Fallback to initial path if state not ready
-          isLoading: false, 
-          isGenerating: false,
-          error: null 
-        };
+      {memoizedContentList.map((item) => {
         const { 
           images, 
           selectedPath, 
           isLoading: itemIsLoading, 
           isGenerating,
           error 
-        } = currentImageState;
-
-        const canGenerate = item.image_retrieval && item.image_retrieval !== 'error';
+        } = item.currentImageState;
+        const { index, canGenerate } = item;
 
         return (
           <React.Fragment key={index}>
@@ -109,7 +141,9 @@ function EasyReadContentList({
                       <FormControl size="small" variant="outlined" sx={{ width: '100%' }}> 
                         <Select
                           value={selectedPath || ''}
-                          onChange={(e) => onImageSelectionChange(index, e.target.value)}
+                          onChange={(e) => {
+                            handleImageSelectionChange(index, e.target.value);
+                          }}
                           displayEmpty
                           renderValue={(selected) => {
                             if (!selected) {
@@ -126,7 +160,10 @@ function EasyReadContentList({
                                   objectFit: 'contain',
                                   borderRadius: 1
                                 }}
-                                onError={(e) => { e.target.src = 'https://via.placeholder.com/60x60?text=Error'; }}
+                                onError={(e) => { 
+                                  e.target.src = 'https://via.placeholder.com/60x60?text=Error';
+                                  console.error('Image load error:', selected);
+                                }}
                               />
                             );
                           }}
@@ -142,7 +179,7 @@ function EasyReadContentList({
                             </MenuItem>
                           )}
                           {images.map((imgResult, imgIndex) => (
-                            <MenuItem key={imgIndex} value={imgResult.url} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
+                            <MenuItem key={`${index}-${imgIndex}-${imgResult.url}`} value={imgResult.url} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
                               <Box 
                                 component="img"
                                 src={normalizeImageUrl(imgResult.url)}
@@ -152,7 +189,10 @@ function EasyReadContentList({
                                   height: 100, 
                                   objectFit: 'contain'
                                 }}
-                                onError={(e) => { e.target.src = 'https://via.placeholder.com/100x100?text=Error'; }}
+                                onError={(e) => { 
+                                  e.target.src = 'https://via.placeholder.com/100x100?text=Error';
+                                  console.error('Image load error:', imgResult.url);
+                                }}
                               />
                             </MenuItem>
                           ))}
@@ -185,7 +225,7 @@ function EasyReadContentList({
                         <span> 
                           <IconButton 
                             size="small"
-                            onClick={() => onGenerateImage(index, item.image_retrieval)}
+                            onClick={() => handleGenerateImage(index, item.image_retrieval)}
                             disabled={isGenerating || itemIsLoading}
                             color="primary"
                           >
@@ -213,4 +253,4 @@ function EasyReadContentList({
   );
 }
 
-export default EasyReadContentList; 
+export default React.memo(EasyReadContentList); 

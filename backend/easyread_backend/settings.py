@@ -11,9 +11,14 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+load_dotenv(BASE_DIR.parent / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -78,10 +83,34 @@ WSGI_APPLICATION = "easyread_backend.wsgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.sqlite3"),
+        "NAME": os.getenv("DB_NAME", BASE_DIR / "db.sqlite3"),
+        "USER": os.getenv("DB_USER", ""),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", ""),
+        "PORT": os.getenv("DB_PORT", ""),
+        "OPTIONS": {
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+        } if os.getenv("DB_ENGINE") == "django.db.backends.mysql" else {},
     }
 }
+
+# PostgreSQL specific configuration
+if os.getenv("DB_ENGINE") == "postgresql" or os.getenv("DATABASE_URL"):
+    # Support both individual env vars and DATABASE_URL
+    if os.getenv("DATABASE_URL"):
+        import dj_database_url
+        DATABASES["default"] = dj_database_url.parse(os.getenv("DATABASE_URL"))
+    else:
+        DATABASES["default"] = {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_NAME", "easyread"),
+            "USER": os.getenv("DB_USER", "easyread_user"),
+            "PASSWORD": os.getenv("DB_PASSWORD", "easyread_password"),
+            "HOST": os.getenv("DB_HOST", "localhost"),
+            "PORT": os.getenv("DB_PORT", "5432"),
+            "OPTIONS": {},
+        }
 
 
 # Password validation
@@ -140,4 +169,23 @@ CORS_ALLOWED_ORIGINS = [
 # CORS_ALLOW_ALL_ORIGINS = True
 
 # File upload settings
-DATA_UPLOAD_MAX_NUMBER_FILES = 1500 
+DATA_UPLOAD_MAX_NUMBER_FILES = 1500
+
+# PyTorch/ML Configuration - Reduce multiprocessing to prevent memory leaks
+import os
+
+# Set PyTorch to use single thread for CPU operations
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+
+# Configure PyTorch multiprocessing
+os.environ['TORCH_NUM_THREADS'] = '1'
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
+# Additional memory optimization
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:256'
+
+# Configure OpenMP for development to prevent semaphore leaks
+os.environ['OMP_DYNAMIC'] = 'FALSE'
+os.environ['OMP_MAX_ACTIVE_LEVELS'] = '1'  # Replace deprecated OMP_NESTED 

@@ -59,8 +59,6 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
   const abortControllerRef = useRef(null);
   // Track used images for duplicate prevention
   const usedImagesRef = useRef(new Set());
-  // Track whether sequential attribution has been applied
-  const sequentialAttributionAppliedRef = useRef(false);
 
   // Initialize or update image state when content changes
   useEffect(() => {
@@ -85,9 +83,6 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
 
     // Update our content reference
     contentRef.current = initialContent;
-    
-    // Reset sequential attribution flag for new content
-    sequentialAttributionAppliedRef.current = false;
     
     
     const initialImageState = {};
@@ -150,7 +145,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
         let fetchResults = []; 
         try {
             // Process in smaller batches to avoid overwhelming the backend
-            const BATCH_SIZE = 1; // Reduce to 1 to avoid overwhelming the backend during model loading
+            const BATCH_SIZE = 1; // Single request per batch for ViT-L-14 model
             const batches = [];
             for (let i = 0; i < needsFetching.length; i += BATCH_SIZE) {
                 batches.push(needsFetching.slice(i, i + BATCH_SIZE));
@@ -180,14 +175,13 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
                         
                         let images = response.data.results || [];
                         
-                        
                         // Return the update object for this index
                         const result = {
                             index: index,
                             update: {
                                 images: images,
-                                selectedPath: preventDuplicateImages ? null : (images.length > 0 ? images[0].url : null),
-                                isLoading: preventDuplicateImages && images.length > 0, // Keep loading if duplicate prevention is enabled and we have images
+                                selectedPath: images.length > 0 ? images[0].url : null,
+                                isLoading: false,
                                 error: images.length === 0 ? 'No images found' : null
                             }
                         };
@@ -219,7 +213,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
             
             // Add delay between batches to prevent overwhelming the backend
             if (batches.indexOf(batch) < batches.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 100)); // Minimal delay for sequential processing
+                await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between requests for ViT-L-14
             }
         }
         } catch {
@@ -317,103 +311,6 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialContent]);
   
-  // Sequential attribution effect for duplicate prevention
-  useEffect(() => {
-    if (!preventDuplicateImages || !initialContent || initialContent.length === 0) {
-      sequentialAttributionAppliedRef.current = false;
-      return;
-    }
-    
-    // Only apply once per content load
-    if (sequentialAttributionAppliedRef.current) {
-      return;
-    }
-    
-    // Check if we have enough loaded images to start attribution
-    const loadedStates = Object.keys(imageState).filter(index => {
-      const state = imageState[index];
-      return state && state.images && state.images.length > 0;
-    });
-    
-    const hasLoadedImages = loadedStates.length > 0;
-    
-    if (!hasLoadedImages) {
-      return; // Wait for images to load
-    }
-    
-    // Apply sequential attribution immediately when images are available
-    setImageState(currentState => {
-      // Double check we have loaded images in current state
-      const currentLoadedStates = Object.keys(currentState).filter(index => {
-        const state = currentState[index];
-        return state && state.images && state.images.length > 0;
-      });
-      
-      if (currentLoadedStates.length === 0) {
-        return currentState;
-      }
-      
-      // Apply sequential attribution
-      const usedImageIds = new Set();
-      const updates = {};
-      
-      // Process sentences in order
-      for (let i = 0; i < initialContent.length; i++) {
-        const state = currentState[i];
-        if (state) {
-          if (state.images && state.images.length > 0) {
-            // Find the first image that hasn't been used yet
-            let selectedPath = null;
-            
-            for (const img of state.images) {
-              const imageId = img.id || img.url;
-              if (!usedImageIds.has(imageId)) {
-                selectedPath = img.url;
-                usedImageIds.add(imageId);
-                break;
-              }
-            }
-            
-            // Always update when duplicate prevention is enabled to ensure proper assignment
-            updates[i] = {
-              ...state,
-              selectedPath: selectedPath,
-              isLoading: false, // Turn off loading when sequential attribution is applied
-              error: selectedPath ? null : 'No unique images available'
-            };
-            
-          } else if (state.isLoading) {
-            // If this sentence is still loading or has no images, turn off loading
-            updates[i] = {
-              ...state,
-              isLoading: false
-            };
-          }
-        }
-      }
-      
-      // Apply updates if there are any
-      if (Object.keys(updates).length > 0) {
-        const newState = { ...currentState };
-        Object.keys(updates).forEach(index => {
-          newState[index] = updates[index];
-        });
-        
-        // Update the used images ref
-        usedImagesRef.current = usedImageIds;
-        sequentialAttributionAppliedRef.current = true;
-        
-        return newState;
-      } else {
-        // Still mark as applied to prevent repeated checks
-        sequentialAttributionAppliedRef.current = true;
-        usedImagesRef.current = usedImageIds;
-      }
-      
-      return currentState;
-    });
-  }, [preventDuplicateImages, initialContent, imageState]);
-  
   // Cleanup effect for AbortController and request cache
   useEffect(() => {
     return () => {
@@ -427,36 +324,73 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
 
   // Memoize the image selection change handler to prevent unnecessary re-renders
   const handleImageSelectionChange = useCallback(async (sentenceIndex, newPath) => {
-    // Update the state directly - always respect user choice, no deduplication enforcement
-    setImageState(prev => {
-      const currentState = prev[sentenceIndex];
-      
-      if (!currentState) {
-        return prev;
-      }
-      
-      // Always honor user selection without deduplication enforcement
-      const newState = {
-        ...prev,
-        [sentenceIndex]: {
-          ...currentState,
-          selectedPath: newPath,
-          isGenerating: false,
-          error: null
-        }
-      };
-      
-      // Update used images tracking for reference (but don't enforce conflicts)
-      if (preventDuplicateImages) {
-        const currentImageId = currentState.selectedPath;
-        const newImageId = newPath;
+    if (preventDuplicateImages) {
+      // Handle duplicate prevention logic
+      setImageState(prev => {
+        const currentState = prev[sentenceIndex];
+        if (!currentState) return prev;
+
+        // Get current selected image to remove from used set
+        const currentSelectedPath = currentState.selectedPath;
+        const currentImageId = currentSelectedPath ? 
+          (currentState.images.find(img => img.url === currentSelectedPath)?.id || currentSelectedPath) : null;
         
-        if (currentImageId) usedImagesRef.current.delete(currentImageId);
-        if (newImageId) usedImagesRef.current.add(newImageId);
-      }
-      
-      return newState;
-    });
+        // Get new image ID
+        const newImageId = newPath ? 
+          (currentState.images.find(img => img.url === newPath)?.id || newPath) : null;
+        
+        // Check if the new image is already used by another sentence
+        let finalNewPath = newPath;
+        if (newImageId && usedImagesRef.current.has(newImageId)) {
+          // Find an alternative image that's not used
+          const availableImage = currentState.images.find(img => {
+            const imgId = img.id || img.url;
+            return !usedImagesRef.current.has(imgId) || imgId === currentImageId;
+          });
+          
+          if (availableImage) {
+            finalNewPath = availableImage.url;
+            const availableImageId = availableImage.id || availableImage.url;
+            // Update used images set
+            if (currentImageId) usedImagesRef.current.delete(currentImageId);
+            usedImagesRef.current.add(availableImageId);
+          } else {
+            // No available alternatives, keep current selection
+            finalNewPath = currentSelectedPath;
+          }
+        } else if (newImageId) {
+          // Update used images set
+          if (currentImageId) usedImagesRef.current.delete(currentImageId);
+          usedImagesRef.current.add(newImageId);
+        }
+
+        return {
+          ...prev,
+          [sentenceIndex]: {
+            ...currentState,
+            selectedPath: finalNewPath,
+            isGenerating: false,
+            error: null
+          }
+        };
+      });
+    } else {
+      // Normal selection without duplicate prevention
+      setImageState(prev => {
+        const currentState = prev[sentenceIndex];
+        if (!currentState) return prev;
+
+        return {
+          ...prev,
+          [sentenceIndex]: {
+            ...currentState,
+            selectedPath: newPath,
+            isGenerating: false, // Ensure generation stops on selection
+            error: null // Clear errors on new selection
+          }
+        };
+      });
+    }
 
     // If it's saved content, update the backend
     if (contentId !== null) {

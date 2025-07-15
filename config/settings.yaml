@@ -1,0 +1,16 @@
+# EasyRead Configuration Settings
+
+# LLM Retry Configuration
+llm_retry:
+  max_retries: 3
+  initial_delay: 1.0  # Initial delay in seconds
+  exponential_backoff: true  # Whether to use exponential backoff
+  max_delay: 10.0  # Maximum delay between retries
+
+# Other application settings can be added here
+processing:
+  timeout: 300  # Processing timeout in seconds
+  
+logging:
+  level: INFO
+  detailed_errors: true  # Whether to log detailed error information

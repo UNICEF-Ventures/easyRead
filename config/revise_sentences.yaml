@@ -1,4 +1,4 @@
-llm_model: "gpt-4o-mini" # Consider a more powerful model if revision quality is critical
+llm_model: "gpt-4o-mini" 
 
 system_message: |
   # Goal

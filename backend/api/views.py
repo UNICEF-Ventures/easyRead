@@ -24,30 +24,78 @@ from PIL import Image
 import io
 import glob # Might not be needed here if not listing
 import uuid # Moved import to top
+import time # Added for health check
 from .models import ProcessedContent, ImageMetadata # Import the new model
 from sentence_transformers import SentenceTransformer # Added SentenceTransformer
 from openai import OpenAI
+from .config import get_retry_config, load_prompt_template
 from django.core.files.base import ContentFile
 from gradio_client import Client, handle_file # Added Gradio client import
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
 
+def has_meaningful_content(markdown_content, min_words=5):
+    """
+    Check if markdown content has meaningful text content to process.
+    
+    Args:
+        markdown_content: String containing markdown content
+        min_words: Minimum number of words required for content to be considered meaningful
+    
+    Returns:
+        Boolean indicating if content has meaningful text
+    """
+    if not markdown_content or not isinstance(markdown_content, str):
+        return False
+    
+    # Strip whitespace
+    content = markdown_content.strip()
+    
+    if not content:
+        return False
+    
+    import re
+    
+    # Remove markdown formatting elements but keep the text content
+    # Remove image references ![alt](url)
+    content = re.sub(r'!\[[^\]]*\]\([^\)]*\)', '', content)
+    # Remove links but keep the text [text](url) -> text
+    content = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'\1', content)
+    # Remove code blocks ```
+    content = re.sub(r'```[^`]*```', '', content, flags=re.DOTALL)
+    # Remove inline code `code`
+    content = re.sub(r'`[^`]*`', '', content)
+    # Remove markdown headers # ## ### etc. but keep the text
+    content = re.sub(r'^#{1,6}\s*', '', content, flags=re.MULTILINE)
+    # Remove markdown formatting *, **, _ but keep the text
+    content = re.sub(r'[*_]{1,2}([^*_]*)[*_]{1,2}', r'\1', content)
+    # Remove horizontal rules --- or ***
+    content = re.sub(r'^[-*]{3,}$', '', content, flags=re.MULTILINE)
+    # Remove HTML tags
+    content = re.sub(r'<[^>]+>', '', content)
+    # Normalize whitespace
+    content = re.sub(r'\s+', ' ', content)
+    
+    # Clean up the content and count words
+    cleaned_content = content.strip()
+    
+    if not cleaned_content:
+        return False
+    
+    # Count words (split by whitespace and filter out empty strings)
+    words = [word for word in cleaned_content.split() if word]
+    word_count = len(words)
+    
+    # Check if we have enough words
+    return word_count >= min_words
+
 # Create your views here.
 
 # Setup LiteLLM logging (optional, but helpful)
 # litellm.set_verbose=True 
 
-# Define path to prompts directory relative to BASE_DIR
-# Assuming BASE_DIR in settings.py points to the 'backend' directory
-# If BASE_DIR points to the root, adjust the path.
-# Let's check settings.py for BASE_DIR definition first.
-# Reading settings.py confirmed BASE_DIR is backend parent (project root)
-PROMPTS_DIR = settings.BASE_DIR.parent / 'prompts'
-EASY_READ_PROMPT_FILE = PROMPTS_DIR / 'easy_read.yaml'
-VALIDATE_COMPLETENESS_PROMPT_FILE = PROMPTS_DIR / 'validate_completeness.yaml'
-REVISE_SENTENCES_PROMPT_FILE = PROMPTS_DIR / 'revise_sentences.yaml'
-GENERATE_IMAGE_PROMPT_FILE = PROMPTS_DIR / 'generate_image.yaml'
+# File paths and settings are now managed in config.py
 
 # --- Configuration (Consider moving to settings.py) ---
 load_dotenv(settings.BASE_DIR.parent / '.env') # Load .env from project root
@@ -111,17 +159,7 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize Gradio client: {e}")
 
-def load_prompt_template():
-    """Loads the prompt template from the YAML file."""
-    try:
-        with open(EASY_READ_PROMPT_FILE, 'r') as f:
-            return yaml.safe_load(f)
-    except FileNotFoundError:
-        logger.error(f"Prompt file not found: {EASY_READ_PROMPT_FILE}")
-        return None
-    except yaml.YAMLError as e:
-        logger.error(f"Error parsing YAML file: {e}")
-        return None
+# Settings and prompt loading functions moved to config.py
 
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
@@ -156,9 +194,9 @@ def pdf_to_markdown(request):
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
         result = converter.convert(temp_pdf_path)
-        # Define a unique page break placeholder
-        page_break = "\n\n---DOCLING_PAGE_BREAK---\n\n"
-        # Export with the placeholder
+        # Define our generic page break placeholder
+        page_break = "\n\n---PAGE_BREAK---\n\n"
+        # Export with our placeholder directly
         full_markdown = result.document.export_to_markdown(page_break_placeholder=page_break)
         # Split the markdown into pages
         markdown_pages = full_markdown.split(page_break)
@@ -192,20 +230,40 @@ def process_page(request):
         return Response({"error": "Invalid request format. Expected JSON object with 'markdown_page' key."}, status=status.HTTP_400_BAD_REQUEST)
 
     markdown_page_content = request.data['markdown_page']
+    selected_sets = request.data.get('selected_sets', [])
 
     if not isinstance(markdown_page_content, str):
         return Response({"error": "'markdown_page' must be a string."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if not isinstance(selected_sets, list):
+        return Response({"error": "'selected_sets' must be a list."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # --- Load Prompt --- 
+    # --- Check if content has meaningful text ---
+    if not has_meaningful_content(markdown_page_content):
+        logger.info(f"Skipping page with no meaningful content: '{markdown_page_content[:100]}...'")
+        # Return empty response instead of processing meaningless content
+        return Response({
+            "title": "Empty Page",
+            "easy_read_sentences": []
+        }, status=status.HTTP_200_OK)
+
+    # --- Load Prompt and Settings --- 
     prompt_config = load_prompt_template()
     required_keys = ['system_message', 'user_message_template', 'llm_model']
     if prompt_config is None or not all(key in prompt_config for key in required_keys):
-        logger.error(f"Prompt template file {EASY_READ_PROMPT_FILE} is missing required keys: {required_keys}")
+        logger.error(f"Prompt template file is missing required keys: {required_keys}")
         return Response({"error": "Failed to load or parse prompt template YAML, or missing required keys."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     system_message = prompt_config['system_message']
     user_template = prompt_config['user_message_template']
-    llm_model = prompt_config['llm_model'] 
+    llm_model = prompt_config['llm_model']
+    
+    # Load settings for retry configuration
+    retry_config = get_retry_config()
+    max_retries = retry_config.get('max_retries', 3)
+    initial_delay = retry_config.get('initial_delay', 1.0)
+    exponential_backoff = retry_config.get('exponential_backoff', True)
+    max_delay = retry_config.get('max_delay', 10.0) 
 
     # --- Prepare LLM Call --- 
     user_message = user_template.format(markdown_content=markdown_page_content)
@@ -214,70 +272,110 @@ def process_page(request):
         {"role": "user", "content": user_message}
     ]
     
-    # --- LLM Call and Response Handling --- 
-    try:
-        response = litellm.completion(
-            model=llm_model, 
-            messages=messages,
-            response_format={"type": "json_object"} 
-        )
-        
-        llm_output_content = response.choices[0].message.content
-        
-        # Initialize results
-        llm_parsed_object = {}
-        easy_read_sentences = []
-        title = "Untitled Conversion"
-        
-        # Parse and Validate LLM JSON output
+    # --- LLM Call and Response Handling with Retry Logic --- 
+    retry_delay = initial_delay
+    
+    easy_read_sentences = []
+    title = "Untitled Conversion"
+    
+    for attempt in range(max_retries):
         try:
-            # ADD CHECK FOR NONE CONTENT
-            if llm_output_content is None:
-                raise ValueError("LLM returned None content.")
-
-            llm_parsed_object = json.loads(llm_output_content)
+            logger.info(f"LLM call attempt {attempt + 1}/{max_retries}")
             
-            # Validate the structure
-            if not isinstance(llm_parsed_object, dict) or 'title' not in llm_parsed_object or 'easy_read_sentences' not in llm_parsed_object:
-                raise ValueError("LLM response is not a JSON dictionary with the required keys 'title' and 'easy_read_sentences'.")
-
-            # Extract title
-            title = llm_parsed_object.get('title', "Untitled Conversion")
-            if not isinstance(title, str):
-                 title = "Untitled Conversion" # Fallback if title is not string
-                 logger.warning(f"LLM returned non-string title. Using default.")
-
-            # Extract and validate sentences
-            items_to_validate = llm_parsed_object['easy_read_sentences']
-            if not isinstance(items_to_validate, list):
-                 raise ValueError("The 'easy_read_sentences' key does not contain a list.")
+            response = litellm.completion(
+                model=llm_model, 
+                messages=messages,
+                response_format={"type": "json_object"} 
+            )
             
-            if not all(isinstance(item, dict) for item in items_to_validate):
-                raise ValueError("LLM list/dict contains non-dictionary elements.")
-            if not all('sentence' in item and 'image_retrieval' in item for item in items_to_validate):
-                raise ValueError("LLM dictionaries are missing required keys ('sentence', 'image_retrieval').")
-            if not all(isinstance(item['sentence'], str) and isinstance(item['image_retrieval'], str) for item in items_to_validate):
-                raise ValueError("LLM dictionary values are not strings.")
+            llm_output_content = response.choices[0].message.content
             
-            # If validation passed, assign to result
-            easy_read_sentences = items_to_validate
+            # Parse and Validate LLM JSON output
+            try:
+                # Check for None content
+                if llm_output_content is None:
+                    raise ValueError("LLM returned None content.")
 
-        except (json.JSONDecodeError, ValueError) as json_e:
-            # Log the error and the problematic content (which might be None)
-            logger.error(f"Failed to parse or validate LLM JSON response: {json_e}\nRaw content received: {llm_output_content}")
-            # Return error structure within the list for consistency
-            easy_read_sentences = [{ "sentence": f"Error: {json_e}", "image_retrieval": "error processing" }]
-            title = "Error Processing Title" # Set error title
+                llm_parsed_object = json.loads(llm_output_content)
+                
+                # Validate the structure
+                if not isinstance(llm_parsed_object, dict) or 'title' not in llm_parsed_object or 'easy_read_sentences' not in llm_parsed_object:
+                    raise ValueError("LLM response is not a JSON dictionary with the required keys 'title' and 'easy_read_sentences'.")
 
-    except Exception as e:
-        logger.exception(f"LLM call failed: {e}")
-        easy_read_sentences = [{ "sentence": "Error: LLM call failed.", "image_retrieval": "error processing" }]
-        title = "Error Processing Title" # Set error title
+                # Extract title
+                title = llm_parsed_object.get('title', "Untitled Conversion")
+                if not isinstance(title, str):
+                     title = "Untitled Conversion" # Fallback if title is not string
+                     logger.warning(f"LLM returned non-string title. Using default.")
+
+                # Extract and validate sentences
+                items_to_validate = llm_parsed_object['easy_read_sentences']
+                if not isinstance(items_to_validate, list):
+                     raise ValueError("The 'easy_read_sentences' key does not contain a list.")
+                
+                if not all(isinstance(item, dict) for item in items_to_validate):
+                    raise ValueError("LLM list/dict contains non-dictionary elements.")
+                
+                # Check for missing keys and provide detailed error information
+                missing_keys_items = []
+                for i, item in enumerate(items_to_validate):
+                    missing_keys = []
+                    if 'sentence' not in item:
+                        missing_keys.append('sentence')
+                    if 'image_retrieval' not in item:
+                        missing_keys.append('image_retrieval')
+                    if missing_keys:
+                        missing_keys_items.append(f"Item {i}: missing {missing_keys}, got keys: {list(item.keys())}")
+                
+                if missing_keys_items:
+                    detailed_error = f"LLM dictionaries are missing required keys ('sentence', 'image_retrieval'). Details: {'; '.join(missing_keys_items)}"
+                    raise ValueError(detailed_error)
+                
+                # Validate string types
+                if not all(isinstance(item['sentence'], str) and isinstance(item['image_retrieval'], str) for item in items_to_validate):
+                    raise ValueError("LLM dictionary values are not strings.")
+                
+                # If validation passed, assign to result and break the retry loop
+                easy_read_sentences = items_to_validate
+                logger.info(f"LLM call successful on attempt {attempt + 1}")
+                break  # Success, exit retry loop
+
+            except (json.JSONDecodeError, ValueError) as json_e:
+                # Log the error and the problematic content
+                logger.error(f"Attempt {attempt + 1}/{max_retries} failed to parse or validate LLM JSON response: {json_e}\nRaw content received: {llm_output_content}")
+                
+                # If this is the last attempt, set error response
+                if attempt == max_retries - 1:
+                    easy_read_sentences = [{ "sentence": f"Error: {json_e}", "image_retrieval": "error processing" }]
+                    title = "Error Processing Title"
+                    break
+                else:
+                    # Wait before retrying with configurable backoff
+                    time.sleep(retry_delay)
+                    if exponential_backoff:
+                        retry_delay = min(retry_delay * 2, max_delay)  # Exponential backoff with cap
+                    continue  # Try again
+
+        except Exception as e:
+            logger.exception(f"Attempt {attempt + 1}/{max_retries} - LLM call failed: {e}")
+            
+            # If this is the last attempt, set error response
+            if attempt == max_retries - 1:
+                easy_read_sentences = [{ "sentence": "Error: LLM call failed.", "image_retrieval": "error processing" }]
+                title = "Error Processing Title"
+                break
+            else:
+                # Wait before retrying with configurable backoff
+                time.sleep(retry_delay)
+                if exponential_backoff:
+                    retry_delay = min(retry_delay * 2, max_delay)  # Exponential backoff with cap
+                continue  # Try again
 
     # --- Return Response --- 
     return Response({
         "title": title,
-        "easy_read_sentences": easy_read_sentences
+        "easy_read_sentences": easy_read_sentences,
+        "selected_sets": selected_sets
     }, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
@@ -514,9 +612,11 @@ def revise_sentences(request):
 def upload_image(request):
     """
     API endpoint to upload an image, optionally with a description.
-    Stores the image file, generates an embedding, and stores the embedding.
-    Expects form-data with 'image' (file) and optional 'description' (text).
+    Uses the new database schema with ImageSet, Image, and Embedding models.
+    Expects form-data with 'image' (file), optional 'description' (text), and optional 'set_name' (text).
     """
+    from api.upload_handlers import handle_image_upload
+    
     logger = logging.getLogger(__name__)
 
     if 'image' not in request.FILES:
@@ -524,135 +624,64 @@ def upload_image(request):
 
     image_file = request.FILES['image']
     description = request.POST.get('description', '') # Get description, default to empty
+    set_name = request.POST.get('set_name', 'General') # Get set name, default to 'General'
 
     # Basic file type check (can be more robust)
-    allowed_extensions = ['.png', '.jpg', '.jpeg', '.webp']
+    allowed_extensions = ['.png', '.jpg', '.jpeg', '.webp', '.svg']
     file_ext = os.path.splitext(image_file.name)[1].lower()
     if file_ext not in allowed_extensions:
         return Response({"error": f"Invalid file type '{file_ext}'. Allowed types: {allowed_extensions}"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Generate a unique filename or use the original (careful with collisions/sanitization)
-    # For simplicity, let's use the original name sanitized, but UUID is safer
-    # Sanitize filename (replace spaces, etc.) - implement a proper sanitization function if needed
-    safe_filename = image_file.name.replace(" ", "_") 
-    image_save_path = IMAGE_UPLOAD_DIR / safe_filename
-    relative_image_path = os.path.relpath(image_save_path, settings.MEDIA_ROOT)
-
-    # --- Store Image File ---
-    try:
-        # Check if file already exists to prevent overwriting (optional)
-        if image_save_path.exists():
-             # Option 1: Return error
-             # return Response({"error": f"Image file '{safe_filename}' already exists."}, status=status.HTTP_409_CONFLICT)
-             # Option 2: Generate unique name (e.g., using uuid)
-             name, ext = os.path.splitext(safe_filename)
-             safe_filename = f"{name}_{uuid.uuid4().hex[:8]}{ext}"
-             image_save_path = IMAGE_UPLOAD_DIR / safe_filename
-             relative_image_path = os.path.relpath(image_save_path, settings.MEDIA_ROOT)
-
-        with open(image_save_path, 'wb+') as destination:
-            for chunk in image_file.chunks():
-                destination.write(chunk)
-        logger.info(f"Image saved to: {image_save_path}")
-    except Exception as e:
-        logger.error(f"Error saving image file '{safe_filename}': {e}")
-        return Response({"error": f"Failed to save image file."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    # --- Create ImageMetadata Record FIRST ---
-    image_metadata = None
-    try:
-        image_metadata = ImageMetadata.objects.create(
-            image=relative_image_path,
-            description=description,
-            is_generated=False
-        )
-        logger.info(f"Created ImageMetadata record for uploaded image: {image_metadata.id}")
-    except Exception as e:
-        logger.error(f"Error creating ImageMetadata record for uploaded image: {e}")
-        # If metadata fails, we probably shouldn't proceed with embedding/chroma
-        return Response({"error": "Failed to create database record for image."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    # --- Generate Embedding (Using Sentence Transformer) ---
-    embedding = None
-    if embedding_model: # Check if model loaded successfully
+    # Handle the upload using the new system
+    result = handle_image_upload(image_file, description, set_name, is_generated=False)
+    
+    if result.get("success"):
+        # Build image URL for response
         try:
-            # Try passing the file path directly
-            image_path_str = str(image_save_path)  # Convert to string
-            embedding_list = embedding_model.encode([image_path_str])
-            
-            if embedding_list is not None and len(embedding_list) > 0:
-                embedding = embedding_list[0].tolist() # Convert numpy array to list for JSON compatibility
-                logger.info(f"CLIP Embedding generated for '{safe_filename}'")
-            else:
-                logger.warning(f"Sentence Transformer did not return embedding for '{safe_filename}'")
+            image_url = request.build_absolute_uri(settings.MEDIA_URL + result['image_path'])
         except Exception as e:
-            logger.error(f"An unexpected error occurred during CLIP embedding for '{safe_filename}': {e}")
-            # Decide if we should still return success or error
+            logger.error(f"Error building image URL: {e}")
+            image_url = None
+        
+        response_data = {
+            "message": result["message"],
+            "image_id": result["image_id"],
+            "image_path": result["image_path"],
+            "image_url": image_url,
+            "filename": result["filename"],
+            "set_name": result["set_name"],
+            "description": result["description"],
+            "embeddings_created": result["embeddings_created"],
+            "file_format": result["file_format"],
+            "file_size": result.get("file_size"),
+            "width": result.get("width"),
+            "height": result.get("height")
+        }
+        return Response(response_data, status=status.HTTP_201_CREATED)
     else:
-        logger.error("Embedding model not available, skipping embedding generation.")
-
-    # --- Store Embedding in ChromaDB (uses metadata ID now) ---
-    embedding_stored = False
-    if chroma_client and image_collection and embedding and image_metadata:
-        try:
-            # Use the numeric ImageMetadata ID as the ChromaDB ID (as string)
-            chroma_id = str(image_metadata.id)
-            
-            # Check if ID already exists (should be unique based on metadata PK)
-            existing = image_collection.get(ids=[chroma_id])
-            if existing['ids']:
-                logger.warning(f"ChromaDB ID '{chroma_id}' (from ImageMetadata) already exists. Updating metadata/embedding.")
-                image_collection.update(
-                    ids=[chroma_id],
-                    embeddings=[embedding],
-                    # Store relative path in metadata still for potential use
-                    metadatas=[{"image_path": relative_image_path, "description": description}]
-                )
-            else:
-                image_collection.add(
-                    embeddings=[embedding],
-                    # Store relative path in metadata still for potential use
-                    metadatas=[{"image_path": relative_image_path, "description": description}],
-                    ids=[chroma_id]
-                )
-            embedding_stored = True
-            logger.info(f"Embedding stored in ChromaDB for ID '{chroma_id}'")
-        except Exception as e:
-            logger.error(f"Error storing embedding in ChromaDB for '{chroma_id}': {e}")
-            # Continue with response, embedding storage is not critical for image upload success
-    elif not image_metadata:
-        logger.warning("Skipping ChromaDB storage because ImageMetadata record creation failed.")
-    elif not embedding:
-         logger.warning(f"Skipping ChromaDB storage for image {relative_image_path} because embedding generation failed.")
-    elif not chroma_client or not image_collection:
-         logger.warning(f"Skipping ChromaDB storage for image {relative_image_path} because ChromaDB is not available.")
-
-    # --- Return Response (Metadata ID is the primary identifier now) ---
-    response_data = {
-        "message": "Image uploaded successfully.",
-        "image_id": image_metadata.id, # Return the DB ID
-        "image_path": relative_image_path, # Relative path within MEDIA_ROOT
-        "description": description,
-        "embedding_generated": embedding is not None,
-        "embedding_stored": embedding_stored
-    }
-    return Response(response_data, status=status.HTTP_201_CREATED)
+        return Response({"error": result.get("error", "Unknown error occurred")}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # --- Updated Image Similarity Search Endpoint ---
 @api_view(['POST'])
 def find_similar_images(request):
     """
     API endpoint to find N most similar images based on a text query.
+    Uses the new PostgreSQL database with embeddings instead of ChromaDB.
     Expects JSON: {
         "query": "text description", 
         "n_results": <integer>,
-        "exclude_ids": [<string>, ...] (optional)
+        "exclude_ids": [<integer>, ...] (optional),
+        "image_set": <string> (optional),
+        "image_sets": [<string>, ...] (optional)
     }
     Returns JSON: {"results": [
-        {"id": <str>, "url": <str>, "description": <str>, "distance": <float>}, ...
+        {"id": <int>, "url": <str>, "description": <str>, "similarity": <float>}, ...
     ]} or {"error": "..."}
     """
-    logger.error("--- find_similar_images view entered ---") 
+    from api.similarity_search import search_similar_images
+    from django.conf import settings
+    
+    logger.info("--- find_similar_images view entered (NEW VERSION) ---") 
     
     # --- Input Validation ---
     if not isinstance(request.data, dict): 
@@ -661,6 +690,8 @@ def find_similar_images(request):
     query = request.data.get('query')
     n_results = request.data.get('n_results')
     exclude_ids = request.data.get('exclude_ids', [])
+    image_set = request.data.get('image_set')
+    image_sets = request.data.get('image_sets')
 
     if not query or not isinstance(query, str):
         return Response({"error": "Missing or invalid 'query' (must be a non-empty string)."}, status=status.HTTP_400_BAD_REQUEST)
@@ -675,131 +706,74 @@ def find_similar_images(request):
         return Response({"error": "Invalid 'n_results' (must be a positive integer)."}, status=status.HTTP_400_BAD_REQUEST)
     
     if exclude_ids and not isinstance(exclude_ids, list):
-        return Response({"error": "Invalid 'exclude_ids' (must be a list of strings)."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "Invalid 'exclude_ids' (must be a list of integers)."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if image_set and not isinstance(image_set, str):
+        return Response({"error": "Invalid 'image_set' (must be a string)."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if image_sets and not isinstance(image_sets, list):
+        return Response({"error": "Invalid 'image_sets' (must be a list of strings)."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # --- Check Model Initialization ---
-    if not embedding_model: 
-        logger.error("Embedding model not loaded for image search.")
-        return Response({"error": "Image search unavailable (Embedding model not loaded)."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    # --- Connect to ChromaDB ---
+    # --- Search for Similar Images ---
     try:
-        # Convert PosixPath to string to avoid type errors
-        chroma_db_path_str = str(CHROMA_DB_PATH)
-        chroma_client = chromadb.PersistentClient(path=chroma_db_path_str)
-        image_collection = chroma_client.get_or_create_collection(name=IMAGE_COLLECTION_NAME)
-        logger.info(f"Connected to ChromaDB collection '{IMAGE_COLLECTION_NAME}'")
-    except Exception as e:
-        logger.error(f"Error connecting to ChromaDB: {e}")
-        return Response({"error": "Image search unavailable (Image DB not configured)."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    # --- Embed Query (Using Sentence Transformer) ---
-    try:
-        # Embed the text query
-        embedding_list = embedding_model.encode([query]) 
-        if embedding_list is not None and len(embedding_list) > 0:
-            query_embedding = embedding_list[0].tolist()
-        else:
-            logger.error(f"Sentence Transformer did not return embedding for query: '{query}'")
-            return Response({"error": "Failed to generate embedding for the query."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-    except Exception as e:
-        logger.exception(f"Unexpected error during query embedding: {e}")
-        return Response({"error": "An unexpected error occurred while processing the query."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    # --- Query ChromaDB ---
-    try:
-        # If we have IDs to exclude, we need to get more results and filter afterward
-        n_results_to_fetch = n_results
-        # Convert exclude_ids from frontend (expected to be numeric IDs) to strings for logging/potential direct use if needed
-        exclude_ids_str = [str(eid) for eid in exclude_ids if eid is not None] 
-
-        if exclude_ids_str:
-            # Get significantly more results because some might be filtered out
-            exclude_factor = min(5, 1 + (len(exclude_ids_str) / 20))
-            n_results_to_fetch = max(50, int(n_results * exclude_factor))
+        logger.info(f"Searching for similar images with query: '{query}', n_results: {n_results}, image_set: {image_set}, image_sets: {image_sets}")
         
-        # Always limit to a reasonable number to prevent performance issues
-        n_results_to_fetch = min(n_results_to_fetch, 100)
-        
-        # Log what is being queried
-        logger.warning(f"Querying ChromaDB for '{query}' with n_results={n_results_to_fetch}")
-        if exclude_ids_str:
-             logger.warning(f"Frontend requested exclusion of IDs: {exclude_ids}") # Log original numeric IDs
-        
-        results = image_collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results_to_fetch,
-            include=['metadatas', 'distances'] # IDs are included by default
+        # Use the new similarity search function
+        similar_images = search_similar_images(
+            query_text=query,
+            n_results=n_results,
+            image_set=image_set,
+            image_sets=image_sets,
+            exclude_image_ids=exclude_ids
         )
         
-        # Log raw results count
-        raw_ids_count = len(results['ids'][0]) if results and results.get('ids') and results['ids'][0] else 0
-        logger.info(f"ChromaDB returned {raw_ids_count} raw results (IDs are stringified ImageMetadata IDs).")
+        # Format results for API response
+        final_results = []
+        for img in similar_images:
+            try:
+                # Build the image URL
+                if img.get('processed_path'):
+                    # Use processed path if available (e.g., PNG converted from SVG)
+                    image_path = img['processed_path']
+                else:
+                    # Fall back to original path
+                    image_path = img['original_path']
+                
+                # Create relative path from media root
+                from pathlib import Path
+                image_path = Path(image_path)
+                if image_path.is_absolute():
+                    # Try to make it relative to media root
+                    try:
+                        relative_path = image_path.relative_to(settings.MEDIA_ROOT)
+                        image_url = request.build_absolute_uri(settings.MEDIA_URL + str(relative_path))
+                    except ValueError:
+                        # If path is not under media root, just use the filename
+                        image_url = request.build_absolute_uri(settings.MEDIA_URL + 'images/' + image_path.name)
+                else:
+                    # Already relative
+                    image_url = request.build_absolute_uri(settings.MEDIA_URL + str(image_path))
+                
+                final_results.append({
+                    "id": img['id'],
+                    "url": image_url,
+                    "description": img.get('description', ''),
+                    "similarity": img.get('similarity', 0.0),
+                    "filename": img.get('filename', ''),
+                    "set_name": img.get('set_name', ''),
+                    "file_format": img.get('file_format', '')
+                })
+                
+            except Exception as e:
+                logger.error(f"Error formatting image result {img.get('id')}: {e}")
+                continue
+        
+        logger.info(f"Returning {len(final_results)} similar images for query: '{query}'")
+        return Response({"results": final_results}, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.exception(f"Error querying ChromaDB: {e}")
-        return Response({"error": f"Failed to query the image database: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    # --- Process and Filter Results based on Numeric IDs ---
-    potential_ids = [] # List of potential numeric IDs from Chroma results
-    distances_map = {} # Map numeric ID to distance
-    if results and results.get('ids') and results['ids'][0]:
-        chroma_ids_str = results['ids'][0]
-        distances = results['distances'][0]
-        for i, chroma_id_str in enumerate(chroma_ids_str):
-            try:
-                numeric_id = int(chroma_id_str) # Convert Chroma string ID back to numeric
-                # Check against the numeric exclude list provided by frontend
-                if exclude_ids and numeric_id in exclude_ids:
-                    logger.warning(f"Skipping ChromaDB result ID {numeric_id} because it is in frontend exclude_ids.")
-                    continue
-                potential_ids.append(numeric_id)
-                distances_map[numeric_id] = distances[i]
-            except (ValueError, TypeError):
-                 logger.warning(f"Could not convert ChromaDB ID '{chroma_id_str}' to integer. Skipping.")
-                 continue
-            # Limit the number of potential IDs to fetch from DB to avoid huge queries
-            if len(potential_ids) >= n_results_to_fetch: # Use the larger fetch number here
-                break 
-    
-    logger.info(f"Identified {len(potential_ids)} potential candidate ImageMetadata IDs after initial exclusion.")
-
-    # --- Fetch ImageMetadata for filtered IDs ---
-    final_results = []
-    if potential_ids:
-        try:
-            # Fetch metadata objects in bulk, preserving order if possible (though order isn't guaranteed)
-            image_metadata_qs = ImageMetadata.objects.filter(id__in=potential_ids)
-            # Create a map for quick lookup
-            metadata_map = {meta.id: meta for meta in image_metadata_qs}
-            
-            # Reconstruct results in the order they came from ChromaDB (potential_ids)
-            for pid in potential_ids:
-                if pid in metadata_map:
-                    metadata = metadata_map[pid]
-                    final_results.append({
-                        "id": metadata.id, # Return the numeric ID
-                        "url": request.build_absolute_uri(metadata.image.url), # Full URL
-                        "description": metadata.description or '',
-                        "distance": distances_map.get(pid) # Get distance using numeric ID
-                    })
-                    # Stop once we have enough results
-                    if len(final_results) >= n_results:
-                        break
-                else:
-                    logger.warning(f"ImageMetadata record not found for ID {pid}, which was present in ChromaDB. Data inconsistency?")
-
-        except Exception as e:
-            logger.exception(f"Error fetching ImageMetadata for IDs {potential_ids}: {e}")
-            # Don't fail the whole request, return what we have (might be empty)
-            pass # Fall through to return final_results as is
-
-    if not final_results:
-        logger.info(f"No suitable images found after filtering for query: '{query}'")
-
-    logger.info(f"Finished processing. Returning {len(final_results)} results matching the query.")
-    return Response({"results": final_results}, status=status.HTTP_200_OK)
+        logger.exception(f"Error in find_similar_images: {e}")
+        return Response({"error": f"Failed to search for similar images: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # --- New Save Content Endpoint ---
 @api_view(['POST'])
@@ -850,60 +824,44 @@ def save_processed_content(request):
         logger.exception(f"Error saving processed content to database: {e}")
         return Response({"error": "Failed to save content to the database."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# --- Image List Endpoint --- (Revised to query Database and separate)
+# --- Image List Endpoint --- (Updated for new database schema)
 @api_view(['GET'])
 def list_images(request):
     """
-    API endpoint to list all images stored in the database, separated by source.
-    Returns two lists: 'generated_images' and 'uploaded_images',
-    each sorted by upload date (newest first).
+    API endpoint to list all images stored in the database, organized by sets.
+    Returns images grouped by their sets, with metadata.
     """
+    from api.upload_handlers import get_image_list_formatted
+    
     logger = logging.getLogger(__name__)
     
     try:
-        # Query generated images
-        generated_metadata = ImageMetadata.objects.filter(is_generated=True).order_by('-uploaded_at')
-        # Query uploaded images
-        uploaded_metadata = ImageMetadata.objects.filter(is_generated=False).order_by('-uploaded_at')
+        # Get formatted image list using the new system
+        result = get_image_list_formatted(request)
         
-        # Helper function to format data
-        def format_image_data(metadata_qs):
-            images = []
-            for item in metadata_qs:
-                try:
-                    image_path = item.image.name if item.image else 'N/A'
-                    image_url = request.build_absolute_uri(item.image.url) if item.image and hasattr(item.image, 'url') else None
-                    
-                    images.append({
-                        "id": item.id, # Use numeric DB ID as the primary ID
-                        "image_path": image_path, # Keep path for reference if needed
-                        "image_url": image_url,
-                        "description": item.description,
-                        "uploaded_at": item.uploaded_at.isoformat() if item.uploaded_at else None
-                    })
-                except Exception as item_err:
-                     logger.error(f"Error processing ImageMetadata item ID {item.id} (is_generated={item.is_generated}): {item_err}")
-                     continue # Skip this image if formatting fails
-            return images
-
-        # Format both lists
-        generated_images = format_image_data(generated_metadata)
-        uploaded_images = format_image_data(uploaded_metadata)
+        if result.get("error"):
+            logger.error(f"Error getting image list: {result['error']}")
+            return Response({
+                "images_by_set": {},
+                "total_images": 0,
+                "total_sets": 0,
+                "error": result["error"]
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        logger.info(f"Retrieved {len(generated_images)} generated and {len(uploaded_images)} uploaded images from the database.")
+        logger.info(f"Retrieved {result['total_images']} images from {result['total_sets']} sets")
         
-        # Return the separated lists
         return Response({
-            "generated_images": generated_images,
-            "uploaded_images": uploaded_images
+            "images_by_set": result["images_by_set"],
+            "total_images": result["total_images"],
+            "total_sets": result["total_sets"]
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
         logger.exception(f"Error retrieving images from database: {e}")
-        # Return empty lists in case of a major error
         return Response({
-            "generated_images": [], 
-            "uploaded_images": [], 
+            "images_by_set": {},
+            "total_images": 0,
+            "total_sets": 0,
             "error": "Failed to retrieve images from database"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -913,9 +871,11 @@ def list_images(request):
 def batch_upload_images(request):
     """
     API endpoint to upload multiple images at once, optionally with a shared description.
-    Stores the image files, generates embeddings, and stores the embeddings.
-    Expects form-data with 'images' (files) and optional 'description' (text).
+    Uses the new database schema with ImageSet, Image, and Embedding models.
+    Expects form-data with 'images' (files), optional 'description' (text), and optional 'set_name' (text).
     """
+    from api.upload_handlers import handle_batch_image_upload
+    
     logger = logging.getLogger(__name__)
 
     if 'images' not in request.FILES:
@@ -924,143 +884,31 @@ def batch_upload_images(request):
     # Get all files from the request
     image_files = request.FILES.getlist('images')
     description = request.POST.get('description', '')  # Get description, default to empty
+    set_name = request.POST.get('set_name', 'General')  # Get set name, default to 'General'
     
     if not image_files:
         return Response({"error": "Empty file list"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Initialize ChromaDB client and collection
-    try:
-        # Convert PosixPath to string to avoid type errors
-        chroma_db_path_str = str(CHROMA_DB_PATH)
-        chroma_client = chromadb.PersistentClient(path=chroma_db_path_str)
-        image_collection = chroma_client.get_or_create_collection(name=IMAGE_COLLECTION_NAME)
-        logger.info(f"Connected to ChromaDB collection '{IMAGE_COLLECTION_NAME}'")
-        chroma_available = True
-    except Exception as e:
-        logger.error(f"Error connecting to ChromaDB: {e}")
-        chroma_available = False
-        image_collection = None
-
-    # Store results for each file
-    results = []
-    allowed_extensions = ['.png', '.jpg', '.jpeg', '.webp']
-
-    for image_file in image_files:
-        result = {
-            "filename": image_file.name,
-            "success": False,
-            "error": None,
-            "image_path": None
-        }
-
-        # Basic file type check
-        file_ext = os.path.splitext(image_file.name)[1].lower()
-        if file_ext not in allowed_extensions:
-            result["error"] = f"Invalid file type '{file_ext}'. Allowed types: {allowed_extensions}"
-            results.append(result)
-            continue
-
-        # Generate a unique filename
-        safe_filename = image_file.name.replace(" ", "_")
-        image_save_path = IMAGE_UPLOAD_DIR / safe_filename
-        
-        # Check if file already exists
-        if image_save_path.exists():
-            # Generate unique name with UUID
-            name, ext = os.path.splitext(safe_filename)
-            safe_filename = f"{name}_{uuid.uuid4().hex[:8]}{ext}"
-            image_save_path = IMAGE_UPLOAD_DIR / safe_filename
-        
-        relative_image_path = os.path.relpath(image_save_path, settings.MEDIA_ROOT)
-        result["image_path"] = relative_image_path
-
-        # --- Store Image File ---
-        try:
-            with open(image_save_path, 'wb+') as destination:
-                for chunk in image_file.chunks():
-                    destination.write(chunk)
-            logger.info(f"Image saved to: {image_save_path}")
-            
-            # --- Create ImageMetadata Record FIRST ---
-            image_metadata = None
-            try:
-                image_metadata = ImageMetadata.objects.create(
-                    image=relative_image_path,
-                    description=description,
-                    is_generated=False
-                )
-                logger.info(f"Created ImageMetadata record for uploaded image: {image_metadata.id}")
-            except Exception as e:
-                logger.error(f"Error creating ImageMetadata record for uploaded image: {e}")
-                result["error"] = "Failed to create database record for image."
-                # Skip ChromaDB if metadata creation failed
-                results.append(result) # Append the failed result here
-                continue # Move to the next file
-
-            # --- Generate Embedding (Using Sentence Transformer) ---
-            embedding = None
-            if embedding_model:  # Check if model loaded successfully
-                try:
-                    # Generate embedding
-                    image_path_str = str(image_save_path)  # Convert to string
-                    embedding_list = embedding_model.encode([image_path_str])
-                    
-                    if embedding_list is not None and len(embedding_list) > 0:
-                        embedding = embedding_list[0].tolist()
-                        logger.info(f"CLIP Embedding generated for '{safe_filename}'")
-                    else:
-                        logger.warning(f"Sentence Transformer did not return embedding for '{safe_filename}'")
-                except Exception as e:
-                    logger.error(f"Error generating embedding for '{safe_filename}': {e}")
-                    # Continue processing even if embedding fails
-            
-            # --- Store Embedding in ChromaDB (uses metadata ID now) ---
-            embedding_stored = False
-            if chroma_available and image_collection and embedding and image_metadata:
-                try:
-                    # Use the numeric ImageMetadata ID as the ChromaDB ID (as string)
-                    chroma_id = str(image_metadata.id)
-                    
-                    # Check if ID already exists (should be unique based on metadata PK)
-                    existing = image_collection.get(ids=[chroma_id])
-                    if existing['ids']:
-                        image_collection.update(
-                            ids=[chroma_id],
-                            embeddings=[embedding],
-                            # Store relative path in metadata still for potential use
-                            metadatas=[{"image_path": relative_image_path, "description": description}]
-                        )
-                    else:
-                        image_collection.add(
-                            embeddings=[embedding],
-                            # Store relative path in metadata still for potential use
-                            metadatas=[{"image_path": relative_image_path, "description": description}],
-                            ids=[chroma_id]
-                        )
-                    embedding_stored = True
-                    logger.info(f"Embedding stored in ChromaDB for ID '{chroma_id}'")
-                except Exception as e:
-                    logger.error(f"Error storing embedding in ChromaDB for '{chroma_id}': {e}")
-                    # Continue with response, embedding storage is not critical for image upload success
-            
-            # Mark as successful
-            result["success"] = True
-            
-        except Exception as e:
-            logger.error(f"Error processing image '{safe_filename}': {e}")
-            result["error"] = str(e)
-            # Continue with other images even if one fails
-        
-        results.append(result)
-
-    # Calculate overall success metrics (moved outside the loop)
-    successful_uploads = sum(1 for r in results if r["success"])
+    # Handle batch upload using the new system
+    result = handle_batch_image_upload(image_files, description, set_name)
     
-    return Response({
-        "message": f"Processed {len(results)} images: {successful_uploads} succeeded, {len(results) - successful_uploads} failed",
-        "results": results,
-        "description": description
-    }, status=status.HTTP_200_OK if successful_uploads > 0 else status.HTTP_500_INTERNAL_SERVER_ERROR)
+    # Build image URLs for successful uploads
+    for upload_result in result.get("results", []):
+        if upload_result.get("success") and upload_result.get("image_path"):
+            try:
+                upload_result["image_url"] = request.build_absolute_uri(
+                    settings.MEDIA_URL + upload_result["image_path"]
+                )
+            except Exception as e:
+                logger.error(f"Error building image URL for {upload_result.get('filename')}: {e}")
+    
+    # Determine HTTP status based on success rate
+    if result["successful_uploads"] > 0:
+        status_code = status.HTTP_200_OK
+    else:
+        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    
+    return Response(result, status=status_code)
 
 # --- List Saved Content Endpoint ---
 @api_view(['GET'])
@@ -1238,7 +1086,7 @@ def generate_image_view(request):
 
     try:
         # --- Call Gradio Client for Image Generation ---
-        # Parameters based on the example: prompts/temp/gradio.py
+        # Parameters based on the example: config/temp/gradio.py
         # client.predict("Mulberry", "A red bus with a yellow stripe", None, "No", 50, 3, 0.75, 7.5, None, api_name="/process_symbol_generation")
         prediction_result = gradio_client.predict(
             "Mulberry",  # First argument (style/category)
@@ -1290,55 +1138,45 @@ def generate_image_view(request):
                     f_save.write(image_bytes)
                 logger.info(f"Generated image saved to: {image_save_path}")
 
-                # --- Create ImageMetadata record ---
-                image_metadata = ImageMetadata.objects.create(
-                    image=relative_image_path,
-                    description=prompt,  # Use the generation prompt as description
-                    is_generated=True    # Mark as generated
-                )
-                logger.info(f"Created ImageMetadata record for generated image: {image_metadata.id}")
-
-                # --- Generate and Store Embedding in ChromaDB ---
-                embedding_stored_chroma = False
-                current_embedding = None
-                if embedding_model:
-                    try:
-                        image_path_str = str(image_save_path)
-                        embedding_list = embedding_model.encode([image_path_str])
-                        if embedding_list is not None and len(embedding_list) > 0:
-                            current_embedding = embedding_list[0].tolist()
-                            logger.info(f"CLIP Embedding generated for '{image_name}'")
-                        else:
-                            logger.warning(f"Sentence Transformer did not return embedding for '{image_name}'")
-                    except Exception as e_embed:
-                        logger.error(f"Error generating embedding for '{image_name}': {e_embed}")
-
-                if chroma_client and image_collection and current_embedding and image_metadata:
-                    try:
-                        chroma_id = str(image_metadata.id)
-                        existing = image_collection.get(ids=[chroma_id])
-                        if existing['ids']:
-                            image_collection.update(
-                                ids=[chroma_id],
-                                embeddings=[current_embedding],
-                                metadatas=[{"image_path": relative_image_path, "description": prompt}]
-                            )
-                        else:
-                            image_collection.add(
-                                embeddings=[current_embedding],
-                                metadatas=[{"image_path": relative_image_path, "description": prompt}],
-                                ids=[chroma_id]
-                            )
-                        embedding_stored_chroma = True
-                        logger.info(f"Embedding stored in ChromaDB for generated image ID '{chroma_id}'")
-                    except Exception as e_chroma:
-                        logger.error(f"Error storing embedding for '{chroma_id}': {e_chroma}")
+                # Save the generated image using the new upload handler
+                from api.upload_handlers import handle_image_upload
+                from django.core.files.uploadedfile import SimpleUploadedFile
                 
-                generated_images_details.append({
-                    "id": image_metadata.id,
-                    "url": request.build_absolute_uri(settings.MEDIA_URL + relative_image_path),
-                    "embedding_stored": embedding_stored_chroma
-                })
+                # Create a Django file object from the saved image
+                with open(image_save_path, 'rb') as f:
+                    image_content = f.read()
+                
+                django_file = SimpleUploadedFile(
+                    name=image_name,
+                    content=image_content,
+                    content_type='image/png'
+                )
+                
+                # Use the upload handler to process the generated image
+                upload_result = handle_image_upload(
+                    image_file=django_file,
+                    description=prompt,
+                    set_name='Generated',
+                    is_generated=True
+                )
+                
+                if upload_result.get("success"):
+                    generated_images_details.append({
+                        "id": upload_result["image_id"],
+                        "url": request.build_absolute_uri(settings.MEDIA_URL + upload_result["image_path"]),
+                        "embeddings_created": upload_result["embeddings_created"],
+                        "filename": upload_result["filename"],
+                        "set_name": upload_result["set_name"]
+                    })
+                    logger.info(f"Generated image processed successfully: {upload_result['filename']}")
+                else:
+                    logger.error(f"Failed to process generated image: {upload_result.get('error')}")
+                
+                # Clean up the temporary file
+                try:
+                    os.remove(image_save_path)
+                except Exception as e_cleanup:
+                    logger.warning(f"Failed to clean up temporary file {image_save_path}: {e_cleanup}")
 
             except FileNotFoundError:
                 logger.error(f"Temporary image file from Gradio not found: {temp_image_path}")
@@ -1350,16 +1188,155 @@ def generate_image_view(request):
         if not generated_images_details:
              return Response({"error": "Image generation completed, but no valid images were processed or saved."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # --- TEMPORARY WORKAROUND: Return only the first image in the old format ---
-        first_image = generated_images_details[0]
-        return Response({
-            "message": f"Images generated (showing 1 of {len(generated_images_details)}). Frontend update needed for multiple images.",
-            "new_image_id": first_image["id"],
-            "new_image_url": first_image["url"],
-            "embedding_stored": first_image["embedding_stored"],
-            "all_generated_images": generated_images_details # Optionally include all for future frontend use or debugging
-        }, status=status.HTTP_201_CREATED)
+        # --- Return the results in the updated format ---
+        if len(generated_images_details) == 1:
+            # Single image response (backward compatibility)
+            first_image = generated_images_details[0]
+            return Response({
+                "message": "Image generated successfully.",
+                "new_image_id": first_image["id"],
+                "new_image_url": first_image["url"],
+                "embeddings_created": first_image["embeddings_created"],
+                "filename": first_image["filename"],
+                "set_name": first_image["set_name"],
+                "all_generated_images": generated_images_details
+            }, status=status.HTTP_201_CREATED)
+        else:
+            # Multiple images response
+            return Response({
+                "message": f"Generated {len(generated_images_details)} images successfully.",
+                "all_generated_images": generated_images_details,
+                "total_generated": len(generated_images_details)
+            }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
         logger.exception(f"Error during Gradio image generation for prompt '{prompt}': {e}")
         return Response({"error": f"Image generation failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# --- New Image Sets Endpoints ---
+@api_view(['GET'])
+def get_image_sets(request):
+    """
+    API endpoint to get all available image sets.
+    Returns a list of image sets with metadata.
+    """
+    from api.similarity_search import get_all_image_sets
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        image_sets = get_all_image_sets()
+        logger.info(f"Retrieved {len(image_sets)} image sets")
+        
+        return Response({
+            "image_sets": image_sets,
+            "total_sets": len(image_sets)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.exception(f"Error retrieving image sets: {e}")
+        return Response({
+            "error": "Failed to retrieve image sets"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def get_images_in_set(request, set_name):
+    """
+    API endpoint to get images in a specific set.
+    Returns a list of images in the specified set.
+    """
+    from api.similarity_search import get_images_in_set
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        limit = request.GET.get('limit', 50)
+        try:
+            limit = int(limit)
+        except (ValueError, TypeError):
+            limit = 50
+        
+        images = get_images_in_set(set_name, limit)
+        logger.info(f"Retrieved {len(images)} images from set '{set_name}'")
+        
+        # Add image URLs
+        for image in images:
+            try:
+                if image.get('processed_path'):
+                    image_path = image['processed_path']
+                else:
+                    image_path = image['original_path']
+                
+                # Create relative path from media root
+                from pathlib import Path
+                image_path = Path(image_path)
+                if image_path.is_absolute():
+                    try:
+                        relative_path = image_path.relative_to(settings.MEDIA_ROOT)
+                        image_url = request.build_absolute_uri(settings.MEDIA_URL + str(relative_path))
+                    except ValueError:
+                        image_url = request.build_absolute_uri(settings.MEDIA_URL + 'images/' + image_path.name)
+                else:
+                    image_url = request.build_absolute_uri(settings.MEDIA_URL + str(image_path))
+                
+                image['url'] = image_url
+                
+            except Exception as e:
+                logger.error(f"Error building URL for image {image.get('id')}: {e}")
+                image['url'] = None
+        
+        return Response({
+            "set_name": set_name,
+            "images": images,
+            "total_images": len(images),
+            "limit": limit
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.exception(f"Error retrieving images in set '{set_name}': {e}")
+        return Response({
+            "error": f"Failed to retrieve images in set '{set_name}'"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# --- Health Check Endpoint ---
+@api_view(['GET'])
+def health_check(request):
+    """
+    API endpoint for system health monitoring.
+    Returns comprehensive health status of the embedding system.
+    """
+    from api.monitoring import EmbeddingHealthCheck
+    
+    try:
+        health_status = EmbeddingHealthCheck.full_health_check()
+        
+        # Determine overall status
+        model_healthy = health_status['model']['status'] == 'healthy'
+        db_healthy = health_status['database']['status'] == 'healthy'
+        storage_healthy = health_status['storage']['status'] in ['healthy', 'degraded']
+        
+        overall_status = 'healthy' if all([model_healthy, db_healthy, storage_healthy]) else 'unhealthy'
+        
+        response_data = {
+            'status': overall_status,
+            'timestamp': health_status['timestamp'],
+            'components': {
+                'embedding_model': health_status['model'],
+                'database': health_status['database'],
+                'storage': health_status['storage']
+            },
+            'metrics': health_status['metrics']
+        }
+        
+        status_code = status.HTTP_200_OK if overall_status == 'healthy' else status.HTTP_503_SERVICE_UNAVAILABLE
+        return Response(response_data, status=status_code)
+        
+    except Exception as e:
+        return Response({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': time.time()
+        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
