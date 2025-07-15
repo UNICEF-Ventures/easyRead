@@ -15,3 +15,6 @@ find_similar_image.py
 db.sqlite3
 images/*
 CLAUDE.md
+generate_images_csv.py
+globalsymbols_images_test.csv
+globalsymbols_images.csv
