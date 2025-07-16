@@ -69,7 +69,6 @@ const SavedContentDetailPage = () => {
   // handleRefreshAllImages - from hook
   // handleCloseNotification - from hook
 
-  console.log('SavedContentDetailPage render:', { loading, contentId: id, imageState });
 
   // Show loading spinner while content is being fetched
   if (loading) {

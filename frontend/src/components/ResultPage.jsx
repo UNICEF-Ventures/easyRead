@@ -46,7 +46,8 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     notification,
     handleImageSelectionChange,
     handleGenerateImage,
-    handleCloseNotification
+    handleCloseNotification,
+    getCurrentImageSelections
   } = useEasyReadImageManager(memoizedEasyReadContent, null, selectedSets, preventDuplicateImages); // Pass memoized content, selected sets, and duplicate prevention setting
 
   // State for saving feedback (remains specific to this page)
@@ -73,12 +74,23 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
       return;
     }
     
-    // Construct the JSON to save, including the selected image path from the hook's state
-    const dataToSave = easyReadContent.map((item, index) => ({
-      ...item,
-      selected_image_path: imageState[index]?.selectedPath || null,
-      alternative_images: imageState[index]?.images?.map(img => img.url) || []
-    }));
+    
+    // Get the most current image selections (handles async state updates)
+    const currentSelections = getCurrentImageSelections();
+    
+    
+    // Construct the JSON to save, including the selected image path from the current selections
+    const dataToSave = easyReadContent.map((item, index) => {
+      const finalSelectedPath = currentSelections[index] || imageState[index]?.selectedPath || null;
+      
+      
+      return {
+        ...item,
+        selected_image_path: finalSelectedPath,
+        alternative_images: imageState[index]?.images?.map(img => img.url) || []
+      };
+    });
+
 
     setIsSaving(true);
     setSaveError(null);
