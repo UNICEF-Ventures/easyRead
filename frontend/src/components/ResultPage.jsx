@@ -11,7 +11,8 @@ import {
   CircularProgress,
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
-import { saveContent } from '../apiClient'; // Removed unused findSimilarImages, generateNewImage
+import DownloadIcon from '@mui/icons-material/Download';
+import { saveContent, exportCurrentContentDocx } from '../apiClient'; // Removed unused findSimilarImages, generateNewImage
 import EasyReadContentList from './EasyReadContentList';
 import useEasyReadImageManager from '../hooks/useEasyReadImageManager'; // Import the custom hook
 import { config } from '../config.js';
@@ -54,6 +55,10 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  
+  // State for export functionality
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   // Redirect if no content (remains specific)
   useEffect(() => {
@@ -120,6 +125,56 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     setSaveError(null);
   };
 
+  // Export function
+  const handleExport = async () => {
+    if (!markdownContent || easyReadContent.length === 0) {
+      setExportError("Content missing, cannot export.");
+      return;
+    }
+
+    setIsExporting(true);
+    setExportError(null);
+
+    try {
+      // Get current image selections
+      const currentSelections = getCurrentImageSelections();
+      
+      // Prepare content with selected images
+      const contentToExport = easyReadContent.map((item, index) => {
+        const finalSelectedPath = currentSelections[index] || imageState[index]?.selectedPath || null;
+        return {
+          ...item,
+          selected_image_path: finalSelectedPath
+        };
+      });
+
+      const response = await exportCurrentContentDocx(title, contentToExport, markdownContent);
+      
+      // Create download link
+      const blob = new Blob([response.data], { 
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Generate filename
+      const safeTitle = (title || 'easyread_document').replace(/[^a-zA-Z0-9\-_]/g, '_').toLowerCase();
+      link.download = `${safeTitle}.docx`;
+      
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      
+    } catch (err) {
+      console.error("Error exporting content:", err);
+      setExportError(err.response?.data?.error || 'Failed to export content.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // Generate function is now provided by the hook (handleGenerateImage)
   // Image selection change is now provided by the hook (handleImageSelectionChange)
 
@@ -182,21 +237,41 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
                 {title || 'Untitled Content'}
               </Typography>
               
-              <Button
-                startIcon={isSaving ? <CircularProgress size={20}/> : <SaveIcon />}
-                variant="contained"
-                onClick={handleSave} // Page-specific save
-                disabled={isSaving}
-                sx={{
-                  backgroundColor: 'var(--color-accent)',
-                  borderRadius: 'var(--border-radius-md)',
-                  '&:hover': {
-                    backgroundColor: '#0b8043',
-                  }
-                }}
-              >
-                {isSaving ? 'Saving...' : 'Save Content'}
-              </Button>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Button
+                  startIcon={isExporting ? <CircularProgress size={20}/> : <DownloadIcon />}
+                  variant="outlined"
+                  onClick={handleExport}
+                  disabled={isExporting || isSaving}
+                  sx={{
+                    borderColor: 'var(--color-primary)',
+                    color: 'var(--color-primary)',
+                    borderRadius: 'var(--border-radius-md)',
+                    '&:hover': {
+                      borderColor: '#357ae8',
+                      backgroundColor: 'rgba(74, 144, 226, 0.04)',
+                    }
+                  }}
+                >
+                  {isExporting ? 'Exporting...' : 'Export DOCX'}
+                </Button>
+                
+                <Button
+                  startIcon={isSaving ? <CircularProgress size={20}/> : <SaveIcon />}
+                  variant="contained"
+                  onClick={handleSave} // Page-specific save
+                  disabled={isSaving || isExporting}
+                  sx={{
+                    backgroundColor: 'var(--color-accent)',
+                    borderRadius: 'var(--border-radius-md)',
+                    '&:hover': {
+                      backgroundColor: '#0b8043',
+                    }
+                  }}
+                >
+                  {isSaving ? 'Saving...' : 'Save Content'}
+                </Button>
+              </Box>
           </Box>
           
 
@@ -219,6 +294,11 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
       <Snackbar open={saveError !== null} autoHideDuration={6000} onClose={handleCloseErrorSnackbar}>
         <Alert onClose={handleCloseErrorSnackbar} severity="error" sx={{ width: '100%' }}>
           {saveError}
+        </Alert>
+      </Snackbar>
+      <Snackbar open={exportError !== null} autoHideDuration={6000} onClose={() => setExportError(null)}>
+        <Alert onClose={() => setExportError(null)} severity="error" sx={{ width: '100%' }}>
+          {exportError}
         </Alert>
       </Snackbar>
 

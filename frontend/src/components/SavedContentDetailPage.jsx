@@ -9,12 +9,15 @@ import {
   Alert,
   IconButton,
   Snackbar,
-  Collapse
+  Collapse,
+  Button
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import SaveIcon from '@mui/icons-material/Save';
+import DownloadIcon from '@mui/icons-material/Download';
 // Removed unused import: format from 'date-fns'
-import apiClient from '../apiClient';
+import apiClient, { bulkUpdateSavedContentImages, exportSavedContentDocx } from '../apiClient';
 import EasyReadContentList from './EasyReadContentList';
 import useEasyReadImageManager from '../hooks/useEasyReadImageManager';
 import { config } from '../config.js';
@@ -31,6 +34,15 @@ const SavedContentDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [originalContentExpanded, setOriginalContentExpanded] = useState(false);
+  
+  // Save functionality state
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  
+  // Export functionality state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   // Fetch the saved content details (remains specific to this page)
   const fetchSavedContentDetail = useCallback(async () => {
@@ -49,13 +61,91 @@ const SavedContentDetailPage = () => {
     }
   }, [id]);
 
+  // Export function
+  const handleExport = async () => {
+    if (!content || !id) {
+      setExportError('Unable to export: content not loaded');
+      return;
+    }
+
+    setIsExporting(true);
+    setExportError(null);
+
+    try {
+      const response = await exportSavedContentDocx(id);
+      
+      // Create download link
+      const blob = new Blob([response.data], { 
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Generate filename
+      const safeTitle = (content.title || `saved_content_${id}`).replace(/[^a-zA-Z0-9\-_]/g, '_').toLowerCase();
+      link.download = `${safeTitle}.docx`;
+      
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      
+    } catch (err) {
+      console.error('Error exporting saved content:', err);
+      setExportError(err.response?.data?.error || 'Failed to export content');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Save function to update the saved content
+  const handleSave = async () => {
+    if (!content || !getCurrentImageSelections) {
+      setSaveError('Unable to save: content not loaded');
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+
+    try {
+      // Get current image selections
+      const currentSelections = getCurrentImageSelections();
+      
+      // Convert to the format expected by the API (string keys)
+      const imageSelections = {};
+      Object.keys(currentSelections).forEach(index => {
+        if (currentSelections[index] !== null && currentSelections[index] !== undefined) {
+          imageSelections[index.toString()] = currentSelections[index];
+        }
+      });
+
+      // Call the bulk update API
+      await bulkUpdateSavedContentImages(id, imageSelections);
+      
+      setSaveSuccess(true);
+      
+      // Optionally refresh the content to ensure consistency
+      // await fetchSavedContentDetail();
+      
+    } catch (err) {
+      console.error('Error saving updated content:', err);
+      setSaveError(err.response?.data?.error || 'Failed to save content updates');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Use the custom hook for image management
   const {
     imageState,
     notification,
     handleImageSelectionChange,
     handleGenerateImage,
-    handleCloseNotification
+    handleCloseNotification,
+    getCurrentImageSelections
   } = useEasyReadImageManager(content?.easy_read_content || [], id); // Pass content and id to the hook
 
   // Call fetch function after hook is initialized
@@ -93,6 +183,42 @@ const SavedContentDetailPage = () => {
           <Typography variant="h5" component="h1" sx={{ flexGrow: 1 }}>
             {content?.title || `Saved Conversion #${id}`}
           </Typography>
+          
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              startIcon={isExporting ? <CircularProgress size={20}/> : <DownloadIcon />}
+              variant="outlined"
+              onClick={handleExport}
+              disabled={isExporting || isSaving || loading}
+              sx={{
+                borderColor: 'var(--color-primary)',
+                color: 'var(--color-primary)',
+                borderRadius: 'var(--border-radius-md)',
+                '&:hover': {
+                  borderColor: '#357ae8',
+                  backgroundColor: 'rgba(74, 144, 226, 0.04)',
+                }
+              }}
+            >
+              {isExporting ? 'Exporting...' : 'Export DOCX'}
+            </Button>
+            
+            <Button
+              startIcon={isSaving ? <CircularProgress size={20}/> : <SaveIcon />}
+              variant="contained"
+              onClick={handleSave}
+              disabled={isSaving || isExporting || loading}
+              sx={{
+                backgroundColor: 'var(--color-accent)',
+                borderRadius: 'var(--border-radius-md)',
+                '&:hover': {
+                  backgroundColor: '#0b8043',
+                }
+              }}
+            >
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </Box>
         </Box>
 
 
@@ -150,6 +276,40 @@ const SavedContentDetailPage = () => {
         >
           <Alert onClose={handleCloseNotification} severity={notification.severity} sx={{ width: '100%' }}>
             {notification.message}
+          </Alert>
+        </Snackbar>
+
+        {/* Save success/error snackbars */}
+        <Snackbar 
+          open={saveSuccess} 
+          autoHideDuration={6000} 
+          onClose={() => setSaveSuccess(false)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert onClose={() => setSaveSuccess(false)} severity="success" sx={{ width: '100%' }}>
+            Content saved successfully!
+          </Alert>
+        </Snackbar>
+        
+        <Snackbar 
+          open={saveError !== null} 
+          autoHideDuration={6000} 
+          onClose={() => setSaveError(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert onClose={() => setSaveError(null)} severity="error" sx={{ width: '100%' }}>
+            {saveError}
+          </Alert>
+        </Snackbar>
+        
+        <Snackbar 
+          open={exportError !== null} 
+          autoHideDuration={6000} 
+          onClose={() => setExportError(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert onClose={() => setExportError(null)} severity="error" sx={{ width: '100%' }}>
+            {exportError}
           </Alert>
         </Snackbar>
       </Paper>

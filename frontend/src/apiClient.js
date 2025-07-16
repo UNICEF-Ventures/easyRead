@@ -176,4 +176,29 @@ export const deleteSavedContent = (contentId) => {
   return apiClient.delete(`/saved-content/${contentId}/`);
 };
 
+// Function to bulk update all image selections for saved content
+export const bulkUpdateSavedContentImages = (contentId, imageSelections) => {
+  return apiClient.put(`/bulk-update-saved-content-images/${contentId}/`, {
+    image_selections: imageSelections
+  });
+};
+
+// Function to export saved content as DOCX
+export const exportSavedContentDocx = (contentId) => {
+  return apiClient.get(`/export/docx/${contentId}/`, {
+    responseType: 'blob' // Important for file downloads
+  });
+};
+
+// Function to export current content as DOCX
+export const exportCurrentContentDocx = (title, easyReadContent, originalMarkdown) => {
+  return apiClient.post('/export/docx/', {
+    title: title,
+    easy_read_content: easyReadContent,
+    original_markdown: originalMarkdown
+  }, {
+    responseType: 'blob' // Important for file downloads
+  });
+};
+
 export default apiClient; 
