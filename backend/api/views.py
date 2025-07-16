@@ -31,6 +31,8 @@ from openai import OpenAI
 from .config import get_retry_config, load_prompt_template
 from django.core.files.base import ContentFile
 from gradio_client import Client, handle_file # Added Gradio client import
+from django.http import HttpResponse
+from .docx_export import create_docx_export, get_safe_filename
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -1351,3 +1353,150 @@ def health_check(request):
             'error': str(e),
             'timestamp': time.time()
         }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+@api_view(['PUT'])
+def bulk_update_saved_content_images(request, content_id):
+    """
+    API endpoint to bulk update all image selections for saved content.
+    Expects JSON: {
+        "image_selections": {
+            "0": "image_url_for_sentence_0",
+            "1": "image_url_for_sentence_1",
+            ...
+        }
+    }
+    Returns JSON: {"message": "Content updated successfully."}
+    """
+    try:
+        # Validate input
+        if not isinstance(request.data, dict):
+            return Response({"error": "Invalid request format. Expected JSON object."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        image_selections = request.data.get('image_selections', {})
+        if not isinstance(image_selections, dict):
+            return Response({"error": "Invalid 'image_selections' format. Expected object."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get the content object
+        content = get_object_or_404(ProcessedContent, pk=content_id)
+        
+        # Parse the current JSON data
+        try:
+            if isinstance(content.easy_read_json, list):
+                easy_read_data = content.easy_read_json
+            elif isinstance(content.easy_read_json, str):
+                easy_read_data = json.loads(content.easy_read_json)
+            else:
+                return Response({"error": "Invalid content data format."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except (json.JSONDecodeError, AttributeError) as e:
+            return Response({"error": f"Failed to parse content data: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Update the image selections
+        for index_str, image_url in image_selections.items():
+            try:
+                index = int(index_str)
+                if 0 <= index < len(easy_read_data):
+                    easy_read_data[index]['selected_image_path'] = image_url
+            except (ValueError, IndexError):
+                continue  # Skip invalid indices
+        
+        # Save the updated data
+        content.easy_read_json = easy_read_data
+        content.save()
+        
+        return Response({"message": "Content updated successfully."}, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def export_content_docx(request, content_id=None):
+    """
+    Export EasyRead content as a DOCX document.
+    Can be used for both saved content (with content_id) and current results (via POST data).
+    """
+    try:
+        if content_id:
+            # Export saved content
+            try:
+                content = ProcessedContent.objects.get(id=content_id)
+                title = content.title
+                easy_read_content = content.easy_read_json
+                original_markdown = content.original_markdown
+            except ProcessedContent.DoesNotExist:
+                return HttpResponse("Content not found", status=404)
+        else:
+            # Export from request data (for current results)
+            title = request.GET.get('title', 'EasyRead Document')
+            easy_read_data = request.GET.get('content')
+            original_markdown = request.GET.get('original_markdown')
+            
+            if not easy_read_data:
+                return HttpResponse("No content provided for export", status=400)
+            
+            try:
+                easy_read_content = json.loads(easy_read_data)
+            except json.JSONDecodeError:
+                return HttpResponse("Invalid content format", status=400)
+        
+        # Create the DOCX document
+        docx_buffer = create_docx_export(title, easy_read_content, original_markdown)
+        
+        # Generate safe filename
+        safe_filename = get_safe_filename(title)
+        filename = f"{safe_filename}.docx"
+        
+        # Create HTTP response with DOCX content
+        response = HttpResponse(
+            docx_buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Content-Length'] = len(docx_buffer.getvalue())
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error exporting DOCX: {str(e)}")
+        return HttpResponse(f"Export failed: {str(e)}", status=500)
+
+
+@api_view(['POST'])
+def export_current_content_docx(request):
+    """
+    Export current EasyRead content as DOCX (for ResultPage).
+    Expects JSON: {
+        "title": "Document Title",
+        "easy_read_content": [...],
+        "original_markdown": "..."
+    }
+    """
+    try:
+        title = request.data.get('title', 'EasyRead Document')
+        easy_read_content = request.data.get('easy_read_content', [])
+        original_markdown = request.data.get('original_markdown', '')
+        
+        if not easy_read_content:
+            return HttpResponse("No content provided for export", status=400)
+        
+        # Create the DOCX document
+        docx_buffer = create_docx_export(title, easy_read_content, original_markdown)
+        
+        # Generate safe filename
+        safe_filename = get_safe_filename(title)
+        filename = f"{safe_filename}.docx"
+        
+        # Create HTTP response with DOCX content
+        response = HttpResponse(
+            docx_buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Content-Length'] = len(docx_buffer.getvalue())
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error exporting current content DOCX: {str(e)}")
+        return HttpResponse(f"Export failed: {str(e)}", status=500)

@@ -27,10 +27,15 @@ urlpatterns = [
     path('list-saved-content/', views.list_saved_content, name='list_saved_content'),
     path('saved-content/<int:content_id>/', views.get_saved_content_detail, name='get_saved_content_detail'),
     path('update-saved-content-image/<int:content_id>/', views.update_saved_content_image, name='update_saved_content_image'),
+    path('bulk-update-saved-content-images/<int:content_id>/', views.bulk_update_saved_content_images, name='bulk_update_saved_content_images'),
     
     # New endpoints for the refactored system
     path('image-sets/', views.get_image_sets, name='get_image_sets'),
     path('image-sets/<str:set_name>/images/', views.get_images_in_set, name='get_images_in_set'),
+    
+    # Export endpoints
+    path('export/docx/', views.export_current_content_docx, name='export_current_content_docx'),
+    path('export/docx/<int:content_id>/', views.export_content_docx, name='export_saved_content_docx'),
     
     # Health monitoring endpoint
     path('health/', views.health_check, name='health_check'),

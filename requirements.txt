@@ -20,3 +20,4 @@ open-clip-torch
 numpy
 svglib
 python-magic
+python-docx
