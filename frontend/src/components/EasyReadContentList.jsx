@@ -149,10 +149,18 @@ function EasyReadContentList({
                             if (!selected) {
                               return <Box sx={{ height: 60, width: '100%', bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }} />;
                             }
+                            
+                            // If selectedPath exists but not in current options, show it anyway
+                            // This handles the case where images are still loading but we have a saved selection
+                            const displayPath = selected || selectedPath;
+                            if (!displayPath) {
+                              return <Box sx={{ height: 60, width: '100%', bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }} />;
+                            }
+                            
                             return (
                               <Box 
                                 component="img"
-                                src={normalizeImageUrl(selected)}
+                                src={normalizeImageUrl(displayPath)}
                                 alt="Selected"
                                 sx={{ 
                                   height: 60, 
@@ -162,7 +170,7 @@ function EasyReadContentList({
                                 }}
                                 onError={(e) => { 
                                   e.target.src = 'https://via.placeholder.com/60x60?text=Error';
-                                  console.error('Image load error:', selected);
+                                  console.error('Image load error:', displayPath);
                                 }}
                               />
                             );
@@ -176,6 +184,25 @@ function EasyReadContentList({
                           {!selectedPath && images.length > 0 && (
                             <MenuItem value="" disabled sx={{ display: 'none' }}>
                               Select Image
+                            </MenuItem>
+                          )}
+                          {/* If selectedPath exists but is not in images array, add it as an option */}
+                          {selectedPath && !images.some(img => img.url === selectedPath) && (
+                            <MenuItem key={`${index}-selected-${selectedPath}`} value={selectedPath} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
+                              <Box 
+                                component="img"
+                                src={normalizeImageUrl(selectedPath)}
+                                alt="Current Selection"
+                                sx={{ 
+                                  width: 100, 
+                                  height: 100, 
+                                  objectFit: 'contain'
+                                }}
+                                onError={(e) => { 
+                                  e.target.src = 'https://via.placeholder.com/100x100?text=Error';
+                                  console.error('Image load error:', selectedPath);
+                                }}
+                              />
                             </MenuItem>
                           )}
                           {images.map((imgResult, imgIndex) => (

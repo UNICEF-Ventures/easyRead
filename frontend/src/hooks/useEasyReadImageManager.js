@@ -61,6 +61,8 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
   const usedImagesRef = useRef(new Set());
   // Track whether sequential attribution has been applied
   const sequentialAttributionAppliedRef = useRef(false);
+  // Track current image selections for immediate access
+  const currentImageSelectionsRef = useRef({});
 
   // Initialize or update image state when content changes
   useEffect(() => {
@@ -94,7 +96,13 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     const needsFetching = [];
 
     initialContent.forEach((item, index) => {
-      if (!imageState[index]) {
+      // For saved content with existing selections, always update the state
+      const hasSavedSelection = item.selected_image_path || (item.alternative_images && item.alternative_images.length > 0);
+      const currentState = imageState[index];
+      
+      
+      // Update if: no current state, or if we have saved data that differs from current state
+      if (!currentState || (hasSavedSelection && currentState.selectedPath !== item.selected_image_path)) {
         const shouldFetch = !item.selected_image_path && item.image_retrieval && item.image_retrieval !== 'error';
         
         initialImageState[index] = {
@@ -115,6 +123,14 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     
     if (Object.keys(initialImageState).length > 0) {
        setImageState(prev => ({ ...prev, ...initialImageState }));
+       
+       // Initialize currentImageSelectionsRef with initial selections
+       Object.keys(initialImageState).forEach(index => {
+         const indexNum = parseInt(index);
+         if (initialImageState[index].selectedPath !== undefined) {
+           currentImageSelectionsRef.current[indexNum] = initialImageState[index].selectedPath;
+         }
+       });
     }
 
     // Fetch initial images if any were marked
@@ -324,6 +340,13 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
       return;
     }
     
+    // Don't apply sequential attribution if we're viewing saved content (contentId is provided)
+    // Saved content should preserve user's manual selections
+    if (contentId !== null) {
+      sequentialAttributionAppliedRef.current = true; // Mark as applied to prevent future runs
+      return;
+    }
+    
     // Only apply once per content load
     if (sequentialAttributionAppliedRef.current) {
       return;
@@ -403,6 +426,14 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
         usedImagesRef.current = usedImageIds;
         sequentialAttributionAppliedRef.current = true;
         
+        // Sync the current selections ref with the new state
+        Object.keys(newState).forEach(index => {
+          const indexNum = parseInt(index);
+          if (newState[index].selectedPath !== undefined) {
+            currentImageSelectionsRef.current[indexNum] = newState[index].selectedPath;
+          }
+        });
+        
         return newState;
       } else {
         // Still mark as applied to prevent repeated checks
@@ -427,6 +458,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
 
   // Memoize the image selection change handler to prevent unnecessary re-renders
   const handleImageSelectionChange = useCallback(async (sentenceIndex, newPath) => {
+    
     // Update the state directly - always respect user choice, no deduplication enforcement
     setImageState(prev => {
       const currentState = prev[sentenceIndex];
@@ -446,6 +478,11 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
         }
       };
       
+      
+      // Update the current selections ref immediately for synchronous access
+      currentImageSelectionsRef.current[sentenceIndex] = newPath;
+      
+      
       // Update used images tracking for reference (but don't enforce conflicts)
       if (preventDuplicateImages) {
         const currentImageId = currentState.selectedPath;
@@ -460,6 +497,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
 
     // If it's saved content, update the backend
     if (contentId !== null) {
+      
       try {
         // Get the current state to extract image URLs
         const currentState = imageState[sentenceIndex];
@@ -469,8 +507,11 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
           if (newPath && !allImageUrls.includes(newPath)) {
              allImageUrls.push(newPath);
           }
+          
+          
           await updateSavedContentImage(contentId, sentenceIndex, newPath, allImageUrls);
           setNotification({ open: true, message: 'Image selection saved', severity: 'success' });
+          
         }
       } catch (err) {
         console.error(`useEasyReadImageManager: Error updating saved image for sentence ${sentenceIndex}:`, err);
@@ -643,7 +684,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
               
               const images = response.data.results || [];
               allImageResults[i] = { images, success: images.length > 0 };
-            } catch (error) {
+            } catch {
               allImageResults[i] = { images: [], success: false, error: 'Failed to fetch' };
             }
           } else {
@@ -662,13 +703,11 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
           const result = allImageResults[i];
           if (result && result.success) {
             // Find the first image that hasn't been used yet
-            let selectedImage = null;
             let selectedPath = null;
             
             for (const img of result.images) {
               const imageId = img.id || img.url;
               if (!usedImageIds.has(imageId)) {
-                selectedImage = img;
                 selectedPath = img.url;
                 usedImageIds.add(imageId);
                 break;
@@ -808,6 +847,27 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     setNotification(prev => ({ ...prev, open: false }));
   }, []);
 
+  // Function to get current image selections (synchronous access)
+  const getCurrentImageSelections = useCallback(() => {
+    const currentSelections = {};
+    
+    // Combine keys from both imageState and the ref to ensure we don't miss any selections
+    const allIndices = new Set([
+      ...Object.keys(imageState).map(k => parseInt(k)),
+      ...Object.keys(currentImageSelectionsRef.current).map(k => parseInt(k))
+    ]);
+    
+    allIndices.forEach(indexNum => {
+      // Prefer the ref value if available (most recent), otherwise use state
+      const refValue = currentImageSelectionsRef.current[indexNum];
+      const stateValue = imageState[indexNum]?.selectedPath;
+      currentSelections[indexNum] = refValue || stateValue || null;
+    });
+    
+    
+    return currentSelections;
+  }, [imageState]);
+
   return {
     imageState,
     setImageState, // Expose if direct manipulation is needed outside
@@ -818,7 +878,8 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     handleImageSelectionChange,
     handleGenerateImage,
     handleRefreshAllImages,
-    handleCloseNotification
+    handleCloseNotification,
+    getCurrentImageSelections // Expose function to get current selections
   };
 }
 

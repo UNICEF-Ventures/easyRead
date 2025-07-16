@@ -798,6 +798,7 @@ def save_processed_content(request):
     title = request.data.get('title', '') # Get title, default to empty string
     easy_read_json = request.data.get('easy_read_json')
 
+
     if not original_markdown or not isinstance(original_markdown, str):
         return Response({"error": "Missing or invalid 'original_markdown' (must be a non-empty string)."}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -981,6 +982,7 @@ def get_saved_content_detail(request, content_id):
              logger.error(f"Unexpected error processing easy_read_json for ID {content_id}: {e}")
              easy_read_data = [] # Ensure it defaults to empty list on any error
 
+
         response_data = {
             'id': content.id,
             'title': content.title,
@@ -1013,6 +1015,10 @@ def update_saved_content_image(request, content_id):
     """
     logger = logging.getLogger(__name__)
     
+    # Debug logging
+    logger.info(f"Update saved content image called - Content ID: {content_id}")
+    logger.info(f"Request data: {request.data}")
+    
     try:
         # Validate input
         if not isinstance(request.data, dict):
@@ -1021,6 +1027,8 @@ def update_saved_content_image(request, content_id):
         sentence_index = request.data.get('sentence_index')
         image_url = request.data.get('image_url')
         all_images = request.data.get('all_images', [])
+        
+        logger.info(f"Parsed data - sentence_index: {sentence_index}, image_url: {image_url}, all_images count: {len(all_images) if all_images else 0}")
         
         if sentence_index is None or not isinstance(sentence_index, int):
             return Response({"error": "Missing or invalid 'sentence_index' (must be an integer)."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1043,6 +1051,7 @@ def update_saved_content_image(request, content_id):
                            status=status.HTTP_400_BAD_REQUEST)
         
         # Update the image path for the specified sentence
+        old_image_path = content.easy_read_json[sentence_index].get('selected_image_path')
         content.easy_read_json[sentence_index]['selected_image_path'] = image_url
         
         # Add all alternative images if provided
@@ -1050,6 +1059,8 @@ def update_saved_content_image(request, content_id):
             content.easy_read_json[sentence_index]['alternative_images'] = all_images
         
         content.save()
+        
+        logger.info(f"Successfully updated content {content_id}, sentence {sentence_index}: '{old_image_path}' -> '{image_url}'")
         
         # Prepare response data
         response_data = {
