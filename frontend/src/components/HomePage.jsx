@@ -477,7 +477,7 @@ function HomePage({
                           <CardMedia
                             component="img"
                             height="60"
-                            image={image.image_url || 'https://via.placeholder.com/60x60?text=No+Image'}
+                            image={image.image_url || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60"><rect width="60" height="60" fill="%23f0f0f0"/><text x="30" y="35" text-anchor="middle" fill="%23666" font-family="Arial" font-size="10">No Image</text></svg>'}
                             alt={image.description || 'Sample image'}
                             sx={{ 
                               objectFit: 'contain',
@@ -485,7 +485,8 @@ function HomePage({
                               maxHeight: '100%'
                             }}
                             onError={(e) => { 
-                              e.target.src = 'https://via.placeholder.com/60x60?text=Error'; 
+                              // Prevent infinite loop by hiding the image instead of loading another URL
+                              e.target.style.display = 'none';
                             }}
                           />
                         </Box>

@@ -8,6 +8,7 @@ import numpy as np
 from typing import List, Dict, Optional, Tuple
 from django.db import connection
 from django.db.models import Q
+from pgvector.django import CosineDistance, L2Distance
 from api.models import ImageSet, Image, Embedding
 from api.embedding_adapter import get_embedding_model
 from api.monitoring import monitor_embedding_operation, log_structured_error
@@ -101,19 +102,20 @@ class SimilaritySearcher:
                 logger.info(f"No text embeddings found for query: {query_text}")
                 return []
             
-            # Calculate similarities
+            # Use pgvector for efficient similarity search instead of manual calculation
+            # Convert query embedding to the format expected by pgvector
+            query_vector = list(query_embedding)
+            
+            # Get embeddings with their cosine distances using pgvector
+            similar_embeddings = (embeddings_query
+                                .annotate(distance=CosineDistance('vector', query_vector))
+                                .order_by('distance')[:n_results])
+            
             similarities = []
-            for embedding_obj in text_embeddings:
+            for embedding_obj in similar_embeddings:
                 try:
-                    # Get the embedding vector (stored as list in JSON field)
-                    stored_vector = np.array(embedding_obj.vector)
-                    
-                    # Unpad the stored vector to match the original dimension for comparison
-                    original_dim = embedding_obj.embedding_dimension
-                    embedding_vector = unpad_vector(stored_vector, original_dim)
-                    
-                    # Now both vectors should have the same dimension
-                    similarity = self._calculate_cosine_similarity(query_embedding, embedding_vector)
+                    # Convert distance to similarity score (1.0 - distance for cosine)
+                    similarity = max(0.0, 1.0 - embedding_obj.distance)
                     
                     # Build result dictionary
                     image_obj = embedding_obj.image
@@ -134,9 +136,8 @@ class SimilaritySearcher:
                     logger.error(f"Error processing embedding for image {embedding_obj.image.id}: {e}")
                     continue
             
-            # Sort by similarity (highest first) and return top N
-            similarities.sort(key=lambda x: x['similarity'], reverse=True)
-            return similarities[:n_results]
+            # Results are already sorted by distance (ascending), so similarities are in descending order
+            return similarities
             
         except Exception as e:
             logger.error(f"Error in find_similar_images: {e}")
@@ -179,10 +180,8 @@ class SimilaritySearcher:
                 logger.error(f"No image embedding found for image ID: {image_id} with model {search_provider}:{search_model}")
                 return []
             
-            # Get the reference embedding and unpad it to original dimension
-            stored_reference_vector = np.array(reference_embedding.vector)
-            original_dim = reference_embedding.embedding_dimension
-            query_embedding = unpad_vector(stored_reference_vector, original_dim)
+            # Get the reference embedding vector
+            query_embedding = list(reference_embedding.vector)
             query_dim = len(query_embedding)
             
             # Build the base query for image embeddings with model filtering and same dimension
@@ -217,17 +216,17 @@ class SimilaritySearcher:
                 logger.info(f"No image embeddings found for comparison with image ID: {image_id} with model {search_provider}:{search_model}")
                 return []
             
-            # Calculate similarities
+            # Use pgvector for efficient similarity search
+            # Get embeddings with their cosine distances using pgvector
+            similar_embeddings = (embeddings_query
+                                .annotate(distance=CosineDistance('vector', query_embedding))
+                                .order_by('distance')[:n_results])
+            
             similarities = []
-            for embedding_obj in image_embeddings:
+            for embedding_obj in similar_embeddings:
                 try:
-                    # Get the embedding vector and unpad it to original dimension
-                    stored_vector = np.array(embedding_obj.vector)
-                    original_dim = embedding_obj.embedding_dimension
-                    embedding_vector = unpad_vector(stored_vector, original_dim)
-                    
-                    # Now both vectors should have the same dimension
-                    similarity = self._calculate_cosine_similarity(query_embedding, embedding_vector)
+                    # Convert distance to similarity score (1.0 - distance for cosine)
+                    similarity = max(0.0, 1.0 - embedding_obj.distance)
                     
                     # Build result dictionary
                     image_obj = embedding_obj.image
@@ -248,9 +247,8 @@ class SimilaritySearcher:
                     logger.error(f"Error processing embedding for image {embedding_obj.image.id}: {e}")
                     continue
             
-            # Sort by similarity (highest first) and return top N
-            similarities.sort(key=lambda x: x['similarity'], reverse=True)
-            return similarities[:n_results]
+            # Results are already sorted by distance (ascending), so similarities are in descending order
+            return similarities
             
         except Exception as e:
             logger.error(f"Error in find_similar_images_by_image: {e}")

@@ -1,6 +1,7 @@
 google-genai
 cohere
 openai
+chromadb
 django
 python-dotenv
 Pillow
@@ -20,3 +21,6 @@ numpy
 svglib
 python-magic
 python-docx
+boto3
+botocore
+gradio_client
