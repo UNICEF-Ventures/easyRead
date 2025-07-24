@@ -1,0 +1,117 @@
+services:
+  # PostgreSQL Database with pgvector
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: easyread_postgres_prod
+    environment:
+      POSTGRES_DB: ${DB_NAME:-easyread}
+      POSTGRES_USER: ${DB_USER:-easyread_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-easyread_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - easyread_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-easyread_user} -d ${DB_NAME:-easyread}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Don't expose port in production - only internal access
+
+  # Django Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    container_name: easyread_backend_prod
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=${DB_NAME:-easyread}
+      - DB_USER=${DB_USER:-easyread_user}
+      - DB_PASSWORD=${DB_PASSWORD:-easyread_password}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - COHERE_API_KEY=${COHERE_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION_NAME=${AWS_REGION_NAME:-us-east-1}
+    volumes:
+      - media_files:/app/media
+      - static_files:/app/staticfiles
+      - ./clipart_images:/app/clipart_images:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - easyread_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Don't expose port in production - nginx will proxy
+
+  # Nginx Reverse Proxy
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: easyread_nginx_prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - media_files:/app/media:ro
+      - static_files:/app/staticfiles:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - easyread_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for caching (optional but recommended for production)
+  redis:
+    image: redis:7-alpine
+    container_name: easyread_redis_prod
+    volumes:
+      - redis_data:/data
+    networks:
+      - easyread_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  media_files:
+    driver: local
+  static_files:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  easyread_network:
+    driver: bridge

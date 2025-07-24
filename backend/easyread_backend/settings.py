@@ -25,12 +25,12 @@ load_dotenv(BASE_DIR.parent / '.env')
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-r(!8baz4s5l9y&g6*^33kb8gu!7xu&b!^)y@tg_lz5voc^)3jh"
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-r(!8baz4s5l9y&g6*^33kb8gu!7xu&b!^)y@tg_lz5voc^)3jh")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "True").lower() in ["true", "1", "yes"]
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()]
 
 
 # Application definition
@@ -56,6 +56,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "api.error_handlers.ErrorResponseMiddleware",
 ]
 
 ROOT_URLCONF = "easyread_backend.urls"
@@ -152,7 +153,7 @@ STATIC_URL = "static/"
 # Media files (User-uploaded files)
 # https://docs.djangoproject.com/en/5.2/topics/files/
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR.parent / 'media' # Store media files in <project_root>/media/
+MEDIA_ROOT = BASE_DIR / 'media' # Store media files in <backend>/media/
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -163,6 +164,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173", # Default Vite dev server port
     "http://127.0.0.1:5173",
+    "http://localhost:3000", # Docker frontend port
+    "http://127.0.0.1:3000",
 ]
 
 # Optional: Allow all origins for quick testing (less secure)
@@ -182,6 +185,19 @@ os.environ['NUMEXPR_NUM_THREADS'] = '1'
 # Configure PyTorch multiprocessing
 os.environ['TORCH_NUM_THREADS'] = '1'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
+# Embedding Provider Configuration
+# Uses Cohere Multilingual embeddings via AWS Bedrock (available in us-east-1)
+EMBEDDING_PROVIDER_CONFIG = {
+    'provider': 'cohere_bedrock',
+    'config': {
+        'language': 'multilingual',
+        'aws_region': 'us-east-1',
+        'batch_size': 25,
+        'rate_limit_delay': 0.1,
+        'max_retries': 3
+    }
+}
 
 # Additional memory optimization
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:256'

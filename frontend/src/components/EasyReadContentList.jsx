@@ -169,7 +169,8 @@ function EasyReadContentList({
                                   borderRadius: 1
                                 }}
                                 onError={(e) => { 
-                                  e.target.src = 'https://via.placeholder.com/60x60?text=Error';
+                                  // Prevent infinite loop by hiding the image instead of loading another URL
+                                  e.target.style.display = 'none';
                                   console.error('Image load error:', displayPath);
                                 }}
                               />
@@ -199,7 +200,8 @@ function EasyReadContentList({
                                   objectFit: 'contain'
                                 }}
                                 onError={(e) => { 
-                                  e.target.src = 'https://via.placeholder.com/100x100?text=Error';
+                                  // Prevent infinite loop by hiding the image instead of loading another URL
+                                  e.target.style.display = 'none';
                                   console.error('Image load error:', selectedPath);
                                 }}
                               />
@@ -217,7 +219,8 @@ function EasyReadContentList({
                                   objectFit: 'contain'
                                 }}
                                 onError={(e) => { 
-                                  e.target.src = 'https://via.placeholder.com/100x100?text=Error';
+                                  // Prevent infinite loop by hiding the image instead of loading another URL
+                                  e.target.style.display = 'none';
                                   console.error('Image load error:', imgResult.url);
                                 }}
                               />

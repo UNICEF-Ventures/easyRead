@@ -18,7 +18,7 @@ from django.conf import settings
 from django.http import JsonResponse
 import base64
 # import cohere # Removed Cohere
-import chromadb
+# ChromaDB removed - now using PostgreSQL with pgvector
 from dotenv import load_dotenv
 from PIL import Image
 import io
@@ -28,7 +28,7 @@ import time # Added for health check
 from .models import ProcessedContent, ImageMetadata # Import the new model
 from sentence_transformers import SentenceTransformer # Added SentenceTransformer
 from openai import OpenAI
-from .config import get_retry_config, load_prompt_template
+from .config import get_retry_config, load_prompt_template, VALIDATE_COMPLETENESS_PROMPT_FILE, REVISE_SENTENCES_PROMPT_FILE
 from django.core.files.base import ContentFile
 from gradio_client import Client, handle_file # Added Gradio client import
 from django.http import HttpResponse
@@ -104,8 +104,7 @@ load_dotenv(settings.BASE_DIR.parent / '.env') # Load .env from project root
 
 # COHERE_API_KEY = os.getenv("COHERE_API_KEY") # Removed Cohere API Key
 IMAGE_UPLOAD_DIR = settings.MEDIA_ROOT / "uploaded_images"
-CHROMA_DB_PATH = settings.BASE_DIR.parent / "chroma_db" # Relative to project root
-IMAGE_COLLECTION_NAME = "image_embeddings"
+# ChromaDB configuration removed - now using PostgreSQL with pgvector
 # COHERE_MODEL = "embed-english-light-v3.0" # Removed Cohere model
 CLIP_MODEL_NAME = 'sentence-transformers/clip-ViT-B-32-multilingual-v1' # New CLIP model
 
@@ -133,16 +132,7 @@ except Exception as e:
      logger.error(f"Error loading Sentence Transformer model '{CLIP_MODEL_NAME}': {e}")
      # Application might not be usable without the model, consider raising an error or specific handling
 
-# --- ChromaDB Initialization (remains the same, will create new db/collection) ---
-chroma_client = None
-image_collection = None
-try:
-    chroma_client = chromadb.PersistentClient(path=str(CHROMA_DB_PATH))
-    # Get existing collection or create new one if it doesn't exist
-    image_collection = chroma_client.get_or_create_collection(name=IMAGE_COLLECTION_NAME)
-    logger.info(f"Connected to ChromaDB. Collection '{IMAGE_COLLECTION_NAME}' loaded/created.")
-except Exception as e:
-    logger.error(f"Error connecting to or setting up ChromaDB for images: {e}")
+# ChromaDB initialization removed - now using PostgreSQL with pgvector for embeddings
 
 # --- OpenAI Client Initialization ---
 openai_client = None

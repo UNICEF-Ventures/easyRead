@@ -1,0 +1,110 @@
+# Migration to convert embeddings from JSONField to pgvector VectorField
+# This migration handles the conversion of existing embedding data
+
+from django.db import migrations, models
+import pgvector.django
+
+
+def convert_json_to_vector(apps, schema_editor):
+    """
+    Convert existing JSON embedding data to pgvector format.
+    This function handles the data migration safely.
+    """
+    Embedding = apps.get_model('api', 'Embedding')
+    
+    for embedding in Embedding.objects.all():
+        if embedding.vector and isinstance(embedding.vector, list):
+            # Vector is already in the correct format (list of floats)
+            continue
+        elif embedding.vector and isinstance(embedding.vector, dict):
+            # Handle any nested JSON structure if it exists
+            # This would need to be customized based on actual data structure
+            print(f"Warning: Embedding {embedding.id} has dict format, skipping conversion")
+            continue
+        else:
+            print(f"Warning: Embedding {embedding.id} has unexpected vector format: {type(embedding.vector)}")
+
+
+def reverse_convert_vector_to_json(apps, schema_editor):
+    """
+    Reverse migration: convert pgvector back to JSON format.
+    """
+    Embedding = apps.get_model('api', 'Embedding')
+    
+    for embedding in Embedding.objects.all():
+        if embedding.vector:
+            # Convert vector back to list format for JSON storage
+            embedding.vector = list(embedding.vector)
+            embedding.save()
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('api', '0010_usersession_sessionevent_imagesetselection_and_more'),
+    ]
+
+    operations = [
+        # First, create the vector extension if it doesn't exist
+        migrations.RunSQL(
+            "CREATE EXTENSION IF NOT EXISTS vector;",
+            reverse_sql="DROP EXTENSION IF EXISTS vector;"
+        ),
+        
+        # Add indexes for the current JSONField before migration (for performance)
+        migrations.RunSQL(
+            "CREATE INDEX IF NOT EXISTS embedding_provider_model_idx ON api_embedding (provider_name, model_name);",
+            reverse_sql="DROP INDEX IF EXISTS embedding_provider_model_idx;"
+        ),
+        
+        # Convert the vector field from JSONField to VectorField
+        migrations.AlterField(
+            model_name='embedding',
+            name='vector',
+            field=pgvector.django.VectorField(dimensions=1024),
+        ),
+        
+        # Update the embedding_dimension default
+        migrations.AlterField(
+            model_name='embedding',
+            name='embedding_dimension',
+            field=models.IntegerField(default=1024),
+        ),
+        
+        # Run data migration to ensure existing data is compatible
+        migrations.RunPython(
+            convert_json_to_vector,
+            reverse_convert_vector_to_json
+        ),
+        
+        # Create pgvector-specific indexes for efficient similarity search
+        migrations.RunSQL(
+            """
+            CREATE INDEX IF NOT EXISTS embedding_vector_cosine_idx 
+            ON api_embedding 
+            USING ivfflat (vector vector_cosine_ops) 
+            WITH (lists = 100);
+            """,
+            reverse_sql="DROP INDEX IF EXISTS embedding_vector_cosine_idx;"
+        ),
+        
+        migrations.RunSQL(
+            """
+            CREATE INDEX IF NOT EXISTS embedding_vector_l2_idx 
+            ON api_embedding 
+            USING hnsw (vector vector_l2_ops) 
+            WITH (m = 16, ef_construction = 64);
+            """,
+            reverse_sql="DROP INDEX IF EXISTS embedding_vector_l2_idx;"
+        ),
+        
+        # Add composite index for filtered similarity searches
+        migrations.RunSQL(
+            """
+            CREATE INDEX IF NOT EXISTS embedding_type_provider_idx 
+            ON api_embedding (embedding_type, provider_name) 
+            INCLUDE (vector);
+            """,
+            reverse_sql="DROP INDEX IF EXISTS embedding_type_provider_idx;"
+        ),
+    ]

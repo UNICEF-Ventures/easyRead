@@ -3,11 +3,11 @@
  * This provides a centralized place to manage URLs with reliable defaults
  */
 
-// Configuration object - FORCE correct defaults to override caching issues
+// Configuration object - Use environment variables with fallbacks
 export const config = {
-  // API Configuration - Force port 8000 for now
-  API_BASE_URL: 'http://localhost:8000/api',
-  MEDIA_BASE_URL: 'http://localhost:8000',
+  // API Configuration - Use environment variables with fallbacks
+  API_BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
+  MEDIA_BASE_URL: import.meta.env.VITE_MEDIA_BASE_URL || 'http://localhost:8000',
   
   // Development flags
   IS_DEVELOPMENT: import.meta.env.DEV,

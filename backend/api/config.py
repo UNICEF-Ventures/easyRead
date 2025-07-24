@@ -14,7 +14,12 @@ from typing import Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 # Path configuration
-CONFIG_DIR = settings.BASE_DIR.parent / 'config'
+# In Docker, config is mounted at /app/config, but BASE_DIR might be /app
+# Check if config exists relative to BASE_DIR first, then fallback to parent
+if (settings.BASE_DIR / 'config').exists():
+    CONFIG_DIR = settings.BASE_DIR / 'config'
+else:
+    CONFIG_DIR = settings.BASE_DIR.parent / 'config'
 SETTINGS_FILE = CONFIG_DIR / 'settings.yaml'
 EASY_READ_PROMPT_FILE = CONFIG_DIR / 'easy_read.yaml'
 VALIDATE_COMPLETENESS_PROMPT_FILE = CONFIG_DIR / 'validate_completeness.yaml'

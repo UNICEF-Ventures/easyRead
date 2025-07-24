@@ -321,10 +321,13 @@ const ImageManagementPage = () => {
                 <CardMedia
                   component="img"
                   height="160"
-                  image={image.image_url || 'https://via.placeholder.com/300x160?text=No+Preview'}
+                  image={image.image_url || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="160"><rect width="300" height="160" fill="%23f0f0f0"/><text x="150" y="85" text-anchor="middle" fill="%23666" font-family="Arial" font-size="14">No Preview</text></svg>'}
                   alt={image.description || 'Image'}
                   sx={{ objectFit: 'contain' }}
-                  onError={(e) => { e.target.src = 'https://via.placeholder.com/300x160?text=Error'; }}
+                  onError={(e) => { 
+                    // Prevent infinite loop by hiding the image instead of loading another URL
+                    e.target.style.display = 'none';
+                  }}
                 />
                 <CardContent>
                   <Typography variant="body2" color="text.secondary" noWrap>

@@ -27,28 +27,9 @@ class ApiConfig(AppConfig):
         
         logger.info("API app ready, cleanup handlers registered")
         
-        # Always warmup models for better performance in development
-        logger.info("Auto-warming up models...")
-        
-        def warmup_thread():
-            try:
-                # Add a small delay to ensure Django is fully ready
-                import time
-                time.sleep(2)
-                
-                from .warmup import warmup_all_models
-                success = warmup_all_models()
-                if success:
-                    logger.info("Auto-warmup completed successfully")
-                else:
-                    logger.warning("Auto-warmup completed with warnings")
-            except Exception as e:
-                logger.error(f"Error during auto-warmup: {e}")
-        
-        # Run warmup in background thread to avoid blocking Django startup
-        thread = threading.Thread(target=warmup_thread)
-        thread.daemon = True
-        thread.start()
+        # Temporarily disable auto-warmup in Docker to prevent startup hangs
+        # Models will be loaded on-demand when first used
+        logger.info("Auto-warmup disabled in Docker environment")
     
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""

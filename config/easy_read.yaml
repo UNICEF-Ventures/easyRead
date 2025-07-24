@@ -1,4 +1,4 @@
-llm_model: "gpt-4.1-nano" 
+llm_model: "bedrock/us.meta.llama3-1-70b-instruct-v1:0"  # Llama 3.1 70B via AWS Bedrock inference profile 
 
 system_message: |
   You are an expert in Easy Read, a method of presenting information in a way that is clear, simple, and easy to understand especially designed to help people who have difficulty reading or understanding standard written information. 

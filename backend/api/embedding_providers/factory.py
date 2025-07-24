@@ -10,6 +10,7 @@ from .base import EmbeddingProvider, ProviderError, ProviderNotAvailableError
 from .openclip import OpenCLIPProvider
 from .openai_provider import OpenAIProvider, OpenAIVisionProvider
 from .cohere_provider import CohereProvider
+from .bedrock_provider import BedrockEmbeddingProvider, TitanEmbeddingProvider, CohereBedrockEmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,9 @@ class EmbeddingProviderFactory:
         'openai': OpenAIProvider,
         'openai_vision': OpenAIVisionProvider,
         'cohere': CohereProvider,
+        'bedrock': BedrockEmbeddingProvider,
+        'titan': TitanEmbeddingProvider,
+        'cohere_bedrock': CohereBedrockEmbeddingProvider,
     }
     
     @classmethod
@@ -69,7 +73,18 @@ class EmbeddingProviderFactory:
         provider_class = cls._providers[provider_name]
         
         try:
-            provider = provider_class(config or {})
+            # Handle special cases for provider initialization
+            if provider_name == 'cohere_bedrock':
+                # Default to multilingual for Cohere Bedrock
+                language = (config or {}).get('language', 'multilingual')
+                provider = provider_class(language=language, config=config)
+            elif provider_name == 'titan':
+                # Default to v1 for Titan
+                version = (config or {}).get('version', 'v1')
+                provider = provider_class(version=version, config=config)
+            else:
+                provider = provider_class(config or {})
+            
             logger.info(f"Created embedding provider: {provider_name}")
             return provider
         except Exception as e:
@@ -270,6 +285,75 @@ def get_cohere_config(api_key: str, model: str = 'embed-english-v3.0') -> Dict[s
     }
 
 
+def get_bedrock_config(model: str = 'amazon.titan-embed-text-v1', aws_region: str = 'us-east-1') -> Dict[str, Any]:
+    """
+    Get AWS Bedrock configuration.
+    
+    Args:
+        model: Bedrock model name
+        aws_region: AWS region
+        
+    Returns:
+        Configuration dictionary
+    """
+    return {
+        'provider': 'bedrock',
+        'config': {
+            'model_name': model,
+            'aws_region': aws_region,
+            'batch_size': 25,  # Bedrock has batch limits
+            'rate_limit_delay': 0.1,
+            'max_retries': 3
+        }
+    }
+
+
+def get_titan_config(version: str = 'v1', aws_region: str = 'us-east-1') -> Dict[str, Any]:
+    """
+    Get Amazon Titan configuration.
+    
+    Args:
+        version: 'v1' or 'v2'
+        aws_region: AWS region
+        
+    Returns:
+        Configuration dictionary
+    """
+    return {
+        'provider': 'titan',
+        'config': {
+            'version': version,
+            'aws_region': aws_region,
+            'batch_size': 25,
+            'rate_limit_delay': 0.1,
+            'max_retries': 3
+        }
+    }
+
+
+def get_cohere_bedrock_config(language: str = 'multilingual', aws_region: str = 'us-east-1') -> Dict[str, Any]:
+    """
+    Get Cohere Bedrock configuration.
+    
+    Args:
+        language: 'english' or 'multilingual'
+        aws_region: AWS region
+        
+    Returns:
+        Configuration dictionary
+    """
+    return {
+        'provider': 'cohere_bedrock',
+        'config': {
+            'language': language,
+            'aws_region': aws_region,
+            'batch_size': 25,  # Bedrock has batch limits
+            'rate_limit_delay': 0.1,
+            'max_retries': 3
+        }
+    }
+
+
 def auto_configure_provider() -> Dict[str, Any]:
     """
     Auto-configure provider based on available API keys and system resources.
@@ -282,6 +366,13 @@ def auto_configure_provider() -> Dict[str, Any]:
     # Check for API keys in environment
     openai_key = os.getenv('OPENAI_API_KEY')
     cohere_key = os.getenv('COHERE_API_KEY')
+    aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
+    aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+    
+    # If we have AWS credentials, prefer AWS Bedrock for cost and performance
+    if aws_access_key and aws_secret_key:
+        logger.info("Found AWS credentials, using Cohere Multilingual embedding provider via Bedrock")
+        return get_cohere_bedrock_config()
     
     # If we have API keys, prefer API-based providers for zero memory usage
     if openai_key:
