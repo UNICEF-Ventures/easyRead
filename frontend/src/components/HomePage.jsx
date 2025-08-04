@@ -189,10 +189,7 @@ function HomePage({
       return;
     }
     
-    if (selectedSets.size === 0) {
-      setError('Please select at least one symbol set for image retrieval.');
-      return;
-    }
+    // Allow processing without images - in this case, no images will be retrieved/displayed
     // Make sure loading indicator from PDF extraction is off
     setIsLoading(false);
     
@@ -399,7 +396,7 @@ function HomePage({
         <Box sx={{ mt: 4, mb: 4 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Select Symbol Sets for Image Retrieval
+              Select Symbol Sets for Image Retrieval (Optional)
             </Typography>
             {!setsLoading && imageSets.length > 0 && (
               <Box sx={{ display: 'flex', gap: 1 }}>
@@ -423,7 +420,7 @@ function HomePage({
             )}
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Choose which symbol sets will be used to find relevant images for your content.
+            Choose which symbol sets will be used to find relevant images for your content. If no sets are selected, content will be processed without images.
           </Typography>
           
           {setsLoading ? (
@@ -536,7 +533,7 @@ function HomePage({
               label={
                 <Box>
                   <Typography variant="body2" component="span">
-                    Disallow duplicate images
+                    Avoid duplicate images
                   </Typography>
                   <Typography variant="caption" display="block" color="text.secondary">
                     Try to avoid using the same image for different sentences
@@ -554,7 +551,7 @@ function HomePage({
             variant="contained"
             size="large"
             onClick={handleProcessContent}
-            disabled={!currentMarkdown || currentMarkdown.trim() === '' || selectedSets.size === 0}
+            disabled={!currentMarkdown || currentMarkdown.trim() === ''}
             sx={{ 
               px: 4, 
               py: 1.5,
@@ -569,7 +566,7 @@ function HomePage({
               transition: 'all 0.2s ease'
             }}
           >
-            Process Content ({selectedSets.size} sets selected)
+            Process Content{selectedSets.size > 0 ? ` (${selectedSets.size} image sets selected)` : ' (no images)'}
           </Button>
         </Box>
       </Paper>
