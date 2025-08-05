@@ -1,0 +1,16 @@
+# Override file for development
+# This automatically extends docker-compose.yml
+services:
+  backend:
+    ports:
+      - "${BACKEND_PORT:-8001}:8000"
+    environment:
+      - DEBUG=True
+      - DJANGO_PORT=${DJANGO_PORT:-8000}
+      - DJANGO_HOST=${DJANGO_HOST:-localhost}
+
+  frontend:
+    build:
+      args:
+        - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-8001}/api
+        - VITE_MEDIA_BASE_URL=http://localhost:${BACKEND_PORT:-8001}

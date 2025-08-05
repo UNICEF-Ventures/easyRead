@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Management - EasyRead Admin</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            text-decoration: none;
+            transition: background 0.3s;
+        }
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .react-container {
+            height: calc(100vh - 80px);
+            overflow: auto;
+        }
+        #react-admin-root {
+            height: 100%;
+        }
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 400px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Image Management Dashboard</h1>
+        <a href="{% url 'admin_logout' %}" class="logout-btn">Logout</a>
+    </div>
+    
+    <div class="react-container">
+        <div id="react-admin-root">
+            <div class="loading">Loading Image Management Interface...</div>
+        </div>
+    </div>
+
+    <script>
+        // This template serves as a fallback for when React isn't loaded
+        // In practice, the React frontend will handle the admin interface
+        document.addEventListener('DOMContentLoaded', function() {
+            // Redirect to frontend admin route
+            const frontendUrl = window.location.protocol + '//' + 
+                               window.location.hostname + 
+                               (window.location.port ? ':' + window.location.port : '') + 
+                               '/admin';
+            
+            // Check if we're already on the frontend admin route
+            if (!window.location.pathname.includes('/admin/dashboard/')) {
+                window.location.href = frontendUrl;
+            }
+        });
+    </script>
+</body>
+</html>

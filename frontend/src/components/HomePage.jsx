@@ -396,7 +396,7 @@ function HomePage({
         <Box sx={{ mt: 4, mb: 4 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Select Symbol Sets for Image Retrieval (Optional)
+              Select Symbol Sets for Image Matching
             </Typography>
             {!setsLoading && imageSets.length > 0 && (
               <Box sx={{ display: 'flex', gap: 1 }}>

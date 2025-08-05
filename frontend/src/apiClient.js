@@ -28,7 +28,7 @@ export const extractMarkdown = (file) => {
 
   return apiClient.post('/pdf-to-markdown/', formData, {
     headers: {
-      'Content-Type': 'multipart/form-data', // Important for file uploads
+      'Content-Type': undefined, // Let browser set Content-Type with boundary
     },
     timeout: 60000, // Add timeout: 60 seconds (in milliseconds)
   });
@@ -74,6 +74,25 @@ export const findSimilarImages = (query, n_results = 3, excludeIds = [], signal 
   }
   
   return apiClient.post('/find-similar-images/', requestData, config);
+};
+
+// Function to find similar images for multiple queries in a batch
+export const findSimilarImagesBatch = (queries, excludeIds = [], signal = null, imageSets = null) => {
+  const config = {
+    signal: signal, // Add AbortController signal support
+    timeout: 60000 // 60 seconds timeout for batch processing
+  };
+  
+  const requestData = {
+    queries: queries, // Array of {index, query, n_results} objects
+    exclude_ids: excludeIds
+  };
+  
+  if (imageSets && Array.isArray(imageSets) && imageSets.length > 0) {
+    requestData.image_sets = imageSets;
+  }
+  
+  return apiClient.post('/find-similar-images-batch/', requestData, config);
 };
 
 // Function to get all images

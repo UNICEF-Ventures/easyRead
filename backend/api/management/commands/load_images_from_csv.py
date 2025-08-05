@@ -233,21 +233,21 @@ class Command(BaseCommand):
                         image_obj.height = image_info.get('height')
                         image_obj.save()
 
-                    # Create image embedding
-                    image_embedding = embedding_model.encode_single_image(processed_image_path)
-                    if image_embedding is not None:
-                        embedding_obj, created = Embedding.objects.get_or_create(
-                            image=image_obj,
-                            embedding_type='image',
-                            provider_name=provider_name,
-                            model_name=model_name,
-                            defaults={
-                                'vector': image_embedding.tolist(),
-                                'embedding_dimension': len(image_embedding)
-                            }
-                        )
-                        if created:
-                            stats['created_embeddings'] += 1
+                    # Skip image embedding for now - using text-only embeddings
+                    # image_embedding = embedding_model.encode_single_image(processed_image_path)
+                    # if image_embedding is not None:
+                    #     embedding_obj, created = Embedding.objects.get_or_create(
+                    #         image=image_obj,
+                    #         embedding_type='image',
+                    #         provider_name=provider_name,
+                    #         model_name=model_name,
+                    #         defaults={
+                    #             'vector': image_embedding.tolist(),
+                    #             'embedding_dimension': len(image_embedding)
+                    #         }
+                    #     )
+                    #     if created:
+                    #         stats['created_embeddings'] += 1
 
                     # Create text embedding if description exists
                     if image_description:

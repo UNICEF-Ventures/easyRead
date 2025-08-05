@@ -16,12 +16,18 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.shortcuts import redirect
 from api import urls as api_urls # Import directly
 from django.conf import settings # Import settings
 from django.conf.urls.static import static # Import static
 
+def redirect_to_admin_login(request):
+    """Redirect /admin/ to our custom admin login"""
+    return redirect('/api/admin/login/')
+
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    path("admin/", redirect_to_admin_login),
+    path("django-admin/", admin.site.urls),  # Keep Django admin at different URL
     path("api/", include(api_urls)), # Use the imported variable
 ]
 

@@ -101,6 +101,7 @@ class ResourceCleanupMiddleware(MiddlewareMixin):
         # Endpoints that use ML models heavily
         self.ml_endpoints = [
             '/api/find-similar-images/',
+            '/api/find-similar-images-batch/',
             '/api/process-page/',
             '/api/generate-image/',
         ]

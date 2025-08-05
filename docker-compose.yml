@@ -49,10 +49,12 @@ services:
     volumes:
       - ./backend:/app
       - ./media:/app/media
+      - ./images:/app/images:ro
       - ./clipart_images:/app/clipart_images:ro
       - ./config:/app/config:ro
+      - ./globalsymbols_images_test_docker.csv:/app/globalsymbols_images_test_docker.csv:ro
     ports:
-      - "8001:8000"
+      - "${BACKEND_PORT:-8001}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,8 +74,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE_URL=http://localhost:8001/api
-        - VITE_MEDIA_BASE_URL=http://localhost:8001
+        - VITE_API_BASE_URL=http://127.0.0.1:${BACKEND_PORT:-8001}/api
+        - VITE_MEDIA_BASE_URL=http://127.0.0.1:${BACKEND_PORT:-8001}
     container_name: easyread_frontend
     ports:
       - "3000:80"
