@@ -1490,3 +1490,247 @@ def export_current_content_docx(request):
     except Exception as e:
         logger.error(f"Error exporting current content DOCX: {str(e)}")
         return HttpResponse(f"Export failed: {str(e)}", status=500)
+
+
+@api_view(['POST'])
+def find_similar_images_batch(request):
+    """
+    API endpoint to find similar images for multiple queries in a single request.
+    This optimizes performance by processing all image searches together.
+    Expects JSON: {
+        "queries": [
+            {"index": 0, "query": "text description", "n_results": <integer>},
+            {"index": 1, "query": "another description", "n_results": <integer>},
+            ...
+        ],
+        "exclude_ids": [<integer>, ...] (optional),
+        "image_set": <string> (optional),
+        "image_sets": [<string>, ...] (optional)
+    }
+    Returns JSON: {
+        "results": {
+            "0": [{"id": <int>, "url": <str>, "description": <str>, "similarity": <float>}, ...],
+            "1": [{"id": <int>, "url": <str>, "description": <str>, "similarity": <float>}, ...],
+            ...
+        }
+    } or {"error": "..."}
+    """
+    from api.similarity_search import search_similar_images
+    from api.analytics import get_or_create_session, track_event
+    from api.image_allocation import optimize_image_allocation
+    from django.conf import settings
+    import concurrent.futures
+    import threading
+    
+    logger = logging.getLogger(__name__)
+    logger.info("--- find_similar_images_batch view entered ---")
+    
+    # Track analytics for batch image search
+    try:
+        session = get_or_create_session(request)
+        track_event(request, 'image_search_batch', {
+            'query_count': len(request.data.get('queries', [])),
+            'exclude_ids_count': len(request.data.get('exclude_ids', [])),
+            'image_sets': request.data.get('image_sets', [])
+        })
+    except Exception as e:
+        logger.warning(f"Analytics tracking failed for batch image search: {e}")
+    
+    # --- Input Validation ---
+    if not isinstance(request.data, dict):
+        return Response({"error": "Invalid request format. Expected JSON object."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    queries = request.data.get('queries', [])
+    exclude_ids = request.data.get('exclude_ids', [])
+    image_set = request.data.get('image_set')
+    image_sets = request.data.get('image_sets')
+    
+    if not queries or not isinstance(queries, list):
+        return Response({"error": "Missing or invalid 'queries' (must be a non-empty list)."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Validate each query
+    for i, query_item in enumerate(queries):
+        if not isinstance(query_item, dict):
+            return Response({"error": f"Query {i} must be a dictionary."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if 'index' not in query_item or 'query' not in query_item:
+            return Response({"error": f"Query {i} missing required 'index' or 'query' fields."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not isinstance(query_item['query'], str) or not query_item['query'].strip():
+            return Response({"error": f"Query {i} 'query' must be a non-empty string."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        n_results = query_item.get('n_results', 3)
+        try:
+            n_results = int(n_results)
+            if n_results <= 0:
+                raise ValueError("n_results must be positive")
+            query_item['n_results'] = n_results
+        except (ValueError, TypeError):
+            return Response({"error": f"Query {i} 'n_results' must be a positive integer."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if exclude_ids and not isinstance(exclude_ids, list):
+        return Response({"error": "Invalid 'exclude_ids' (must be a list of integers)."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if image_set and not isinstance(image_set, str):
+        return Response({"error": "Invalid 'image_set' (must be a string)."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if image_sets and not isinstance(image_sets, list):
+        return Response({"error": "Invalid 'image_sets' (must be a list of strings)."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    logger.info(f"Processing batch of {len(queries)} image search queries")
+    
+    # --- Process Queries in Parallel ---
+    def process_single_query(query_item):
+        """Process a single query and return results with error handling."""
+        index = query_item['index']
+        query_text = query_item['query']
+        n_results = query_item['n_results']
+        
+        try:
+            logger.info(f"Processing query {index}: '{query_text}' (n_results: {n_results})")
+            
+            # Use the existing similarity search function
+            similar_images = search_similar_images(
+                query_text=query_text,
+                n_results=n_results,
+                image_set=image_set,
+                image_sets=image_sets,
+                exclude_image_ids=exclude_ids
+            )
+            
+            # Format results for API response
+            formatted_results = []
+            for img in similar_images:
+                try:
+                    # Build the image URL (same logic as individual endpoint)
+                    if img.get('processed_path'):
+                        image_path = img['processed_path']
+                    else:
+                        image_path = img['original_path']
+                    
+                    # Create relative path from media root
+                    from pathlib import Path
+                    image_path = Path(image_path)
+                    if image_path.is_absolute():
+                        try:
+                            relative_path = image_path.relative_to(settings.MEDIA_ROOT)
+                            image_url = request.build_absolute_uri(settings.MEDIA_URL + str(relative_path))
+                        except ValueError:
+                            image_url = request.build_absolute_uri(settings.MEDIA_URL + 'images/' + image_path.name)
+                    else:
+                        image_url = request.build_absolute_uri(settings.MEDIA_URL + str(image_path))
+                    
+                    formatted_results.append({
+                        "id": img['id'],
+                        "url": image_url,
+                        "description": img.get('description', ''),
+                        "similarity": img.get('similarity', 0.0),
+                        "filename": img.get('filename', ''),
+                        "set_name": img.get('set_name', ''),
+                        "file_format": img.get('file_format', '')
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error formatting image result {img.get('id')} for query {index}: {e}")
+                    continue
+            
+            logger.info(f"Query {index} completed: found {len(formatted_results)} images")
+            return {
+                "index": str(index),
+                "results": formatted_results,
+                "success": True
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing query {index} ('{query_text}'): {e}")
+            return {
+                "index": str(index),
+                "results": [],
+                "success": False,
+                "error": str(e)
+            }
+    
+    # --- Execute Queries in Parallel ---
+    try:
+        batch_results = {}
+        
+        # Use ThreadPoolExecutor for I/O-bound database operations
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(queries), 5)) as executor:
+            # Submit all queries
+            future_to_query = {executor.submit(process_single_query, query): query for query in queries}
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_query, timeout=60):
+                try:
+                    result = future.result()
+                    batch_results[result["index"]] = result["results"]
+                    
+                    if not result["success"]:
+                        logger.warning(f"Query {result['index']} failed: {result.get('error', 'Unknown error')}")
+                        
+                except Exception as e:
+                    query_item = future_to_query[future]
+                    logger.error(f"Error getting result for query {query_item.get('index', 'unknown')}: {e}")
+                    batch_results[str(query_item.get('index', 'error'))] = []
+        
+        logger.info(f"Batch processing completed: {len(batch_results)} results returned")
+        
+        # Apply optimal image allocation if duplicate prevention is requested
+        optimal_allocation = None
+        allocation_metrics = None
+        
+        try:
+            # Check if we should apply allocation optimization
+            # For now, always apply it to improve image selection
+            if len(batch_results) > 1:  # Only optimize if multiple sentences
+                logger.info("Applying optimal image allocation...")
+                
+                allocation_result = optimize_image_allocation(
+                    batch_results=batch_results,
+                    prevent_duplicates=True,  # Always prevent duplicates for better user experience
+                    options={
+                        'similarity_threshold': 0.1,
+                        'uniqueness_bonus': 0.15,
+                        'high_similarity_threshold': 0.8,
+                        'local_search_iterations': 2,
+                        'enable_local_search': len(batch_results) <= 30  # Only for reasonable sizes
+                    }
+                )
+                
+                optimal_allocation = allocation_result.get("allocation", {})
+                allocation_metrics = allocation_result.get("metrics", {})
+                
+                logger.info(f"Image allocation completed: {allocation_metrics}")
+                
+                # Track allocation analytics
+                track_event(request, 'image_allocation_applied', {
+                    'sentences_count': len(batch_results),
+                    'algorithm': allocation_metrics.get('algorithm', 'unknown'),
+                    'assignment_rate': allocation_metrics.get('assignment_rate', 0),
+                    'processing_time_ms': allocation_metrics.get('processing_time_ms', 0)
+                })
+                
+        except Exception as e:
+            logger.error(f"Error in image allocation optimization: {e}")
+            # Continue without allocation - don't fail the entire request
+        
+        response_data = {
+            "results": batch_results
+        }
+        
+        # Include allocation in response if available
+        if optimal_allocation:
+            response_data["optimal_allocation"] = optimal_allocation
+            
+        if allocation_metrics:
+            response_data["allocation_metrics"] = allocation_metrics
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except concurrent.futures.TimeoutError:
+        logger.error("Batch processing timed out")
+        return Response({"error": "Batch processing timed out"}, status=status.HTTP_408_REQUEST_TIMEOUT)
+        
+    except Exception as e:
+        logger.exception(f"Error in find_similar_images_batch: {e}")
+        return Response({"error": f"Failed to process batch image search: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

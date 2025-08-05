@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { findSimilarImages, generateNewImage, updateSavedContentImage } from '../apiClient';
+import { findSimilarImages, findSimilarImagesBatch, generateNewImage, updateSavedContentImage } from '../apiClient';
 
 // Debounce utility function
 const debounce = (func, delay) => {
@@ -133,7 +133,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
        });
     }
 
-    // Fetch initial images if any were marked
+    // Fetch initial images using batch processing
     const fetchMissingImages = async () => {
         if (needsFetching.length === 0) {
           // Ensure fetchingRef is cleared even if no fetch happens
@@ -162,166 +162,140 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
             return loadingUpdates;
         });
 
-        // Array to hold results from each promise
-        let fetchResults = []; 
         try {
-            // Process in smaller batches to avoid overwhelming the backend
-            const BATCH_SIZE = 1; // Reduce to 1 to avoid overwhelming the backend during model loading
-            const batches = [];
-            for (let i = 0; i < needsFetching.length; i += BATCH_SIZE) {
-                batches.push(needsFetching.slice(i, i + BATCH_SIZE));
-            }
-
-            fetchResults = [];
+            // Prepare batch queries - collect all valid queries
+            const batchQueries = [];
+            const queryIndexMap = {}; // Map to track which query corresponds to which sentence index
             
-            // Process batches sequentially with delay between them
-            for (const batch of batches) {
-                const batchResults = await Promise.all(batch.map(async (index) => {
-                    const item = initialContent[index];
-                    // No need to read current state here, we build the update from scratch
-
-                    if (item.image_retrieval && item.image_retrieval !== 'error') {
-                        try {
-                            const response = await Promise.race([
-                                cachedFindSimilarImages(item.image_retrieval, 10, [], signal, selectedSets),
-                                new Promise((_, reject) => 
-                                    setTimeout(() => reject(new Error('Request timeout')), 50000) // 50 seconds to allow for backend timeout
-                                )
-                            ]);
-                        
-                        // Check if request was aborted
-                        if (signal.aborted) {
-                            return { index: index, update: { isLoading: false, error: 'Request cancelled' } };
-                        }
-                        
-                        let images = response.data.results || [];
-                        
-                        
-                        // Return the update object for this index
-                        const result = {
-                            index: index,
-                            update: {
-                                images: images,
-                                selectedPath: preventDuplicateImages ? null : (images.length > 0 ? images[0].url : null),
-                                isLoading: preventDuplicateImages && images.length > 0, // Keep loading if duplicate prevention is enabled and we have images
-                                error: images.length === 0 ? 'No images found' : null
-                            }
-                        };
-                        
-                        // Explicit cleanup to help GC
-                        images = null;
-                        return result;
-                    } catch {
-                        // Return an error update object
-                        return {
-                            index: index,
-                            update: {
-                                isLoading: false,
-                                error: 'Failed to fetch'
-                            }
-                        };
-                    }
-                } else {
-                    // Keyword invalid or missing - return state reset object
-                     return {
-                        index: index,
-                        update: { isLoading: false, error: 'Fetch cancelled or invalid keyword' }
-                    };                   
+            needsFetching.forEach(index => {
+                const item = initialContent[index];
+                if (item.image_retrieval && item.image_retrieval !== 'error') {
+                    const queryIndex = batchQueries.length;
+                    batchQueries.push({
+                        index: queryIndex,
+                        query: item.image_retrieval,
+                        n_results: 10
+                    });
+                    queryIndexMap[queryIndex] = index;
                 }
-            }));
-            
-            // Add results from this batch to the overall results
-            fetchResults.push(...batchResults);
-            
-            // Add delay between batches to prevent overwhelming the backend
-            if (batches.indexOf(batch) < batches.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 100)); // Minimal delay for sequential processing
+            });
+
+            if (batchQueries.length === 0) {
+                // No valid queries to process
+                needsFetching.forEach(index => {
+                    fetchingRef.current[index] = false;
+                });
+                return;
             }
-        }
-        } catch {
-              // If Promise.all fails catastrophically, we might not have individual results
-              // Create error updates for all initially requested indices
-              fetchResults = needsFetching.map(index => ({
-                index: index,
-                update: { isLoading: false, error: 'Batch fetch failed' }
-              }));
+
+            // Make single batch API call (includes image allocation optimization)
+            if (import.meta.env.DEV) {
+                console.log('🔍 Fetching images and optimizing allocation for', batchQueries.length, 'sentences...');
+            }
+            
+            const response = await Promise.race([
+                findSimilarImagesBatch(batchQueries, [], signal, selectedSets),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Batch request timeout')), 60000) // 60 seconds timeout
+                )
+            ]);
+
+            // Check if request was aborted
+            if (signal.aborted) {
+                needsFetching.forEach(index => {
+                    fetchingRef.current[index] = false;
+                });
+                return;
+            }
+
+            const batchResults = response.data.results || {};
+            const optimalAllocation = response.data.optimal_allocation || {};
+            const allocationMetrics = response.data.allocation_metrics || {};
+            const stateUpdates = {};
+
+            // Log allocation metrics in development
+            if (import.meta.env.DEV && Object.keys(allocationMetrics).length > 0) {
+                console.log('🎯 Backend image allocation metrics:', allocationMetrics);
+            }
+
+            // Process batch results with optimal allocation
+            Object.keys(batchResults).forEach(queryIndexStr => {
+                const queryIndex = parseInt(queryIndexStr);
+                const sentenceIndex = queryIndexMap[queryIndex];
+                const images = batchResults[queryIndexStr] || [];
+
+                if (sentenceIndex !== undefined) {
+                    // Check if backend provided optimal allocation for this sentence
+                    const backendAllocation = optimalAllocation[sentenceIndex];
+                    let selectedPath = null;
+                    let isLoading = false;
+
+                    if (backendAllocation && backendAllocation.image_url) {
+                        // Use backend's optimal selection
+                        selectedPath = backendAllocation.image_url;
+                        if (import.meta.env.DEV) {
+                            console.log(`📍 Sentence ${sentenceIndex}: Using backend allocation (similarity: ${backendAllocation.similarity?.toFixed(3)})`);
+                        }
+                    } else if (preventDuplicateImages && images.length > 0) {
+                        // No backend allocation - will be handled by frontend allocation effect
+                        selectedPath = null;
+                        isLoading = true;
+                    } else if (images.length > 0) {
+                        // No duplicate prevention - use first image
+                        selectedPath = images[0].url;
+                    }
+
+                    stateUpdates[sentenceIndex] = {
+                        images: images,
+                        selectedPath: selectedPath,
+                        isLoading: isLoading,
+                        error: images.length === 0 ? 'No images found' : null,
+                        backendAllocated: !!backendAllocation
+                    };
+                }
+            });
+
+            // Handle queries that didn't return results (failed on backend)
+            needsFetching.forEach(index => {
+                const item = initialContent[index];
+                if (item.image_retrieval && item.image_retrieval !== 'error' && !stateUpdates[index]) {
+                    stateUpdates[index] = {
+                        isLoading: false,
+                        error: 'Failed to fetch'
+                    };
+                } else if (!item.image_retrieval || item.image_retrieval === 'error') {
+                    stateUpdates[index] = {
+                        isLoading: false,
+                        error: 'Invalid keyword'
+                    };
+                }
+            });
+
+            // Apply all updates at once
+            setImageState(prev => ({
+                ...prev,
+                ...stateUpdates
+            }));
+
+        } catch (error) {
+            // Handle batch request failure
+            console.error('Batch image fetch failed:', error);
+            
+            const errorUpdates = {};
+            needsFetching.forEach(index => {
+                errorUpdates[index] = {
+                    isLoading: false,
+                    error: signal.aborted ? 'Request cancelled' : 'Failed to fetch'
+                };
+            });
+
+            setImageState(prev => ({
+                ...prev,
+                ...errorUpdates
+            }));
         }
         
-        // Don't process if aborted
-        if (signal.aborted) {
-            // Reset fetching status before returning
-            needsFetching.forEach(index => {
-              fetchingRef.current[index] = false;
-            });
-            return;
-        }
-              
-              // Process results in batches to avoid memory spikes
-              const batchSize = 10;
-              const processBatch = (startIndex) => {
-                  if (!fetchResults || fetchResults.length === 0) {
-                      return;
-                  }
-                  const endIndex = Math.min(startIndex + batchSize, fetchResults.length);
-                  const batchUpdates = {};
-                  
-                  for (let i = startIndex; i < endIndex; i++) {
-                      const result = fetchResults[i];
-                      if (result) {
-                          batchUpdates[result.index] = result.update;
-                          // Don't clear result yet - wait until all batches are done
-                      }
-                  }
-                  
-                  // Apply batch updates
-                  // Build the new state outside of setState
-                  const newState = {};
-                  
-                  // Get current state
-                  const currentState = imageState;
-                  
-                  // Copy existing state
-                  Object.keys(currentState).forEach(key => {
-                      newState[key] = currentState[key];
-                  });
-                  
-                  // Apply batch updates
-                  Object.keys(batchUpdates).forEach(idx => {
-                      const oldState = currentState[idx];
-                      const updateData = batchUpdates[idx];
-                      
-                      newState[idx] = {
-                          ...(oldState || {}),
-                          ...updateData
-                      };
-                  });
-                  
-                  setImageState(newState);
-                  
-                  // Explicit cleanup to help GC
-                  Object.keys(batchUpdates).forEach(key => {
-                      delete batchUpdates[key];
-                  });
-                  
-                  // Process next batch if there are more results
-                  if (endIndex < fetchResults.length) {
-                      setTimeout(() => processBatch(endIndex), 0);
-                  } else {
-                      // All batches processed - clean up
-                      if (fetchResults) {
-                          fetchResults.length = 0;
-                          fetchResults = null;
-                      }
-                  }
-              };
-              
-              // Start batch processing
-              if (fetchResults.length > 0) {
-                  processBatch(0);
-              }
-              
         // Reset fetching status for all initially targeted indices
-        // NOTE: Cleanup will happen after all batches are processed
         needsFetching.forEach(index => {
           fetchingRef.current[index] = false;
         });
@@ -333,14 +307,14 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialContent]);
   
-  // Sequential attribution effect for duplicate prevention
+  // Fallback allocation effect for sentences without backend allocation
   useEffect(() => {
     if (!preventDuplicateImages || !initialContent || initialContent.length === 0) {
       sequentialAttributionAppliedRef.current = false;
       return;
     }
     
-    // Don't apply sequential attribution if we're viewing saved content (contentId is provided)
+    // Don't apply allocation if we're viewing saved content (contentId is provided)
     // Saved content should preserve user's manual selections
     if (contentId !== null) {
       sequentialAttributionAppliedRef.current = true; // Mark as applied to prevent future runs
@@ -352,81 +326,79 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
       return;
     }
     
-    // Check if we have enough loaded images to start attribution
-    const loadedStates = Object.keys(imageState).filter(index => {
+    // Check if we have loaded images that need frontend allocation
+    const needsFrontendAllocation = Object.keys(imageState).filter(index => {
       const state = imageState[index];
-      return state && state.images && state.images.length > 0;
+      return state && 
+             state.images && 
+             state.images.length > 0 && 
+             !state.backendAllocated && 
+             state.isLoading; // Still loading means no selection made
     });
     
-    const hasLoadedImages = loadedStates.length > 0;
-    
-    if (!hasLoadedImages) {
-      return; // Wait for images to load
+    if (needsFrontendAllocation.length === 0) {
+      // No sentences need frontend allocation - either backend handled them or no images
+      sequentialAttributionAppliedRef.current = true;
+      return;
     }
     
-    // Apply sequential attribution immediately when images are available
+    // Apply simple sequential allocation for remaining sentences
     setImageState(currentState => {
-      // Double check we have loaded images in current state
-      const currentLoadedStates = Object.keys(currentState).filter(index => {
-        const state = currentState[index];
-        return state && state.images && state.images.length > 0;
-      });
-      
-      if (currentLoadedStates.length === 0) {
-        return currentState;
-      }
-      
-      // Apply sequential attribution
-      const usedImageIds = new Set();
       const updates = {};
+      const usedImageIds = new Set();
       
-      // Process sentences in order
-      for (let i = 0; i < initialContent.length; i++) {
-        const state = currentState[i];
-        if (state) {
-          if (state.images && state.images.length > 0) {
-            // Find the first image that hasn't been used yet
-            let selectedPath = null;
-            
-            for (const img of state.images) {
-              const imageId = img.id || img.url;
-              if (!usedImageIds.has(imageId)) {
-                selectedPath = img.url;
-                usedImageIds.add(imageId);
-                break;
-              }
-            }
-            
-            // Always update when duplicate prevention is enabled to ensure proper assignment
-            updates[i] = {
-              ...state,
-              selectedPath: selectedPath,
-              isLoading: false, // Turn off loading when sequential attribution is applied
-              error: selectedPath ? null : 'No unique images available'
-            };
-            
-          } else if (state.isLoading) {
-            // If this sentence is still loading or has no images, turn off loading
-            updates[i] = {
-              ...state,
-              isLoading: false
-            };
+      // First, collect already used images from backend allocation
+      Object.keys(currentState).forEach(index => {
+        const state = currentState[index];
+        if (state && state.backendAllocated && state.selectedPath) {
+          // Extract image ID from URL for duplicate tracking
+          const images = state.images || [];
+          const selectedImg = images.find(img => img.url === state.selectedPath);
+          if (selectedImg) {
+            const imageId = selectedImg.id || selectedImg.url;
+            usedImageIds.add(imageId);
           }
         }
-      }
+      });
       
-      // Apply updates if there are any
+      // Apply sequential allocation to remaining sentences
+      needsFrontendAllocation.forEach(indexStr => {
+        const index = parseInt(indexStr);
+        const state = currentState[index];
+        
+        if (state && state.images && state.images.length > 0) {
+          // Find first unused image
+          let selectedImage = null;
+          
+          for (const img of state.images) {
+            const imageId = img.id || img.url;
+            if (!usedImageIds.has(imageId)) {
+              selectedImage = img;
+              usedImageIds.add(imageId);
+              break;
+            }
+          }
+          
+          updates[index] = {
+            ...state,
+            selectedPath: selectedImage ? selectedImage.url : null,
+            isLoading: false,
+            error: selectedImage ? null : 'No unique images available'
+          };
+        }
+      });
+      
       if (Object.keys(updates).length > 0) {
         const newState = { ...currentState };
         Object.keys(updates).forEach(index => {
           newState[index] = updates[index];
         });
         
-        // Update the used images ref
+        // Update refs
         usedImagesRef.current = usedImageIds;
         sequentialAttributionAppliedRef.current = true;
         
-        // Sync the current selections ref with the new state
+        // Sync current selections
         Object.keys(newState).forEach(index => {
           const indexNum = parseInt(index);
           if (newState[index].selectedPath !== undefined) {
@@ -434,11 +406,13 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
           }
         });
         
+        if (import.meta.env.DEV) {
+          console.log('🔄 Applied frontend fallback allocation for', Object.keys(updates).length, 'sentences');
+        }
+        
         return newState;
       } else {
-        // Still mark as applied to prevent repeated checks
         sequentialAttributionAppliedRef.current = true;
-        usedImagesRef.current = usedImageIds;
       }
       
       return currentState;

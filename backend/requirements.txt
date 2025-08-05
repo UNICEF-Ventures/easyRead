@@ -1,7 +1,6 @@
 google-genai
 cohere
 openai
-chromadb
 django
 python-dotenv
 Pillow

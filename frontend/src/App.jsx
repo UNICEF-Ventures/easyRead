@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Routes, Route, useNavigate, Link } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
-import ImageManagementPage from './components/ImageManagementPage';
+import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
@@ -32,9 +32,6 @@ function App() {
         </Button>
         <Button color="inherit" component={Link} to="/saved">
           Saved Content
-        </Button>
-        <Button color="inherit" component={Link} to="/images">
-          Image Management
         </Button>
       </Toolbar>
     </AppBar>
@@ -141,8 +138,8 @@ function App() {
             }
         />
         <Route
-          path="/images"
-          element={<ImageManagementPage />}
+          path="/admin"
+          element={<AdminRoute />}
         />
         <Route 
           path="/saved" 

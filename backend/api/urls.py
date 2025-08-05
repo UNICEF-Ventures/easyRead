@@ -5,6 +5,7 @@ Updated to include new endpoints for the refactored embedding system.
 
 from django.urls import path
 from . import views
+from . import admin_views
 
 urlpatterns = [
     # Document processing endpoints
@@ -19,8 +20,9 @@ urlpatterns = [
     path('generate-image/', views.generate_image_view, name='generate_image'),
     path('list-images/', views.list_images, name='list_images'),
     
-    # Image similarity search endpoint
+    # Image similarity search endpoints
     path('find-similar-images/', views.find_similar_images, name='find_similar_images'),
+    path('find-similar-images-batch/', views.find_similar_images_batch, name='find_similar_images_batch'),
     
     # Content management endpoints
     path('save-processed-content/', views.save_processed_content, name='save_processed_content'),
@@ -39,4 +41,12 @@ urlpatterns = [
     
     # Health monitoring endpoint
     path('health/', views.health_check, name='health_check'),
+    
+    # Admin authentication endpoints
+    path('admin/login/', admin_views.admin_login_view, name='admin_login'),
+    path('admin/dashboard/', admin_views.admin_dashboard_view, name='admin_dashboard'),
+    path('admin/logout/', admin_views.admin_logout_view, name='admin_logout'),
+    path('admin/check-auth/', admin_views.check_auth_status, name='check_auth_status'),
+    path('admin/api/login/', admin_views.admin_api_login, name='admin_api_login'),
+    path('admin/api/logout/', admin_views.admin_api_logout, name='admin_api_logout'),
 ]
