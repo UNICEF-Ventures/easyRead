@@ -41,6 +41,7 @@ function HomePage({
   setIsProcessingPages,
   setTotalPages,
   setPagesProcessed,
+  setCurrentProcessingStep,
   setError, 
   currentMarkdown,
   onProcessingComplete
@@ -217,8 +218,15 @@ function HomePage({
             const page = markdownPages[i];
             // No need to check for empty page again due to filter
             console.log(`Processing page ${i+1} of ${markdownPages.length}`);
+            
+            // Progress callback for enhanced steps
+            const onProgress = (step) => {
+              console.log(`Page ${i+1}: ${step}`);
+              setCurrentProcessingStep(step);
+            };
+            
             try {
-              const response = await generateEasyRead(page, Array.from(selectedSets));
+              const response = await generateEasyRead(page, Array.from(selectedSets), onProgress);
               
               // Check response structure
               if (response.data && typeof response.data === 'object' && response.data.easy_read_sentences) {
@@ -267,7 +275,8 @@ function HomePage({
           prevent_duplicate_images: capturedPreventDuplicates
         };
 
-        // Call the completion callback with the final structured result
+        // Clear processing step and call completion callback
+        setCurrentProcessingStep('');
         onProcessingComplete(currentMarkdown, finalResult);
 
     } catch (err) { // Catch errors before the loop starts (e.g., splitting markdown) 
@@ -276,6 +285,7 @@ function HomePage({
       // Clear state if setup fails
        setTotalPages(0);
        setPagesProcessed(0);
+       setCurrentProcessingStep('');
        setIsProcessingPages(false); // Explicitly turn off if setup fails
     } 
     // No finally block needed here, navigation happens via callback

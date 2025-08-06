@@ -270,7 +270,20 @@ function EasyReadContentList({
               {/* Sentence Column (takes remaining space) */}
               <Box sx={{ flexGrow: 1, minWidth: 0 }}> {/* minWidth: 0 prevents overflow issues */}
                 <ListItemText 
-                   primary={item.sentence} 
+                   primary={
+                     <Typography 
+                       variant="body1" 
+                       sx={{ 
+                         fontWeight: item.highlighted ? 'bold' : 'normal',
+                         ...(item.highlighted && { 
+                           color: 'primary.main',
+                           fontSize: '1.05em'
+                         })
+                       }}
+                     >
+                       {item.sentence}
+                     </Typography>
+                   }
                    sx={{ m: 0 }}
                 />
               </Box>

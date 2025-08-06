@@ -34,12 +34,84 @@ export const extractMarkdown = (file) => {
   });
 };
 
-// Function to generate easy read sentences from a markdown page
-export const generateEasyRead = (markdownPage, selectedSets = []) => {
-  return apiClient.post('/process-page/', {
-    markdown_page: markdownPage,
-    selected_sets: selectedSets,
+// Internal validation function (not exported)
+const validateCompleteness = (originalMarkdown, sentences) => {
+  return apiClient.post('/validate-completeness/', {
+    original_markdown: originalMarkdown,
+    easy_read_sentences: sentences
+  }, {
+    timeout: 60000 // 60 seconds for validation
   });
+};
+
+// Internal revision function (not exported)
+const reviseSentences = (originalMarkdown, currentSentences, validationFeedback) => {
+  return apiClient.post('/revise-sentences/', {
+    original_markdown: originalMarkdown,
+    current_sentences: currentSentences,
+    validation_feedback: validationFeedback
+  }, {
+    timeout: 90000 // 90 seconds for revision
+  });
+};
+
+// Function to generate easy read sentences from a markdown page with validation and revision
+export const generateEasyRead = async (markdownPage, selectedSets = [], onProgress = null) => {
+  try {
+    // Step 1: Generate initial Easy Read content
+    onProgress?.("Converting to Easy Read...");
+    const initialResponse = await apiClient.post('/process-page/', {
+      markdown_page: markdownPage,
+      selected_sets: selectedSets,
+    }, {
+      timeout: 90000 // Extend timeout for initial processing
+    });
+    
+    const { title, easy_read_sentences } = initialResponse.data;
+    
+    // Step 2: Validate completeness
+    onProgress?.("Validating content quality...");
+    try {
+      const validationResponse = await validateCompleteness(
+        markdownPage, 
+        easy_read_sentences.map(s => s.sentence)
+      );
+      
+      // Step 3: Always revise content (regardless of validation result)
+      onProgress?.("Revising content...");
+      try {
+        const revisionResponse = await reviseSentences(
+          markdownPage, 
+          easy_read_sentences, 
+          validationResponse.data
+        );
+        
+        if (import.meta.env.DEV) {
+          console.log('✨ Content revised and enhanced');
+          console.log('Validation was complete:', validationResponse.data.is_complete);
+        }
+        
+        return {
+          data: {
+            title,
+            easy_read_sentences: revisionResponse.data.easy_read_sentences
+          }
+        };
+      } catch (revisionError) {
+        console.warn('Revision failed, using original content:', revisionError);
+        return initialResponse;
+      }
+      
+    } catch (validationError) {
+      console.warn('Validation failed, using original content:', validationError);
+    }
+    
+    return initialResponse;
+    
+  } catch (error) {
+    console.error('Easy Read generation failed:', error);
+    throw error; // Re-throw to maintain existing error handling
+  }
 };
 
 // Function to save processed content

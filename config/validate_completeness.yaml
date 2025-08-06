@@ -33,7 +33,7 @@ system_message: |
 
   # Guidelines
   - Focus on comparing the meaning and key information, not exact wording.
-  - Be specific when describing missing or extra information..
+  - Be specific when describing missing or extra information.
 
 user_message_template: |
   # Original Content
