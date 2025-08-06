@@ -107,8 +107,8 @@ IMAGE_UPLOAD_DIR = settings.MEDIA_ROOT / "uploaded_images"
 # COHERE_MODEL = "embed-english-light-v3.0" # Removed Cohere model
 # CLIP_MODEL_NAME = 'sentence-transformers/clip-ViT-B-32-multilingual-v1' # Removed - using API providers
 
-# Ensure upload directory exists
-IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+# Note: IMAGE_UPLOAD_DIR will be created when needed by upload handlers
+# to avoid permission issues during Django startup in Docker environments
 
 # --- Initialize Clients ---
 # co = None # Removed Cohere client initialization
@@ -1455,6 +1455,9 @@ def generate_image_view(request):
                     continue
 
                 # --- Save the generated image ---
+                # Ensure upload directory exists before using it
+                IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                
                 image_name = f"generated_{uuid.uuid4().hex[:10]}.png"
                 image_save_path = IMAGE_UPLOAD_DIR / image_name
                 relative_image_path = os.path.relpath(image_save_path, settings.MEDIA_ROOT)

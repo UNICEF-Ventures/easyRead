@@ -225,23 +225,20 @@ class EmbeddingValidator:
     Validation utilities for embedding vectors.
     """
     
-    # Expected embedding dimensions for different models
+    # Expected embedding dimensions for API-based models only
     EXPECTED_DIMENSIONS = {
-        'openclip-vit-b-32': 1024,  # Update this based on actual model
-        'clip-vit-b-32': 512,
-        'clip-vit-l-14': 768,
-        'openclip-vit-bigG-14': 1024,  # OpenCLIP BigG model
-        'openclip': 1024,  # OpenCLIP model (corrected from 409)
         'cohere.embed-multilingual-v3': 1024,  # Cohere multilingual model
-        'cohere.embed-english-v3': 1024,      # Cohere English model
+        'cohere.embed-english-v3': 1024,      # Cohere English model  
         'amazon.titan-embed-text-v1': 1536,   # Amazon Titan v1
         'amazon.titan-embed-text-v2:0': 1024, # Amazon Titan v2
+        'text-embedding-3-small': 1536,       # OpenAI small
+        'text-embedding-3-large': 3072,       # OpenAI large
         # Padded dimensions (after padding to standard size)
         'padded': 2000,  # Standard padded dimension for multi-model compatibility
     }
     
     @classmethod
-    def validate_embedding_vector(cls, vector: np.ndarray, model_name: str = 'openclip-vit-b-32', is_padded: bool = False) -> Dict[str, Any]:
+    def validate_embedding_vector(cls, vector: np.ndarray, model_name: str = 'cohere.embed-multilingual-v3', is_padded: bool = False) -> Dict[str, Any]:
         """
         Validate an embedding vector.
         

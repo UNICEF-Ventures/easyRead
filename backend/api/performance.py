@@ -260,7 +260,7 @@ def cache_embedding(embedding_type: str = 'both'):
                     # Try to get from cache first
                     if len(args) > 1:  # args[0] is self, args[1] is image_path
                         image_path = str(args[1])
-                        model_name = getattr(args[0], 'model_name', 'openclip-vit-b-32')
+                        model_name = getattr(args[0], 'model_name', 'default-api-model')
                         
                         cached_result = EmbeddingCache.get_image_embedding(image_path, model_name)
                         if cached_result is not None:
@@ -273,7 +273,7 @@ def cache_embedding(embedding_type: str = 'both'):
                     # Try to get from cache first
                     if len(args) > 1:  # args[0] is self, args[1] is text
                         text = str(args[1])
-                        model_name = getattr(args[0], 'model_name', 'openclip-vit-b-32')
+                        model_name = getattr(args[0], 'model_name', 'default-api-model')
                         
                         cached_result = EmbeddingCache.get_text_embedding(text, model_name)
                         if cached_result is not None:
@@ -290,14 +290,14 @@ def cache_embedding(embedding_type: str = 'both'):
                         # Cache image embedding
                         if embedding_type in ['image', 'both'] and len(args) > 1:
                             image_path = str(args[1])
-                            model_name = getattr(args[0], 'model_name', 'openclip-vit-b-32')
+                            model_name = getattr(args[0], 'model_name', 'default-api-model')
                             EmbeddingCache.cache_image_embedding(image_path, model_name, result)
                     
                     elif len(args) > 1 and isinstance(args[1], str):
                         # Cache text embedding
                         if embedding_type in ['text', 'both']:
                             text = str(args[1])
-                            model_name = getattr(args[0], 'model_name', 'openclip-vit-b-32')
+                            model_name = getattr(args[0], 'model_name', 'default-api-model')
                             EmbeddingCache.cache_text_embedding(text, model_name, result)
                             
                 except Exception as e:

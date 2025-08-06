@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Routes, Route, useNavigate, Link } from 'react-router-dom';
+import { Routes, Route, useNavigate, Link, BrowserRouter } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
 import AdminRoute from './components/AdminRoute';
@@ -7,7 +7,8 @@ import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
 
-function App() {
+// Core App component that requires router context
+function AppCore() {
   const [markdownContent, setMarkdownContent] = useState('');
   const [easyReadContent, setEasyReadContent] = useState([]);
   const [contentTitle, setContentTitle] = useState('');
@@ -154,4 +155,15 @@ function App() {
   );
 }
 
+// Main App wrapper that provides router context for both standalone and federated use
+function App() {
+  return (
+    <BrowserRouter>
+      <AppCore />
+    </BrowserRouter>
+  );
+}
+
+// Export both the wrapped App (for standalone use) and AppCore (for federated use with custom routing)
+export { AppCore };
 export default App;

@@ -11,11 +11,9 @@ reportlab
 litellm
 PyYAML
 django-cors-headers
-sentence-transformers
 psycopg2-binary
 pgvector
 dj-database-url
-open-clip-torch
 numpy
 svglib
 python-magic
