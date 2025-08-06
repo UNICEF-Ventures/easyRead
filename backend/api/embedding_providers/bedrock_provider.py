@@ -88,9 +88,9 @@ class BedrockEmbeddingProvider(EmbeddingProvider):
         self.model_config = self.MODEL_CONFIGS[self.model_name]
         
         # AWS credentials (will be picked up by litellm from environment)
-        self.aws_access_key_id = config.get('aws_access_key_id') or os.environ.get('AWS_ACCESS_KEY_ID')
-        self.aws_secret_access_key = config.get('aws_secret_access_key') or os.environ.get('AWS_SECRET_ACCESS_KEY')
-        self.aws_region = config.get('aws_region') or os.environ.get('AWS_REGION_NAME', 'us-east-1')
+        self.aws_access_key_id = (config or {}).get('aws_access_key_id') or os.environ.get('AWS_ACCESS_KEY_ID')
+        self.aws_secret_access_key = (config or {}).get('aws_secret_access_key') or os.environ.get('AWS_SECRET_ACCESS_KEY')
+        self.aws_region = (config or {}).get('aws_region') or os.environ.get('AWS_REGION_NAME', 'us-east-1')
         
         # Validate AWS credentials
         if not all([self.aws_access_key_id, self.aws_secret_access_key]):

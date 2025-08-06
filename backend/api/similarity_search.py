@@ -62,7 +62,7 @@ class SimilaritySearcher:
                     return False
             
             # Check vector data exists and is valid
-            if not hasattr(embedding_obj, 'vector') or not embedding_obj.vector:
+            if not hasattr(embedding_obj, 'vector') or embedding_obj.vector is None or len(embedding_obj.vector) == 0:
                 logger.warning(f"Embedding {embedding_obj.id} has no vector data")
                 return False
             
@@ -194,7 +194,7 @@ class SimilaritySearcher:
             for embedding_obj in similar_embeddings:
                 try:
                     # Validate the retrieved embedding
-                    if not hasattr(embedding_obj, 'vector') or not embedding_obj.vector:
+                    if not hasattr(embedding_obj, 'vector') or embedding_obj.vector is None or len(embedding_obj.vector) == 0:
                         logger.warning(f"Embedding {embedding_obj.id} has no vector data")
                         continue
                     

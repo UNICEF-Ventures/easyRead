@@ -159,6 +159,47 @@ export const batchUploadImages = (imageFiles, description = '', setName = '') =>
   });
 };
 
+// Function for optimized large batch uploads (1000+ images)
+export const optimizedBatchUpload = (imageFiles, description = '', setName = '', batchSize = 50, sessionId = null) => {
+  const formData = new FormData();
+  
+  // Add each file to the form data
+  for (let i = 0; i < imageFiles.length; i++) {
+    formData.append('images', imageFiles[i]);
+  }
+  
+  if (description) {
+    formData.append('description', description);
+  }
+  
+  if (setName) {
+    formData.append('set_name', setName);
+  }
+  
+  if (batchSize) {
+    formData.append('batch_size', batchSize.toString());
+  }
+  
+  if (sessionId) {
+    formData.append('session_id', sessionId);
+  }
+
+  return apiClient.post('/optimized-batch-upload/', formData, {
+    headers: {
+      'Content-Type': undefined
+    },
+    // Extended timeout for large batches
+    timeout: 600000, // 10 minutes
+  });
+};
+
+// Function to check upload progress
+export const getUploadProgress = (sessionId) => {
+  return apiClient.get(`/upload-progress/${sessionId}/`, {
+    timeout: 30000 // 30 seconds
+  });
+};
+
 // Function to upload folder structure with automatic set creation
 export const uploadFolder = (files, onProgress = null) => {
   // For very large uploads, use chunked approach
@@ -310,7 +351,7 @@ const uploadFolderChunked = async (files, onProgress = null) => {
       
       // Merge results
       if (chunkResult.data) {
-        const chunkData = chunkResult.data;
+        const chunkData = chunkResult.data.data || chunkResult.data;
         
         // Merge folder results
         if (chunkData.folders) {
@@ -340,7 +381,8 @@ const uploadFolderChunked = async (files, onProgress = null) => {
         totalProcessed += chunk.length;
       }
       
-      console.log(`✅ Chunk ${chunkNumber} completed: ${chunkResult.data?.total_successful || 0}/${chunk.length} files successful`);
+      const chunkResponseData = chunkResult.data?.data || chunkResult.data;
+      console.log(`✅ Chunk ${chunkNumber} completed: ${chunkResponseData?.total_successful || 0}/${chunk.length} files successful`);
       
       // Update progress after chunk completion
       if (onProgress) {

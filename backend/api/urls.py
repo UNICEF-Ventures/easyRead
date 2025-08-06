@@ -17,6 +17,8 @@ urlpatterns = [
     # Image upload and management endpoints
     path('upload-image/', views.upload_image, name='upload_image'),
     path('batch-upload-images/', views.batch_upload_images, name='batch_upload_images'),
+    path('optimized-batch-upload/', views.optimized_batch_upload, name='optimized_batch_upload'),
+    path('upload-progress/<str:session_id>/', views.upload_progress, name='upload_progress'),
     path('upload-folder/', views.upload_folder, name='upload_folder'),
     path('generate-image/', views.generate_image_view, name='generate_image'),
     path('list-images/', views.list_images, name='list_images'),

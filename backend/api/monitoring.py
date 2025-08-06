@@ -240,27 +240,85 @@ class EmbeddingHealthCheck:
     
     @staticmethod
     def check_model_availability() -> Dict[str, Any]:
-        """Check if the embedding model is available and working."""
+        """Check if the embedding API provider is available and working."""
         try:
             from api.embedding_adapter import get_embedding_model
+            from api.embedding_providers.factory import auto_configure_provider, ProviderError
+            import os
             
-            model = get_embedding_model()
+            # Check API keys first
+            api_status = EmbeddingHealthCheck._check_api_keys()
+            if api_status['status'] != 'healthy':
+                return api_status
             
-            # Test with a simple text
-            test_embedding = model.encode_single_text("test")
-            
-            return {
-                'status': 'healthy',
-                'model_loaded': True,
-                'test_embedding_generated': test_embedding is not None,
-                'embedding_dimension': len(test_embedding) if test_embedding is not None else None
-            }
+            # Test provider configuration
+            try:
+                config = auto_configure_provider()
+                provider_name = config.get('provider', 'unknown')
+                
+                # Test actual embedding generation
+                model = get_embedding_model()
+                test_embedding = model.encode_single_text("health check test")
+                
+                metadata = model.provider.get_model_metadata()
+                
+                return {
+                    'status': 'healthy',
+                    'provider_name': provider_name,
+                    'model_name': metadata.get('model_name', 'unknown'),
+                    'api_available': True,
+                    'test_embedding_generated': test_embedding is not None,
+                    'embedding_dimension': len(test_embedding) if test_embedding is not None else None,
+                    'provider_metadata': metadata
+                }
+            except ProviderError as e:
+                return {
+                    'status': 'unhealthy',
+                    'api_available': False,
+                    'error': f'Provider configuration failed: {str(e)}',
+                    'provider_name': None
+                }
+                
         except Exception as e:
             return {
                 'status': 'unhealthy',
-                'model_loaded': False,
+                'api_available': False,
                 'error': str(e)
             }
+    
+    @staticmethod
+    def _check_api_keys() -> Dict[str, Any]:
+        """Check if required API keys are present."""
+        import os
+        
+        # Check for API keys
+        aws_access = os.getenv('AWS_ACCESS_KEY_ID')
+        aws_secret = os.getenv('AWS_SECRET_ACCESS_KEY')
+        openai_key = os.getenv('OPENAI_API_KEY')
+        cohere_key = os.getenv('COHERE_API_KEY')
+        
+        available_apis = []
+        
+        if aws_access and aws_secret:
+            available_apis.append('AWS Bedrock')
+        if openai_key:
+            available_apis.append('OpenAI')
+        if cohere_key:
+            available_apis.append('Cohere')
+        
+        if not available_apis:
+            return {
+                'status': 'unhealthy',
+                'error': 'No embedding API keys found. Please set AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, OPENAI_API_KEY, or COHERE_API_KEY',
+                'available_apis': [],
+                'api_keys_configured': False
+            }
+        
+        return {
+            'status': 'healthy',
+            'available_apis': available_apis,
+            'api_keys_configured': True
+        }
     
     @staticmethod
     def check_database_connectivity() -> Dict[str, Any]:
@@ -299,6 +357,7 @@ class EmbeddingHealthCheck:
         try:
             from django.conf import settings
             from pathlib import Path
+            import os
             
             media_root = Path(settings.MEDIA_ROOT)
             images_dir = media_root / 'images'

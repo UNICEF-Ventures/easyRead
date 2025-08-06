@@ -392,3 +392,41 @@ def get_image_metadata(image_path: Union[str, Path]) -> Optional[dict]:
     """
     converter = get_image_converter()
     return converter.get_image_info(image_path)
+
+
+def generate_description_from_filename(filename: str) -> str:
+    """
+    Generate a clean description from a filename.
+    
+    Examples:
+        "Wood_Duck_65661.png" -> "Wood Duck"
+        "red-car-123.jpg" -> "red-car-123"
+        "Simple_Image.png" -> "Simple Image"
+        "house_2_story_456.jpg" -> "house 2 story"
+    
+    Args:
+        filename: The original filename
+        
+    Returns:
+        Cleaned description string
+    """
+    # Remove file extension
+    name_without_ext = os.path.splitext(filename)[0]
+    
+    # If there are underscores, remove the last part (usually an ID number)
+    if '_' in name_without_ext:
+        parts = name_without_ext.split('_')
+        # Only remove last part if it looks like a number (optional enhancement)
+        if parts[-1].isdigit():
+            name_without_ext = '_'.join(parts[:-1])
+    
+    # Replace underscores and hyphens with spaces
+    cleaned_name = name_without_ext.replace('_', ' ').replace('-', ' ')
+    
+    # Clean up multiple spaces and trim
+    cleaned_name = ' '.join(cleaned_name.split())
+    
+    # Capitalize first letter of each word for better presentation
+    cleaned_name = ' '.join(word.capitalize() for word in cleaned_name.split())
+    
+    return cleaned_name or 'Untitled'
