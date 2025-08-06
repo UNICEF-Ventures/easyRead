@@ -160,6 +160,31 @@ MEDIA_ROOT = BASE_DIR / 'media' # Store media files in <backend>/media/
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Logging Configuration - Suppress SQL queries to prevent embedding vector spam
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django.db.backends': {
+            'level': 'ERROR',  # Only show database errors, not SQL queries
+            'handlers': ['console'],
+        },
+        'django.db.backends.schema': {
+            'level': 'ERROR',  # Suppress schema queries
+            'handlers': ['console'],
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+}
+
 # CORS Settings
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173", # Default Vite dev server port

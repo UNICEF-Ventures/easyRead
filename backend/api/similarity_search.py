@@ -33,6 +33,51 @@ class SimilaritySearcher:
         # Get model metadata for filtering
         self.model_metadata = self.embedding_model.provider.get_model_metadata()
     
+    def _validate_embedding_compatibility(self, embedding_obj, query_dimension: int, provider_name: str, model_name: str) -> bool:
+        """
+        Validate that an embedding is compatible with the query.
+        
+        Args:
+            embedding_obj: Embedding model instance
+            query_dimension: Original query embedding dimension
+            provider_name: Expected provider name
+            model_name: Expected model name
+            
+        Returns:
+            True if compatible, False otherwise
+        """
+        try:
+            # Check provider and model match
+            if embedding_obj.provider_name != provider_name or embedding_obj.model_name != model_name:
+                logger.debug(f"Provider/model mismatch: {embedding_obj.provider_name}:{embedding_obj.model_name} vs {provider_name}:{model_name}")
+                return False
+            
+            # Check dimension compatibility  
+            stored_dimension = embedding_obj.embedding_dimension
+            if stored_dimension != query_dimension:
+                logger.debug(f"Dimension mismatch: stored {stored_dimension}D vs query {query_dimension}D")
+                # Allow some flexibility for compatible dimensions
+                compatible_dims = {512, 768, 1024, 1536, 2048, 3072}
+                if stored_dimension not in compatible_dims or query_dimension not in compatible_dims:
+                    return False
+            
+            # Check vector data exists and is valid
+            if not hasattr(embedding_obj, 'vector') or not embedding_obj.vector:
+                logger.warning(f"Embedding {embedding_obj.id} has no vector data")
+                return False
+            
+            # Check vector is properly padded
+            vector_length = len(embedding_obj.vector) if isinstance(embedding_obj.vector, list) else len(embedding_obj.vector)
+            if vector_length != 2000:
+                logger.warning(f"Embedding {embedding_obj.id} vector length {vector_length} != 2000")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error validating embedding compatibility: {e}")
+            return False
+    
     @monitor_embedding_operation('similarity_search')
     @cache_similarity_search
     @similarity_search_limiter
@@ -64,22 +109,25 @@ class SimilaritySearcher:
                 logger.error(f"Failed to generate embedding for query: {query_text}")
                 return []
             
+            # Store original dimension before padding
+            original_query_dim = len(query_embedding)
+            
+            # Pad the query embedding to standard dimension for pgvector comparison
+            padded_query_embedding = pad_vector_to_standard(query_embedding)
+            
             # Determine which model to use for filtering - must match the query model
             search_provider = provider_name or self.model_metadata['provider_name']
             search_model = model_name or self.model_metadata['model_name']
             
-            # Get the query embedding dimension
-            query_dim = len(query_embedding)
-            
-            # Build the base query for text embeddings - ONLY from the same model AND same dimension
+            # Build the base query for text embeddings - filter by ORIGINAL dimension stored in DB
             embeddings_query = Embedding.objects.filter(
                 embedding_type='text',
                 provider_name=search_provider,
                 model_name=search_model,
-                embedding_dimension=query_dim
+                embedding_dimension=original_query_dim  # Use original dimension, not padded
             )
             
-            logger.info(f"Searching for embeddings with provider={search_provider}, model={search_model}, dimension={query_dim}")
+            logger.info(f"Searching for embeddings with provider={search_provider}, model={search_model}, dimension={original_query_dim}")
             
             # Filter by image set(s) if specified
             if image_sets:
@@ -97,14 +145,45 @@ class SimilaritySearcher:
             # Get all text embeddings that match the criteria
             text_embeddings = list(embeddings_query)
             
-            
             if not text_embeddings:
-                logger.info(f"No text embeddings found for query: {query_text}")
+                logger.info(f"No text embeddings found for query: '{query_text}' with provider={search_provider}, model={search_model}, dimension={original_query_dim}")
+                # Try falling back to any compatible dimension from the same provider/model
+                fallback_query = Embedding.objects.filter(
+                    embedding_type='text',
+                    provider_name=search_provider,
+                    model_name=search_model
+                ).select_related('image', 'image__set')
+                
+                if image_sets:
+                    fallback_query = fallback_query.filter(image__set__name__in=image_sets)
+                elif image_set:
+                    fallback_query = fallback_query.filter(image__set__name=image_set)
+                
+                if exclude_image_ids:
+                    fallback_query = fallback_query.exclude(image_id__in=exclude_image_ids)
+                
+                text_embeddings = list(fallback_query)
+                
+                if not text_embeddings:
+                    logger.warning(f"No fallback embeddings found for provider={search_provider}, model={search_model}")
+                    return []
+                else:
+                    logger.info(f"Using fallback: found {len(text_embeddings)} embeddings from same provider/model")
+            
+            # Use pgvector for efficient similarity search with PADDED vectors
+            # Convert padded query embedding to the format expected by pgvector
+            query_vector = list(padded_query_embedding)  # Use padded vector for comparison
+            
+            # Validate query vector length matches database field
+            if len(query_vector) != 2000:
+                logger.error(f"Query vector dimension {len(query_vector)} doesn't match database field (2000)")
                 return []
             
-            # Use pgvector for efficient similarity search instead of manual calculation
-            # Convert query embedding to the format expected by pgvector
-            query_vector = list(query_embedding)
+            # Re-apply the query with the actual embeddings found (for fallback case)
+            if text_embeddings != list(embeddings_query):
+                # We're using fallback embeddings, need to update the query
+                fallback_ids = [emb.id for emb in text_embeddings]
+                embeddings_query = Embedding.objects.filter(id__in=fallback_ids)
             
             # Get embeddings with their cosine distances using pgvector
             similar_embeddings = (embeddings_query
@@ -114,8 +193,25 @@ class SimilaritySearcher:
             similarities = []
             for embedding_obj in similar_embeddings:
                 try:
+                    # Validate the retrieved embedding
+                    if not hasattr(embedding_obj, 'vector') or not embedding_obj.vector:
+                        logger.warning(f"Embedding {embedding_obj.id} has no vector data")
+                        continue
+                    
+                    # Check for dimension mismatch warnings
+                    stored_dim = embedding_obj.embedding_dimension
+                    vector_dim = len(embedding_obj.vector) if isinstance(embedding_obj.vector, list) else len(embedding_obj.vector)
+                    
+                    if stored_dim != original_query_dim:
+                        logger.debug(f"Dimension mismatch in fallback: query {original_query_dim}D vs stored {stored_dim}D")
+                    
                     # Convert distance to similarity score (1.0 - distance for cosine)
                     similarity = max(0.0, 1.0 - embedding_obj.distance)
+                    
+                    # Validate similarity score
+                    if similarity < 0.0 or similarity > 1.0:
+                        logger.warning(f"Invalid similarity score {similarity} for embedding {embedding_obj.id}")
+                        similarity = max(0.0, min(1.0, similarity))
                     
                     # Build result dictionary
                     image_obj = embedding_obj.image
@@ -128,7 +224,11 @@ class SimilaritySearcher:
                         'original_path': image_obj.original_path,
                         'processed_path': image_obj.processed_path,
                         'file_format': image_obj.file_format,
-                        'created_at': image_obj.created_at
+                        'created_at': image_obj.created_at,
+                        # Add debugging info
+                        'embedding_dimension': stored_dim,
+                        'query_dimension': original_query_dim,
+                        'distance': embedding_obj.distance
                     }
                     similarities.append(result)
                     
@@ -180,24 +280,23 @@ class SimilaritySearcher:
                 logger.error(f"No image embedding found for image ID: {image_id} with model {search_provider}:{search_model}")
                 return []
             
-            # Get the reference embedding vector
+            # Get the reference embedding vector (already padded in DB)
             query_embedding = list(reference_embedding.vector)
-            query_dim = len(query_embedding)
+            # Get the original dimension from the database
+            original_query_dim = reference_embedding.embedding_dimension
             
-            # Build the base query for image embeddings with model filtering and same dimension
+            # Build the base query for image embeddings - filter by ORIGINAL dimension
             embeddings_query = Embedding.objects.filter(
                 embedding_type='image',
                 provider_name=search_provider,
                 model_name=search_model,
-                embedding_dimension=query_dim
+                embedding_dimension=original_query_dim  # Use original dimension stored in DB
             )
             
-            logger.info(f"Searching for image embeddings with provider={search_provider}, model={search_model}, dimension={query_dim}")
+            logger.info(f"Searching for image embeddings with provider={search_provider}, model={search_model}, dimension={original_query_dim}")
             
-            # Filter by image set(s) if specified
-            if image_sets:
-                embeddings_query = embeddings_query.filter(image__set__name__in=image_sets)
-            elif image_set:
+            # Filter by image set if specified
+            if image_set:
                 embeddings_query = embeddings_query.filter(image__set__name=image_set)
             
             # Exclude the reference image and any other specified IDs
@@ -254,40 +353,42 @@ class SimilaritySearcher:
             logger.error(f"Error in find_similar_images_by_image: {e}")
             return []
     
-    def _calculate_cosine_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
+    def _calculate_cosine_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray, 
+                                   original_dim1: Optional[int] = None, 
+                                   original_dim2: Optional[int] = None) -> float:
         """
-        Calculate cosine similarity between two embeddings.
+        Calculate cosine similarity between two embeddings, handling padding correctly.
         
         Args:
-            embedding1: First embedding vector
-            embedding2: Second embedding vector
+            embedding1: First embedding vector (may be padded)
+            embedding2: Second embedding vector (may be padded)
+            original_dim1: Original dimension of first embedding before padding
+            original_dim2: Original dimension of second embedding before padding
             
         Returns:
             Cosine similarity score (0 to 1)
         """
         try:
-            # Check if embeddings have compatible dimensions
+            # If we have original dimensions, unpad the vectors for fair comparison
+            if original_dim1 is not None and len(embedding1) > original_dim1:
+                embedding1 = unpad_vector(embedding1, original_dim1)
+            if original_dim2 is not None and len(embedding2) > original_dim2:
+                embedding2 = unpad_vector(embedding2, original_dim2)
+            
+            # Check if embeddings have compatible dimensions after unpadding
             if embedding1.shape != embedding2.shape:
-                logger.warning(f"Dimension mismatch: {embedding1.shape} vs {embedding2.shape}")
+                logger.warning(f"Dimension mismatch after unpadding: {embedding1.shape} vs {embedding2.shape}")
                 
-                # Try to handle dimension mismatch by padding or truncating
-                max_dim = max(len(embedding1), len(embedding2))
-                min_dim = min(len(embedding1), len(embedding2))
-                
-                # If one is significantly larger than the other, it might be padded
-                if max_dim > min_dim:
-                    if len(embedding1) > len(embedding2):
-                        # Truncate embedding1 to match embedding2's dimension
-                        embedding1 = embedding1[:len(embedding2)]
-                    else:
-                        # Truncate embedding2 to match embedding1's dimension
-                        embedding2 = embedding2[:len(embedding1)]
-                    
-                    logger.info(f"Truncated embeddings to dimension {min_dim}")
-                else:
-                    # Dimensions are the same, this shouldn't happen but handle it
-                    logger.error(f"Unexpected dimension mismatch: {embedding1.shape} vs {embedding2.shape}")
+                # If dimensions still don't match, they're from different models - incomparable
+                if original_dim1 and original_dim2 and original_dim1 != original_dim2:
+                    logger.error(f"Cannot compare embeddings from different models: {original_dim1}D vs {original_dim2}D")
                     return 0.0
+                
+                # Fall back to truncating to smaller dimension as last resort
+                min_dim = min(len(embedding1), len(embedding2))
+                embedding1 = embedding1[:min_dim]
+                embedding2 = embedding2[:min_dim]
+                logger.warning(f"Fallback: truncated embeddings to dimension {min_dim}")
             
             # Normalize embeddings
             norm1 = np.linalg.norm(embedding1)

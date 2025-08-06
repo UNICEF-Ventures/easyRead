@@ -58,13 +58,13 @@ class Embedding(models.Model):
     
     image = models.ForeignKey(Image, on_delete=models.CASCADE, related_name='embeddings')
     embedding_type = models.CharField(max_length=10, choices=EMBEDDING_TYPES)
-    # Vector field for pgvector - efficient similarity search
-    vector = VectorField(dimensions=1024)  # 1024 dimensions for Cohere multilingual embeddings
+    # Vector field for pgvector - supports multiple models via padding to standard dimension
+    vector = VectorField(dimensions=2000)  # Padded to 2000 to support various embedding models (pgvector 0.8.0 limit)
     
     # Enhanced model tracking fields
     provider_name = models.CharField(max_length=100, default='openclip')  # e.g., 'openclip', 'openai', 'cohere'
     model_name = models.CharField(max_length=100, default='openclip-vit-b-32')  # e.g., 'ViT-B-32', 'text-embedding-3-small'
-    embedding_dimension = models.IntegerField(default=1024)  # Store actual dimension for filtering, default to Cohere multilingual size
+    embedding_dimension = models.IntegerField(default=1024)  # Store ORIGINAL dimension before padding
     
     created_at = models.DateTimeField(auto_now_add=True)
     

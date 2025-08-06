@@ -159,6 +159,279 @@ export const batchUploadImages = (imageFiles, description = '', setName = '') =>
   });
 };
 
+// Function to upload folder structure with automatic set creation
+export const uploadFolder = (files, onProgress = null) => {
+  // For very large uploads, use chunked approach
+  const CHUNK_SIZE = 50; // Process in chunks of 50 files
+  const LARGE_UPLOAD_THRESHOLD = 100; // Use chunking for 100+ files
+  
+  if (files.length >= LARGE_UPLOAD_THRESHOLD) {
+    return uploadFolderChunked(files, onProgress);
+  }
+  
+  // Standard upload for smaller batches
+  return uploadFolderStandard(files, onProgress);
+};
+
+// Standard folder upload for smaller batches (< 100 files)
+const uploadFolderStandard = (files, onProgress = null) => {
+  const formData = new FormData();
+  
+  // Add files with their relative paths as keys
+  files.forEach((file) => {
+    let relativePath = file.webkitRelativePath || file.name;
+    
+    // Use the folder name from the file preview if available
+    if (file.folderName) {
+      // Build path using the clean folder name from preview
+      const pathParts = relativePath.split('/');
+      if (pathParts.length > 1) {
+        pathParts[0] = file.folderName; // Use the folder name from preview
+        relativePath = pathParts.join('/');
+      } else {
+        relativePath = `${file.folderName}/${file.name}`;
+      }
+    }
+    
+    formData.append(relativePath, file);
+  });
+
+  // More aggressive dynamic timeout calculation
+  const calculateTimeout = (fileCount) => {
+    const baseTime = 180000; // 3 minutes base
+    const timePerFile = 4000; // 4 seconds per file (embedding generation can be slow)
+    const networkBuffer = 120000; // 2 minutes network buffer
+    const totalTime = baseTime + (fileCount * timePerFile) + networkBuffer;
+    
+    // Cap at 45 minutes for chunk uploads (was 30)
+    return Math.min(totalTime, 2700000);
+  };
+
+  const config = {
+    headers: {
+      'Content-Type': undefined // Let browser set multipart boundary
+    },
+    timeout: calculateTimeout(files.length),
+  };
+
+  // Add upload progress tracking if callback provided
+  if (onProgress && typeof onProgress === 'function') {
+    config.onUploadProgress = (progressEvent) => {
+      const percentCompleted = Math.round(
+        (progressEvent.loaded * 100) / progressEvent.total
+      );
+      // Calculate estimated files processed based on upload progress
+      const estimatedFilesProcessed = Math.floor((progressEvent.loaded / progressEvent.total) * files.length);
+      
+      console.log('📊 Standard Upload Progress:', {
+        bytesLoaded: progressEvent.loaded,
+        totalBytes: progressEvent.total,
+        percentage: percentCompleted,
+        estimatedFiles: estimatedFilesProcessed,
+        totalFiles: files.length
+      });
+      
+      onProgress({
+        loaded: progressEvent.loaded, // Keep original for internal use
+        total: progressEvent.total,
+        percentage: percentCompleted,
+        files: estimatedFilesProcessed, // Add estimated file count
+        totalFiles: files.length,
+        currentChunk: 1,
+        totalChunks: 1,
+        isChunked: false
+      });
+    };
+  }
+
+  return apiClient.post('/upload-folder/', formData, config);
+};
+
+// Chunked folder upload for large batches (100+ files)
+const uploadFolderChunked = async (files, onProgress = null) => {
+  const CHUNK_SIZE = 50;
+  const totalFiles = files.length;
+  const totalChunks = Math.ceil(totalFiles / CHUNK_SIZE);
+  
+  let totalProcessed = 0;
+  let totalFailed = 0;
+  let allResults = {
+    folders: {},
+    total_successful: 0,
+    total_uploads: 0,
+    sets_created: 0,
+    message: '',
+    errors: [] // Track errors for user feedback
+  };
+  
+  console.log(`📦 Starting chunked upload: ${totalFiles} files in ${totalChunks} chunks`);
+  
+  // Process each chunk sequentially (avoids creating all chunks in memory at once)
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const chunkNumber = chunkIndex + 1;
+    const startIdx = chunkIndex * CHUNK_SIZE;
+    const endIdx = Math.min(startIdx + CHUNK_SIZE, totalFiles);
+    const chunk = files.slice(startIdx, endIdx); // Create chunk on-demand
+    
+    console.log(`📦 Processing chunk ${chunkNumber}/${totalChunks} (${chunk.length} files)`);
+    
+    try {
+      // Upload this chunk
+      const chunkResult = await uploadFolderStandard(chunk, (chunkProgress) => {
+        // Calculate progress within this chunk only
+        const currentChunkContribution = Math.round((chunkProgress.percentage / 100) * chunk.length);
+        const totalLoadedFiles = totalProcessed + currentChunkContribution;
+        const overallProgress = Math.round((totalLoadedFiles / totalFiles) * 100);
+        
+        console.log('📊 Chunked Upload Progress:', {
+          chunkNumber,
+          totalChunks,
+          chunkProgress: chunkProgress.percentage,
+          currentChunkContribution,
+          totalProcessed,
+          totalLoadedFiles,
+          overallProgress
+        });
+        
+        if (onProgress) {
+          onProgress({
+            loaded: totalLoadedFiles, // This is now file count, not bytes
+            total: totalFiles,
+            percentage: Math.min(overallProgress, 99), // Don't show 100% until we're truly done
+            files: totalLoadedFiles, // Add explicit file count
+            totalFiles: totalFiles,
+            currentChunk: chunkNumber,
+            totalChunks: totalChunks,
+            isChunked: true,
+            chunkProgress: chunkProgress.percentage
+          });
+        }
+      }); // Folder names are already in file objects
+      
+      // Merge results
+      if (chunkResult.data) {
+        const chunkData = chunkResult.data;
+        
+        // Merge folder results
+        if (chunkData.folders) {
+          Object.keys(chunkData.folders).forEach(folderName => {
+            if (!allResults.folders[folderName]) {
+              allResults.folders[folderName] = {
+                set_name: folderName,
+                results: [],
+                successful_uploads: 0,
+                total_files: 0
+              };
+            }
+            
+            const existingFolder = allResults.folders[folderName];
+            const chunkFolder = chunkData.folders[folderName];
+            
+            existingFolder.results.push(...chunkFolder.results);
+            existingFolder.successful_uploads += chunkFolder.successful_uploads;
+            existingFolder.total_files += chunkFolder.total_files;
+          });
+        }
+        
+        // Update totals
+        allResults.total_successful += chunkData.total_successful || 0;
+        allResults.total_uploads += chunkData.total_uploads || 0;
+        
+        totalProcessed += chunk.length;
+      }
+      
+      console.log(`✅ Chunk ${chunkNumber} completed: ${chunkResult.data?.total_successful || 0}/${chunk.length} files successful`);
+      
+      // Update progress after chunk completion
+      if (onProgress) {
+        const isLastChunk = chunkIndex === totalChunks - 1;
+        const finalProgress = isLastChunk ? 100 : Math.round(((totalProcessed + chunk.length) / totalFiles) * 99);
+        const completedFiles = totalProcessed + chunk.length;
+        
+        console.log(`✅ Chunk ${chunkNumber} completed:`, {
+          completedFiles,
+          totalFiles,
+          finalProgress,
+          isLastChunk
+        });
+        
+        onProgress({
+          loaded: completedFiles, // This is file count
+          total: totalFiles,
+          percentage: finalProgress,
+          files: completedFiles, // Add explicit file count
+          totalFiles: totalFiles,
+          currentChunk: chunkNumber,
+          totalChunks: totalChunks,
+          isChunked: true,
+          chunkProgress: 100 // This chunk is complete
+        });
+      }
+      
+      // Short delay between chunks to prevent overwhelming the server
+      if (chunkIndex < totalChunks - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+      }
+      
+    } catch (error) {
+      console.error(`❌ Error in chunk ${chunkNumber}:`, error);
+      
+      // Track errors for user feedback
+      const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
+      allResults.errors.push(`Chunk ${chunkNumber}: ${errorMsg}`);
+      
+      // Count chunk files as failed, not processed
+      totalFailed += chunk.length;
+      console.error(`Chunk ${chunkNumber} failed: ${chunk.length} files affected`);
+      
+      // Update progress to show failed chunk
+      if (onProgress) {
+        const overallProgress = Math.min(99, Math.round(((totalProcessed + totalFailed) / totalFiles) * 100));
+        
+        console.error(`❌ Chunk ${chunkNumber} failed:`, {
+          totalProcessed,
+          totalFailed,
+          overallProgress,
+          error
+        });
+        
+        onProgress({
+          loaded: totalProcessed, // Don't count failed files as loaded
+          total: totalFiles,
+          percentage: overallProgress,
+          files: totalProcessed, // Add explicit file count
+          totalFiles: totalFiles,
+          currentChunk: chunkNumber,
+          totalChunks: totalChunks,
+          isChunked: true,
+          error: `Chunk ${chunkNumber} failed`
+        });
+      }
+      
+      // Continue with remaining chunks
+    }
+  }
+  
+  // Don't set to 100% here - let the last chunk do it naturally
+  console.log(`📦 All chunks processed. Total successful: ${allResults.total_successful}/${totalFiles}`);
+  
+  // Count unique sets created
+  allResults.sets_created = Object.keys(allResults.folders).length;
+  allResults.total_uploads = totalProcessed + totalFailed; // Accurate total
+  
+  const successMessage = `Processed ${totalFiles} files in ${totalChunks} chunks: ${allResults.total_successful} succeeded`;
+  const failureMessage = totalFailed > 0 ? `, ${totalFailed} failed` : '';
+  allResults.message = successMessage + failureMessage;
+  
+  console.log(`🎉 Chunked upload completed: ${allResults.total_successful}/${totalFiles} files successful across ${allResults.sets_created} sets`);
+  
+  if (allResults.errors.length > 0) {
+    console.warn('Upload completed with errors:', allResults.errors);
+  }
+  
+  return { data: allResults };
+};
+
 // Function to update the selected image for a saved sentence
 export const updateSavedContentImage = (contentId, sentenceIndex, imageUrl, allImages = []) => {
   // Ensure sentenceIndex is a number to prevent validation errors

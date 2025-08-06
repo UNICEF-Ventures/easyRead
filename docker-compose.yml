@@ -13,6 +13,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ./postgres.conf:/etc/postgresql/postgresql.conf:ro
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
     networks:
       - easyread_network
     restart: unless-stopped
@@ -52,7 +54,6 @@ services:
       - ./images:/app/images:ro
       - ./clipart_images:/app/clipart_images:ro
       - ./config:/app/config:ro
-      - ./globalsymbols_images_test_docker.csv:/app/globalsymbols_images_test_docker.csv:ro
     ports:
       - "${BACKEND_PORT:-8001}:8000"
     depends_on:
