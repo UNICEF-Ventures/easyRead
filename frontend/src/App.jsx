@@ -18,6 +18,7 @@ function AppCore() {
   const [isProcessingPages, setIsProcessingPages] = useState(false);
   const [totalPages, setTotalPages] = useState(0);
   const [pagesProcessed, setPagesProcessed] = useState(0);
+  const [currentProcessingStep, setCurrentProcessingStep] = useState('');
   const [error, setError] = useState(null);
 
   const navigate = useNavigate();
@@ -96,6 +97,11 @@ function AppCore() {
             <Typography variant="body1" sx={{ mb: 1, textAlign: 'center', fontWeight: 'bold' }}>
               Processing page {pagesProcessed} of {totalPages}...
             </Typography>
+            {currentProcessingStep && (
+              <Typography variant="body2" sx={{ mb: 2, textAlign: 'center', color: 'primary.main', fontStyle: 'italic' }}>
+                {currentProcessingStep}
+              </Typography>
+            )}
             <LinearProgress 
               variant="determinate" 
               value={progressPercent}
@@ -120,6 +126,7 @@ function AppCore() {
               setIsProcessingPages={setIsProcessingPages}
               setTotalPages={setTotalPages}
               setPagesProcessed={setPagesProcessed}
+              setCurrentProcessingStep={setCurrentProcessingStep}
               setError={setError}
               currentMarkdown={markdownContent}
               onProcessingComplete={handleProcessingComplete}

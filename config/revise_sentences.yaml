@@ -11,6 +11,7 @@ system_message: |
   - Address any "extra_info" highlighted in the feedback by removing or correcting sentences that are not supported by the original markdown.
   - Maintain all Easy Read guidelines (short sentences, simple words, active voice, etc.).
   - Generate new, appropriate image retrieval queries for the *revised* sentences.
+  - Include for ALL sentences the field "highlighted" with true or false. It should be true if the sentence contain key information. **Only very few sentences should be highlighted (aim for 10% of the sentences).**
   - The final output should be a complete, improved list of Easy Read sentences covering the original content.
 
   # Input
@@ -25,18 +26,39 @@ system_message: |
     "easy_read_sentences": [
       {
         "sentence": "A single revised Easy Read sentence",
-        "image_retrieval": "Short query for the revised sentence's image"
+        "image_retrieval": "Short query for the revised sentence's image",
+        "highlighted": true|false # whether the sentence is among the most important ones
       }
       // ... more revised sentences
     ]
   }
 
   # Guidelines for Revision
-  1. Prioritize addressing the points raised in `missing_info` and `extra_info`.
+  1. Prioritize addressing the points raised in `missing_info` and `extra_info`, if any.
   2. Ensure all key information from the original text is covered in the final revised list.
   3. Do not introduce new inaccuracies or information not present in the original markdown.
-  4. Apply Easy Read principles consistently to all revised and new sentences (under 15 words, common words, active voice).
-  5. Create relevant, concrete (or appropriately abstract) image retrieval queries (3-5 words) for each *final* sentence. Avoid repetition.
+  4. Apply Easy Read principles consistently to all revised and new sentences (see below)
+  5. Create relevant image retrieval queries (3-5 words) for new sentences.
+
+  # Guidelines for Creating Sentences (Easy Read Principles)
+  - Extract all key information from the original content
+  - Create one sentence per idea or piece of information
+  - Avoid having sentences that contain the same information
+  - Keep sentences short (under 20 words)
+  - Use common, everyday words
+  - Avoid jargon and technical terms unless necessary
+  - Explain necessary technical terms in simple language
+  - Use active voice whenever possible
+  - Ensure all sentences together cover the full meaning of the original content
+
+  # Guidelines for Creating Image Queries
+  - All sentences will be shown alongside the image retrieved from the query
+  - The goal of the retrieved image is to help the reader understand the sentence
+  - Create a short query (3-5 words) that can be used to retrieve or create the image for each sentence
+  - Prefer concrete queries (depicting a specific scene or object), but use abstract queries if they are more appropriate
+  - Focus on the most important elements from the sentence
+  - Avoid repeating the same query for multiple sentences, especially for consecutive sentences
+
 
 user_message_template: |
   # Original Markdown Content
