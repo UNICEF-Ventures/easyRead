@@ -10,8 +10,9 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Standard vector dimension for multi-model support
-STANDARD_VECTOR_DIMENSION = 4096
+# Standard vector dimension for multi-model support  
+# Limited to 2000 due to pgvector 0.8.0 index constraints
+STANDARD_VECTOR_DIMENSION = 2000
 
 
 def pad_vector_to_standard(vector: np.ndarray, target_dim: int = STANDARD_VECTOR_DIMENSION) -> np.ndarray:

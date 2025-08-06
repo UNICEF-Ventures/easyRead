@@ -13,6 +13,8 @@ from django.conf import settings
 from api.models import ImageSet, Image, Embedding
 from api.embedding_adapter import get_embedding_model
 from api.image_utils import get_image_converter
+from api.model_config import pad_vector_to_standard
+from api.validators import EmbeddingValidator
 
 logger = logging.getLogger(__name__)
 
@@ -253,18 +255,40 @@ class Command(BaseCommand):
                     if image_description:
                         text_embedding = embedding_model.encode_single_text(image_description)
                         if text_embedding is not None:
-                            embedding_obj, created = Embedding.objects.get_or_create(
-                                image=image_obj,
-                                embedding_type='text',
-                                provider_name=provider_name,
-                                model_name=model_name,
-                                defaults={
-                                    'vector': text_embedding.tolist(),
-                                    'embedding_dimension': len(text_embedding)
-                                }
+                            # Validate embedding before storage
+                            validation = EmbeddingValidator.validate_embedding_vector(text_embedding, model_name)
+                            
+                            if validation['valid']:
+                                # Pad vector to standard dimension for multi-model compatibility
+                                padded_text_embedding = pad_vector_to_standard(text_embedding)
+                                
+                                embedding_obj, created = Embedding.objects.get_or_create(
+                                    image=image_obj,
+                                    embedding_type='text',
+                                    provider_name=provider_name,
+                                    model_name=model_name,
+                                    defaults={
+                                        'vector': padded_text_embedding.tolist(),  # Store padded vector
+                                        'embedding_dimension': len(text_embedding)  # Store original dimension
+                                    }
+                                )
+                                
+                                if not created:
+                                    # Update existing embedding
+                                    embedding_obj.vector = padded_text_embedding.tolist()
+                                    embedding_obj.embedding_dimension = len(text_embedding)
+                                    embedding_obj.save()
+                                
+                                if created:
+                                    stats['created_embeddings'] += 1
+                            else:
+                                self.stdout.write(
+                                    self.style.WARNING(f'Invalid embedding for {filename}: {validation["errors"]}')
+                                )
+                        else:
+                            self.stdout.write(
+                                self.style.WARNING(f'Failed to generate text embedding for {filename}')
                             )
-                            if created:
-                                stats['created_embeddings'] += 1
 
                     stats['processed_images'] += 1
                     self.stdout.write(f'Processed: {set_name}/{filename}')

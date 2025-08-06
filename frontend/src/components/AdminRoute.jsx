@@ -23,6 +23,8 @@ const AdminRoute = () => {
       });
       const data = await response.json();
       
+      console.log('Auth check response:', data);
+      
       setIsAuthenticated(data.authenticated);
       setUsername(data.username || '');
     } catch (error) {
@@ -61,7 +63,10 @@ const AdminRoute = () => {
   };
 
 
+  console.log('AdminRoute render - isLoading:', isLoading, 'isAuthenticated:', isAuthenticated);
+
   if (isLoading) {
+    console.log('Rendering loading state');
     return (
       <Box 
         display="flex" 
@@ -79,8 +84,11 @@ const AdminRoute = () => {
   }
 
   if (!isAuthenticated) {
+    console.log('Rendering login form');
     return <AdminLogin onLoginSuccess={handleLoginSuccess} />;
   }
+
+  console.log('Rendering authenticated admin interface');
 
   return (
     <Box>

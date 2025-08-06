@@ -229,17 +229,26 @@ class EmbeddingValidator:
     EXPECTED_DIMENSIONS = {
         'openclip-vit-b-32': 1024,  # Update this based on actual model
         'clip-vit-b-32': 512,
-        'clip-vit-l-14': 768
+        'clip-vit-l-14': 768,
+        'openclip-vit-bigG-14': 1024,  # OpenCLIP BigG model
+        'openclip': 1024,  # OpenCLIP model (corrected from 409)
+        'cohere.embed-multilingual-v3': 1024,  # Cohere multilingual model
+        'cohere.embed-english-v3': 1024,      # Cohere English model
+        'amazon.titan-embed-text-v1': 1536,   # Amazon Titan v1
+        'amazon.titan-embed-text-v2:0': 1024, # Amazon Titan v2
+        # Padded dimensions (after padding to standard size)
+        'padded': 2000,  # Standard padded dimension for multi-model compatibility
     }
     
     @classmethod
-    def validate_embedding_vector(cls, vector: np.ndarray, model_name: str = 'openclip-vit-b-32') -> Dict[str, Any]:
+    def validate_embedding_vector(cls, vector: np.ndarray, model_name: str = 'openclip-vit-b-32', is_padded: bool = False) -> Dict[str, Any]:
         """
         Validate an embedding vector.
         
         Args:
             vector: Embedding vector as numpy array
             model_name: Name of the model that generated the embedding
+            is_padded: Whether the vector is padded to standard dimension
             
         Returns:
             Validation results dictionary
@@ -249,6 +258,8 @@ class EmbeddingValidator:
             'errors': [],
             'warnings': [],
             'dimension': None,
+            'original_dimension': None,
+            'is_padded': is_padded,
             'norm': None,
             'has_nan': False,
             'has_inf': False
@@ -269,13 +280,26 @@ class EmbeddingValidator:
             result['dimension'] = dimension
             
             # Check expected dimensions
-            if model_name in cls.EXPECTED_DIMENSIONS:
-                expected_dim = cls.EXPECTED_DIMENSIONS[model_name]
-                if dimension != expected_dim:
-                    result['errors'].append(f"Expected {expected_dim} dimensions for {model_name}, got {dimension}")
+            if is_padded:
+                # If padded, must be 2000
+                if dimension != 2000:
+                    result['errors'].append(f"Padded vector must be 2000 dimensions, got {dimension}")
                     return result
+                # Try to detect original dimension from non-zero values
+                non_zero_indices = np.where(vector != 0)[0]
+                if len(non_zero_indices) > 0:
+                    result['original_dimension'] = int(non_zero_indices[-1] + 1)
             else:
-                result['warnings'].append(f"Unknown model {model_name}, cannot validate dimensions")
+                # Not padded - check against expected dimensions
+                if model_name in cls.EXPECTED_DIMENSIONS:
+                    expected_dim = cls.EXPECTED_DIMENSIONS[model_name]
+                    if dimension != expected_dim:
+                        result['warnings'].append(f"Expected {expected_dim} dimensions for {model_name}, got {dimension}")
+                else:
+                    # For unknown models, allow common dimensions
+                    common_dims = [512, 768, 1024, 1536, 2048, 3072]
+                    if dimension not in common_dims:
+                        result['warnings'].append(f"Unknown model {model_name}, unusual dimension {dimension}")
             
             # Check for NaN values
             if np.isnan(vector).any():

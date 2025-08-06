@@ -14,6 +14,7 @@ import yaml
 import json
 from pathlib import Path
 import litellm
+import re
 from django.conf import settings
 from django.http import JsonResponse
 import base64
@@ -56,8 +57,6 @@ def has_meaningful_content(markdown_content, min_words=5):
     
     if not content:
         return False
-    
-    import re
     
     # Remove markdown formatting elements but keep the text content
     # Remove image references ![alt](url)
@@ -280,6 +279,10 @@ def process_page(request):
                 response_format={"type": "json_object"} 
             )
             
+            # Check for empty response
+            if not response.choices:
+                raise ValueError("LLM returned empty response.")
+            
             llm_output_content = response.choices[0].message.content
             
             # Parse and Validate LLM JSON output
@@ -444,6 +447,10 @@ def validate_completeness(request):
             response_format={"type": "json_object"} 
         )
         
+        # Check for empty response
+        if not response.choices:
+            raise ValueError("LLM returned empty response.")
+        
         llm_output_content = response.choices[0].message.content
         
         # Parse and Validate LLM JSON output
@@ -565,6 +572,10 @@ def revise_sentences(request):
             response_format={"type": "json_object"}
         )
 
+        # Check for empty response
+        if not response.choices:
+            raise ValueError("LLM returned empty response.")
+
         llm_output_content = response.choices[0].message.content
 
         # Parse and Validate LLM JSON output
@@ -606,28 +617,56 @@ def upload_image(request):
     API endpoint to upload an image, optionally with a description.
     Uses the new database schema with ImageSet, Image, and Embedding models.
     Expects form-data with 'image' (file), optional 'description' (text), and optional 'set_name' (text).
+    Enhanced with comprehensive security validation.
     """
     from api.upload_handlers import handle_image_upload
+    from api.security_utils import validate_upload_request, SecurityLogger
+    from api.analytics import track_image_upload
     
     logger = logging.getLogger(__name__)
 
     if 'image' not in request.FILES:
-        return Response({"error": "No image file provided"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "No image file provided", "code": "MISSING_FILE"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     image_file = request.FILES['image']
     description = request.POST.get('description', '') # Get description, default to empty
     set_name = request.POST.get('set_name', 'General') # Get set name, default to 'General'
 
-    # Basic file type check (can be more robust)
-    allowed_extensions = ['.png', '.jpg', '.jpeg', '.webp', '.svg']
-    file_ext = os.path.splitext(image_file.name)[1].lower()
-    if file_ext not in allowed_extensions:
-        return Response({"error": f"Invalid file type '{file_ext}'. Allowed types: {allowed_extensions}"}, status=status.HTTP_400_BAD_REQUEST)
+    # Comprehensive security validation
+    validation = validate_upload_request(request, image_file, 'image')
+    if not validation['valid']:
+        SecurityLogger.log_upload_attempt(
+            request, image_file.name, 'blocked',
+            {'reason': validation['errors']}
+        )
+        return Response(
+            {
+                "error": "File validation failed",
+                "errors": validation['errors'],
+                "code": "VALIDATION_FAILED"
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     # Handle the upload using the new system
     result = handle_image_upload(image_file, description, set_name, is_generated=False)
     
     if result.get("success"):
+        # Track successful upload
+        try:
+            track_image_upload(request, result["filename"], result.get("file_size", 0))
+        except Exception as e:
+            logger.warning(f"Failed to track image upload: {e}")
+        
+        # Log successful upload
+        SecurityLogger.log_upload_attempt(
+            request, image_file.name, 'success',
+            {'image_id': result["image_id"], 'set_name': set_name}
+        )
+        
         # Build image URL for response
         try:
             image_url = request.build_absolute_uri(settings.MEDIA_URL + result['image_path'])
@@ -636,22 +675,38 @@ def upload_image(request):
             image_url = None
         
         response_data = {
+            "success": True,
             "message": result["message"],
-            "image_id": result["image_id"],
-            "image_path": result["image_path"],
-            "image_url": image_url,
-            "filename": result["filename"],
-            "set_name": result["set_name"],
-            "description": result["description"],
-            "embeddings_created": result["embeddings_created"],
-            "file_format": result["file_format"],
-            "file_size": result.get("file_size"),
-            "width": result.get("width"),
-            "height": result.get("height")
+            "data": {
+                "image_id": result["image_id"],
+                "image_path": result["image_path"],
+                "image_url": image_url,
+                "filename": result["filename"],
+                "set_name": result["set_name"],
+                "description": result["description"],
+                "embeddings_created": result["embeddings_created"],
+                "file_format": result["file_format"],
+                "file_size": result.get("file_size"),
+                "width": result.get("width"),
+                "height": result.get("height")
+            }
         }
         return Response(response_data, status=status.HTTP_201_CREATED)
     else:
-        return Response({"error": result.get("error", "Unknown error occurred")}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # Log failed upload
+        SecurityLogger.log_upload_attempt(
+            request, image_file.name, 'failure',
+            {'errors': result.get("errors", result.get("error"))}
+        )
+        return Response(
+            {
+                "success": False,
+                "error": result.get("error", "Upload failed"),
+                "errors": result.get("errors", [result.get("error", "Unknown error")]),
+                "code": "UPLOAD_FAILED"
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 # --- Updated Image Similarity Search Endpoint ---
 @api_view(['POST'])
@@ -866,13 +921,38 @@ def batch_upload_images(request):
     API endpoint to upload multiple images at once, optionally with a shared description.
     Uses the new database schema with ImageSet, Image, and Embedding models.
     Expects form-data with 'images' (files), optional 'description' (text), and optional 'set_name' (text).
+    Enhanced with security validation and rate limiting.
     """
     from api.upload_handlers import handle_batch_image_upload
+    from api.security_utils import RateLimiter
+    from api.analytics import get_client_ip
     
     logger = logging.getLogger(__name__)
+    
+    # Check rate limiting for batch uploads (stricter limit)
+    ip_address = get_client_ip(request)
+    rate_check = RateLimiter.check_rate_limit(
+        identifier=ip_address,
+        action='batch_upload',
+        max_requests=50,  # 50 batch uploads per minute (for large sets)
+        window_seconds=60
+    )
+    
+    if not rate_check['allowed']:
+        return Response(
+            {
+                "error": rate_check['message'],
+                "code": "RATE_LIMIT_EXCEEDED",
+                "retry_after": rate_check['retry_after']
+            },
+            status=status.HTTP_429_TOO_MANY_REQUESTS
+        )
 
     if 'images' not in request.FILES:
-        return Response({"error": "No image files provided"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "No image files provided", "code": "MISSING_FILES"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     # Get all files from the request
     image_files = request.FILES.getlist('images')
@@ -880,10 +960,13 @@ def batch_upload_images(request):
     set_name = request.POST.get('set_name', 'General')  # Get set name, default to 'General'
     
     if not image_files:
-        return Response({"error": "Empty file list"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Empty file list", "code": "EMPTY_FILES"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
-    # Handle batch upload using the new system
-    result = handle_batch_image_upload(image_files, description, set_name)
+    # Handle batch upload using the new system with request for validation
+    result = handle_batch_image_upload(image_files, description, set_name, request=request)
     
     # Build image URLs for successful uploads
     for upload_result in result.get("results", []):
@@ -895,13 +978,136 @@ def batch_upload_images(request):
             except Exception as e:
                 logger.error(f"Error building image URL for {upload_result.get('filename')}: {e}")
     
+    # Standardize response format
+    response_data = {
+        "success": result["successful_uploads"] > 0,
+        "message": result["message"],
+        "data": {
+            "results": result["results"],
+            "successful_uploads": result["successful_uploads"],
+            "total_uploads": result["total_uploads"],
+            "description": result["description"],
+            "set_name": result["set_name"]
+        }
+    }
+    
     # Determine HTTP status based on success rate
     if result["successful_uploads"] > 0:
-        status_code = status.HTTP_200_OK
+        status_code = status.HTTP_200_OK if result["successful_uploads"] == result["total_uploads"] else status.HTTP_207_MULTI_STATUS
     else:
-        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        status_code = status.HTTP_400_BAD_REQUEST
     
-    return Response(result, status=status_code)
+    return Response(response_data, status=status_code)
+
+
+# --- Folder Upload Endpoint ---
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def upload_folder(request):
+    """
+    API endpoint to upload a folder structure with automatic set creation.
+    Expects form-data with files that include webkitRelativePath information.
+    Creates image sets based on folder names automatically.
+    Enhanced with security validation and rate limiting.
+    """
+    from api.upload_handlers import handle_folder_upload
+    from api.analytics import track_event
+    from api.security_utils import RateLimiter
+    from api.analytics import get_client_ip
+    
+    logger = logging.getLogger(__name__)
+    
+    # Check rate limiting for folder uploads
+    ip_address = get_client_ip(request)
+    rate_check = RateLimiter.check_rate_limit(
+        identifier=ip_address,
+        action='folder_upload',
+        max_requests=50,  # 50 folder uploads per minute (for large sets)
+        window_seconds=60
+    )
+    
+    if not rate_check['allowed']:
+        return Response(
+            {
+                "error": rate_check['message'],
+                "code": "RATE_LIMIT_EXCEEDED",
+                "retry_after": rate_check['retry_after']
+            },
+            status=status.HTTP_429_TOO_MANY_REQUESTS
+        )
+
+    if not request.FILES:
+        return Response(
+            {"error": "No files provided", "code": "MISSING_FILES"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Extract folder structure from files
+    folder_data = {}
+    for key in request.FILES:
+        file_obj = request.FILES[key]
+        # Extract relative path from file name or form key
+        # Frontend should send files with keys like "folder_name/image.jpg"
+        if hasattr(file_obj, 'webkitRelativePath') and file_obj.webkitRelativePath:
+            relative_path = file_obj.webkitRelativePath
+        else:
+            # Fallback to using the form key as path
+            relative_path = key
+        
+        folder_data[relative_path] = file_obj
+
+    if not folder_data:
+        return Response(
+            {"error": "No valid folder structure found", "code": "INVALID_STRUCTURE"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Track analytics
+    try:
+        track_event(request, 'folder_upload', {
+            'total_files': len(folder_data),
+            'folder_paths': list(folder_data.keys())[:5]  # Store first 5 paths for analysis
+        })
+    except Exception as e:
+        logger.warning(f"Failed to track folder upload analytics: {e}")
+
+    # Handle folder upload with request for validation
+    result = handle_folder_upload(folder_data, request=request)
+    
+    # Debug logging for folder upload result
+    logger.info(f"📋 Folder upload result: {result}")
+    logger.info(f"📋 Total successful: {result.get('total_successful', 0)}")
+    logger.info(f"📋 Total uploads: {result.get('total_uploads', 0)}")
+    logger.info(f"📋 Folders: {list(result.get('folders', {}).keys())}")
+    
+    # Build image URLs for successful uploads
+    for folder_name, folder_result in result.get("folders", {}).items():
+        for upload_result in folder_result.get("results", []):
+            if upload_result.get("success") and upload_result.get("image_path"):
+                upload_result["image_url"] = request.build_absolute_uri(
+                    f"{settings.MEDIA_URL}{upload_result['image_path']}"
+                )
+
+    # Standardize response format
+    response_data = {
+        "success": result.get("total_successful", 0) > 0,
+        "message": result["message"],
+        "data": {
+            "folders": result["folders"],
+            "total_successful": result["total_successful"],
+            "total_uploads": result["total_uploads"],
+            "sets_created": result["sets_created"]
+        }
+    }
+    
+    # Determine HTTP status
+    if result.get("total_successful", 0) > 0:
+        status_code = status.HTTP_200_OK if result["total_successful"] == result["total_uploads"] else status.HTTP_207_MULTI_STATUS
+    else:
+        status_code = status.HTTP_400_BAD_REQUEST
+    
+    return Response(response_data, status=status_code)
+
 
 # --- List Saved Content Endpoint ---
 @api_view(['GET'])
