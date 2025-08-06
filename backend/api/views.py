@@ -27,7 +27,7 @@ import glob # Might not be needed here if not listing
 import uuid # Moved import to top
 import time # Added for health check
 from .models import ProcessedContent, ImageMetadata # Import the new model
-from sentence_transformers import SentenceTransformer # Added SentenceTransformer
+# SentenceTransformer removed - using API-based embedding providers only
 from openai import OpenAI
 from .config import get_retry_config, load_prompt_template, VALIDATE_COMPLETENESS_PROMPT_FILE, REVISE_SENTENCES_PROMPT_FILE
 from django.core.files.base import ContentFile
@@ -105,7 +105,7 @@ load_dotenv(settings.BASE_DIR.parent / '.env') # Load .env from project root
 IMAGE_UPLOAD_DIR = settings.MEDIA_ROOT / "uploaded_images"
 # ChromaDB configuration removed - now using PostgreSQL with pgvector
 # COHERE_MODEL = "embed-english-light-v3.0" # Removed Cohere model
-CLIP_MODEL_NAME = 'sentence-transformers/clip-ViT-B-32-multilingual-v1' # New CLIP model
+# CLIP_MODEL_NAME = 'sentence-transformers/clip-ViT-B-32-multilingual-v1' # Removed - using API providers
 
 # Ensure upload directory exists
 IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -121,15 +121,9 @@ IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # else:
 #     logger.warning("COHERE_API_KEY not found. Image embedding will be skipped.")
 
-# --- Initialize Sentence Transformer Model --- 
-embedding_model = None
-try:
-    # Load the CLIP model
-    embedding_model = SentenceTransformer(CLIP_MODEL_NAME)
-    logger.info(f"Sentence Transformer model '{CLIP_MODEL_NAME}' loaded.")
-except Exception as e:
-     logger.error(f"Error loading Sentence Transformer model '{CLIP_MODEL_NAME}': {e}")
-     # Application might not be usable without the model, consider raising an error or specific handling
+# --- Local Embedding Models Removed ---
+# All embedding processing now uses API-based providers (AWS Bedrock, OpenAI, Cohere)
+# through the embedding_adapter system for better scalability and memory efficiency
 
 # ChromaDB initialization removed - now using PostgreSQL with pgvector for embeddings
 
@@ -998,6 +992,128 @@ def batch_upload_images(request):
         status_code = status.HTTP_400_BAD_REQUEST
     
     return Response(response_data, status=status_code)
+
+
+# --- Optimized Large Batch Upload Endpoint ---
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def optimized_batch_upload(request):
+    """
+    API endpoint for optimized large batch uploads (1000+ images).
+    Implements chunked processing, bulk operations, and progress tracking.
+    """
+    from api.optimized_upload_handlers import handle_optimized_batch_upload
+    from api.security_utils import RateLimiter
+    from api.analytics import get_client_ip
+    import uuid
+    
+    logger = logging.getLogger(__name__)
+    
+    # Generate session ID for progress tracking
+    session_id = request.POST.get('session_id') or str(uuid.uuid4())
+    
+    # Check rate limiting for large batch uploads (more restrictive)
+    ip_address = get_client_ip(request)
+    rate_check = RateLimiter.check_rate_limit(
+        identifier=ip_address,
+        action='large_batch_upload',
+        max_requests=5,  # Only 5 large batch uploads per hour
+        window_seconds=3600
+    )
+    
+    if not rate_check['allowed']:
+        return Response(
+            {
+                "error": rate_check['message'],
+                "code": "RATE_LIMIT_EXCEEDED",
+                "retry_after": rate_check['retry_after'],
+                "session_id": session_id
+            },
+            status=status.HTTP_429_TOO_MANY_REQUESTS
+        )
+
+    if 'images' not in request.FILES:
+        return Response(
+            {"error": "No image files provided", "code": "MISSING_FILES", "session_id": session_id},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Get all files from the request
+    image_files = request.FILES.getlist('images')
+    description = request.POST.get('description', '')
+    set_name = request.POST.get('set_name', 'General')
+    batch_size = int(request.POST.get('batch_size', 50))  # Configurable batch size
+    
+    if not image_files:
+        return Response(
+            {"error": "Empty file list", "code": "EMPTY_FILES", "session_id": session_id},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    if len(image_files) < 100:
+        return Response(
+            {"error": "Use regular batch_upload_images endpoint for less than 100 images", "code": "USE_REGULAR_ENDPOINT", "session_id": session_id},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Validate batch size
+    if batch_size < 10 or batch_size > 100:
+        batch_size = 50  # Reset to default if invalid
+
+    logger.info(f"Starting optimized batch upload: {len(image_files)} images in batches of {batch_size}")
+
+    # Handle optimized batch upload
+    result = handle_optimized_batch_upload(
+        image_files, description, set_name, batch_size, request, session_id
+    )
+    
+    # Build image URLs for successful uploads
+    if result.get("success") and result.get("results"):
+        for upload_result in result["results"]:
+            if upload_result.get("success") and upload_result.get("image_path"):
+                try:
+                    upload_result["image_url"] = request.build_absolute_uri(
+                        settings.MEDIA_URL + upload_result["image_path"]
+                    )
+                except Exception as e:
+                    logger.error(f"Error building image URL for {upload_result.get('filename')}: {e}")
+    
+    # Determine HTTP status based on results
+    if result.get("success"):
+        successful = result.get("successful_uploads", 0)
+        total = result.get("total_uploads", 0)
+        if successful == total:
+            status_code = status.HTTP_200_OK
+        elif successful > 0:
+            status_code = status.HTTP_207_MULTI_STATUS
+        else:
+            status_code = status.HTTP_400_BAD_REQUEST
+    else:
+        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    
+    return Response(result, status=status_code)
+
+
+# --- Upload Progress Tracking Endpoint ---
+@api_view(['GET'])
+def upload_progress(request, session_id):
+    """
+    API endpoint to check upload progress for a specific session.
+    """
+    from api.optimized_upload_handlers import get_upload_progress
+    
+    progress = get_upload_progress(session_id)
+    
+    if progress is None:
+        return Response(
+            {"error": "Session not found or expired", "session_id": session_id},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    return Response({
+        "success": True,
+        "progress": progress
+    }, status=status.HTTP_200_OK)
 
 
 # --- Folder Upload Endpoint ---

@@ -7,7 +7,6 @@ from typing import Dict, Any, Optional, List, Type
 from django.conf import settings
 
 from .base import EmbeddingProvider, ProviderError, ProviderNotAvailableError
-from .openclip import OpenCLIPProvider
 from .openai_provider import OpenAIProvider, OpenAIVisionProvider
 from .cohere_provider import CohereProvider
 from .bedrock_provider import BedrockEmbeddingProvider, TitanEmbeddingProvider, CohereBedrockEmbeddingProvider
@@ -18,9 +17,8 @@ logger = logging.getLogger(__name__)
 class EmbeddingProviderFactory:
     """Factory for creating embedding providers."""
     
-    # Registry of available providers
+    # Registry of available providers - API-only, no local models
     _providers: Dict[str, Type[EmbeddingProvider]] = {
-        'openclip': OpenCLIPProvider,
         'openai': OpenAIProvider,
         'openai_vision': OpenAIVisionProvider,
         'cohere': CohereProvider,
@@ -100,8 +98,16 @@ class EmbeddingProviderFactory:
             EmbeddingProvider instance
         """
         config = getattr(settings, 'EMBEDDING_PROVIDER_CONFIG', {})
-        provider_name = config.get('provider', 'openclip')
-        provider_config = config.get('config', {})
+        
+        # Check if provider is configured in settings
+        if 'provider' in config:
+            provider_name = config.get('provider')
+            provider_config = config.get('config', {})
+        else:
+            # Auto-configure provider based on available API keys
+            auto_config = auto_configure_provider()
+            provider_name = auto_config.get('provider')
+            provider_config = auto_config.get('config', {})
         
         return cls.create_provider(provider_name, provider_config)
     
@@ -219,23 +225,7 @@ def cleanup_global_provider():
             _global_provider = None
 
 
-# Provider configuration helpers
-def get_default_openclip_config() -> Dict[str, Any]:
-    """Get default OpenCLIP configuration."""
-    from ..model_config import get_model_for_environment
-    
-    model_name, pretrained = get_model_for_environment()
-    
-    return {
-        'provider': 'openclip',
-        'config': {
-            'model_name': model_name,
-            'pretrained': pretrained,
-            'device': 'auto',
-            'batch_size_images': 8,
-            'batch_size_texts': 16
-        }
-    }
+# Provider configuration helpers - API-only
 
 
 def get_openai_config(api_key: str, model: str = 'text-embedding-3-small') -> Dict[str, Any]:
@@ -356,10 +346,14 @@ def get_cohere_bedrock_config(language: str = 'multilingual', aws_region: str = 
 
 def auto_configure_provider() -> Dict[str, Any]:
     """
-    Auto-configure provider based on available API keys and system resources.
+    Auto-configure provider based on available API keys.
+    API-only configuration - no local models supported.
     
     Returns:
         Configuration dictionary for the best available provider
+        
+    Raises:
+        ProviderError: If no valid API keys are found
     """
     import os
     
@@ -374,7 +368,7 @@ def auto_configure_provider() -> Dict[str, Any]:
         logger.info("Found AWS credentials, using Cohere Multilingual embedding provider via Bedrock")
         return get_cohere_bedrock_config()
     
-    # If we have API keys, prefer API-based providers for zero memory usage
+    # If we have API keys, prefer API-based providers
     if openai_key:
         logger.info("Found OpenAI API key, using OpenAI provider")
         return get_openai_config(openai_key)
@@ -383,6 +377,11 @@ def auto_configure_provider() -> Dict[str, Any]:
         logger.info("Found Cohere API key, using Cohere provider")
         return get_cohere_config(cohere_key)
     
-    # Fall back to local OpenCLIP
-    logger.info("No API keys found, using local OpenCLIP provider")
-    return get_default_openclip_config()
+    # No API keys found - this is an error in API-only mode
+    error_msg = (
+        "No embedding API keys found! This system requires external embedding APIs. "
+        "Please set one of: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, "
+        "OPENAI_API_KEY, or COHERE_API_KEY"
+    )
+    logger.error(error_msg)
+    raise ProviderError(error_msg)

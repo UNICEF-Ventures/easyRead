@@ -199,34 +199,29 @@ CORS_ALLOWED_ORIGINS = [
 # File upload settings
 DATA_UPLOAD_MAX_NUMBER_FILES = 1500
 
-# PyTorch/ML Configuration - Reduce multiprocessing to prevent memory leaks
+# API-only embedding configuration - no local ML models
 import os
 
-# Set PyTorch to use single thread for CPU operations
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ['NUMEXPR_NUM_THREADS'] = '1'
-
-# Configure PyTorch multiprocessing
-os.environ['TORCH_NUM_THREADS'] = '1'
-os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-
-# Embedding Provider Configuration
-# Uses Cohere Multilingual embeddings via AWS Bedrock (available in us-east-1)
-EMBEDDING_PROVIDER_CONFIG = {
-    'provider': 'cohere_bedrock',
-    'config': {
-        'language': 'multilingual',
-        'aws_region': 'us-east-1',
-        'batch_size': 25,
-        'rate_limit_delay': 0.1,
-        'max_retries': 3
+# Embedding Provider Configuration - API-only
+# Auto-configured based on available API keys:
+# 1. AWS Bedrock (Cohere Multilingual) - preferred for cost/performance  
+# 2. OpenAI embeddings - good fallback
+# 3. Direct Cohere API - alternative option
+# Requires one of: AWS_ACCESS_KEY_ID, OPENAI_API_KEY, or COHERE_API_KEY
+try:
+    from api.embedding_providers.factory import auto_configure_provider
+    EMBEDDING_PROVIDER_CONFIG = auto_configure_provider()
+except Exception as e:
+    # Fallback configuration if auto-config fails at startup
+    EMBEDDING_PROVIDER_CONFIG = {
+        'provider': 'cohere_bedrock',
+        'config': {
+            'language': 'multilingual',
+            'aws_region': 'us-east-1',
+            'batch_size': 25,
+            'rate_limit_delay': 0.1,
+            'max_retries': 3
+        }
     }
-}
 
-# Additional memory optimization
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:256'
-
-# Configure OpenMP for development to prevent semaphore leaks
-os.environ['OMP_DYNAMIC'] = 'FALSE'
-os.environ['OMP_MAX_ACTIVE_LEVELS'] = '1'  # Replace deprecated OMP_NESTED 
+# No local ML model optimizations needed - API-only mode 

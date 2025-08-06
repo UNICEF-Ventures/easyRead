@@ -118,7 +118,8 @@ class Command(BaseCommand):
                     set_name = options['set_name']
                 
                 # Generate description from filename
-                description = file_path.stem.replace('_', ' ').replace('-', ' ')
+                from api.image_utils import generate_description_from_filename
+                description = generate_description_from_filename(file_path.name)
                 
                 # Check if already exists (if skip_existing is True)
                 if options['skip_existing']:

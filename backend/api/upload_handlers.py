@@ -487,7 +487,8 @@ def handle_folder_upload(folder_data, request=None):
             
             # Generate description from filename
             filename = file_path.split('/')[-1]  # Get just the filename
-            description = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ')
+            from .image_utils import generate_description_from_filename
+            description = generate_description_from_filename(filename)
             
             # Upload the image to the folder-named set
             result = handle_image_upload(file_obj, description, folder_name)

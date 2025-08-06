@@ -44,7 +44,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import SearchOffIcon from '@mui/icons-material/SearchOff';
 import WarningIcon from '@mui/icons-material/Warning';
-import { listImages, uploadImage, batchUploadImages, uploadFolder, getImageSets } from '../apiClient';
+import { listImages, uploadImage, batchUploadImages, optimizedBatchUpload, uploadFolder, getImageSets } from '../apiClient';
+import UploadProgressDialog from './UploadProgressDialog';
 
 // Maximum file size in bytes (5MB)
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -107,6 +108,10 @@ const ImageManagementPage = () => {
   const [editingFolder, setEditingFolder] = useState(null); // Which folder is being edited
   const [editFolderName, setEditFolderName] = useState(''); // Temp name while editing
   const [validationErrors, setValidationErrors] = useState([]); // File validation errors
+  
+  // Progress dialog state
+  const [showProgressDialog, setShowProgressDialog] = useState(false);
+  const [uploadSessionId, setUploadSessionId] = useState(null);
 
   // Clean up object URLs when component unmounts
   useEffect(() => {
@@ -640,21 +645,97 @@ const ImageManagementPage = () => {
     setUploadingCount(0);
     
     try {
-      // Upload each file individually with its specific label and set
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
-        const label = imageLabels[file.id] || generateDefaultLabel(file.name);
+      const fileCount = selectedFiles.length;
+      
+      // Use optimized upload for large batches (100+ images)
+      if (fileCount >= 100) {
+        console.log(`🚀 Starting optimized batch upload for ${fileCount} images`);
         
-        // Create a clean File object to avoid issues with react-dropzone properties
-        const cleanFile = new File([file], file.name, { type: file.type });
+        // Generate session ID
+        const sessionId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        setUploadSessionId(sessionId);
+        setShowProgressDialog(true);
         
-        await uploadImage(cleanFile, label, selectedSet);
-        setUploadingCount(i + 1);
+        // Create clean files for upload
+        const cleanFiles = selectedFiles.map(file => 
+          new File([file], file.name, { type: file.type })
+        );
+        
+        // Start optimized batch upload
+        const response = await optimizedBatchUpload(
+          cleanFiles, 
+          '', // No individual descriptions for batch upload
+          selectedSet, 
+          50, // batch size
+          sessionId
+        );
+        
+        if (response.data.success) {
+          showAlert(`Optimized batch upload started! Processing ${fileCount} images in batches.`, 'info');
+        } else {
+          throw new Error(response.data.error || 'Upload failed');
+        }
+        
+      } else {
+        // Use regular upload for smaller batches
+        console.log(`📤 Starting regular upload for ${fileCount} images`);
+        
+        if (fileCount > 1) {
+          // Use batch upload for multiple files
+          const cleanFiles = selectedFiles.map(file => 
+            new File([file], file.name, { type: file.type })
+          );
+          
+          const response = await batchUploadImages(cleanFiles, '', selectedSet);
+          
+          if (response.data.success) {
+            showAlert(`Successfully uploaded ${fileCount} images`, 'success');
+          } else {
+            throw new Error('Batch upload failed');
+          }
+        } else {
+          // Single file upload with individual labels
+          const file = selectedFiles[0];
+          const label = imageLabels[file.id] || generateDefaultLabel(file.name);
+          const cleanFile = new File([file], file.name, { type: file.type });
+          
+          await uploadImage(cleanFile, label, selectedSet);
+          setUploadingCount(1);
+          showAlert('Successfully uploaded 1 image', 'success');
+        }
+        
+        // Reset form immediately for small uploads
+        selectedFiles.forEach(file => {
+          if (file.preview) URL.revokeObjectURL(file.preview);
+        });
+        setSelectedFiles([]);
+        setImageLabels({});
+        setSelectedSet('');
+        
+        // Refresh image list and sets
+        fetchImages();
+        fetchImageSets();
       }
       
-      showAlert(`Successfully uploaded ${selectedFiles.length} image(s)`, 'success');
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      showAlert(`Error uploading images: ${error.message}`, 'error');
+    } finally {
+      setUploading(false);
+      setUploadingCount(0);
+    }
+  };
+
+  const handleProgressDialogClose = () => {
+    setShowProgressDialog(false);
+    setUploadSessionId(null);
+  };
+
+  const handleUploadComplete = (progressData) => {
+    if (progressData.status === 'completed') {
+      showAlert(`Upload completed! ${progressData.successful}/${progressData.total_images} images processed successfully.`, 'success');
       
-      // Reset form
+      // Reset form after completion
       selectedFiles.forEach(file => {
         if (file.preview) URL.revokeObjectURL(file.preview);
       });
@@ -665,12 +746,8 @@ const ImageManagementPage = () => {
       // Refresh image list and sets
       fetchImages();
       fetchImageSets();
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      showAlert('Error uploading images', 'error');
-    } finally {
-      setUploading(false);
-      setUploadingCount(0);
+    } else if (progressData.status === 'failed') {
+      showAlert(`Upload failed. ${progressData.successful || 0}/${progressData.total_images} images were processed before the error.`, 'error');
     }
   };
 
@@ -870,16 +947,6 @@ const ImageManagementPage = () => {
                         variant="filled"
                       />
                     </Tooltip>
-                  ) : image.search_ready ? (
-                    <Tooltip title="Search ready - image will appear in similarity search">
-                      <Chip
-                        icon={<SearchIcon />}
-                        label="Search Ready"
-                        size="small"
-                        color="success"
-                        variant="filled"
-                      />
-                    </Tooltip>
                   ) : null}
                 </Box>
 
@@ -947,9 +1014,6 @@ const ImageManagementPage = () => {
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Paper sx={{ p: 3, mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Image Management
-        </Typography>
         
         {/* Upload Section */}
         <Box sx={{ mb: 4 }}>
@@ -1599,6 +1663,14 @@ const ImageManagementPage = () => {
           {alert.message}
         </Alert>
       </Snackbar>
+
+      {/* Upload Progress Dialog */}
+      <UploadProgressDialog
+        open={showProgressDialog}
+        onClose={handleProgressDialogClose}
+        sessionId={uploadSessionId}
+        onComplete={handleUploadComplete}
+      />
     </Container>
   );
 };
