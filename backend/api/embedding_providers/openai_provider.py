@@ -202,11 +202,11 @@ class OpenAIProvider(EmbeddingProvider):
         Raises:
             ProviderError: Always, as OpenAI embeddings don't support images
         """
-        raise ProviderError("OpenAI embedding API does not support image embeddings. Use OpenCLIP or other multimodal providers.")
+        raise ProviderError("OpenAI embedding API does not support image embeddings. Use AWS Bedrock Titan or other multimodal providers.")
     
     def encode_single_image(self, image: Union[str, Path, Image.Image], **kwargs) -> Optional[np.ndarray]:
         """OpenAI doesn't support image embeddings."""
-        raise ProviderError("OpenAI embedding API does not support image embeddings. Use OpenCLIP or other multimodal providers.")
+        raise ProviderError("OpenAI embedding API does not support image embeddings. Use AWS Bedrock Titan or other multimodal providers.")
     
     def cleanup(self):
         """Clean up resources (nothing to cleanup for API provider)."""

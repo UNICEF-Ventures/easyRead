@@ -18,7 +18,7 @@ class EmbeddingProvider(ABC):
     Abstract base class for embedding providers.
     
     This class defines the interface that all embedding providers must implement,
-    whether they are local models (like OpenCLIP) or API-based services (like OpenAI).
+    for API-based embedding services (like OpenAI, Cohere, AWS Bedrock).
     """
     
     def __init__(self, config: Dict[str, Any] = None):
@@ -38,8 +38,8 @@ class EmbeddingProvider(ABC):
         
         Returns:
             Dictionary containing provider metadata including:
-            - name: Provider name (e.g., 'openclip', 'openai')
-            - model: Specific model (e.g., 'ViT-B-32', 'text-embedding-3-small')
+            - name: Provider name (e.g., 'cohere_bedrock', 'openai')
+            - model: Specific model (e.g., 'cohere.embed-multilingual-v3', 'text-embedding-3-small')
             - embedding_dimension: Integer dimension
             - other metadata
         """
