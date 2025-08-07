@@ -1,25 +1,48 @@
 import axios from 'axios';
 import { config } from './config.js';
 
+// Function to get CSRF token from cookie
+const getCsrfToken = () => {
+  const cookieValue = document.cookie
+    .split('; ')
+    .find(row => row.startsWith('csrftoken='))
+    ?.split('=')[1];
+  return cookieValue;
+};
+
 const apiClient = axios.create({
   baseURL: config.API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Always include cookies for authentication
 });
 
 // Log the API base URL for debugging (only in development)
 if (import.meta.env.DEV) {
   console.log('🔗 API Client initialized with base URL:', config.API_BASE_URL);
   console.log('🔗 Axios instance baseURL:', apiClient.defaults.baseURL);
+}
 
-  // Add request interceptor for debugging (only in development)
-  apiClient.interceptors.request.use(request => {
+// Add request interceptor to include CSRF token
+apiClient.interceptors.request.use(request => {
+  // Add CSRF token to requests that need it (POST, PUT, PATCH, DELETE)
+  if (['post', 'put', 'patch', 'delete'].includes(request.method.toLowerCase())) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      request.headers['X-CSRFToken'] = csrfToken;
+    }
+  }
+
+  // Debug logging (only in development)
+  if (import.meta.env.DEV) {
     console.log('🚀 Making request to:', request.baseURL + request.url);
     console.log('🚀 Full request config:', request);
-    return request;
-  });
-}
+    console.log('🔒 CSRF Token:', request.headers['X-CSRFToken'] || 'None');
+  }
+
+  return request;
+});
 
 // Function to extract markdown from PDF
 export const extractMarkdown = (file) => {

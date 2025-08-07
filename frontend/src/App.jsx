@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Routes, Route, useNavigate, Link, BrowserRouter } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
@@ -39,7 +39,11 @@ function AppCore() {
     </AppBar>
   );
 
-  const progressPercent = totalPages > 0 ? (pagesProcessed / totalPages) * 100 : 0;
+  const progressPercent = useMemo(() => {
+    return totalPages > 0 ? (pagesProcessed / totalPages) * 100 : 0;
+  }, [totalPages, pagesProcessed]);
+
+
 
   const handleProcessingComplete = (finalMarkdown, finalEasyRead) => {
     console.log("App: Processing complete");
@@ -67,20 +71,19 @@ function AppCore() {
     // Update all state at once before navigating
     setMarkdownContent(finalMarkdown);
     setContentTitle(newTitle);
-    setEasyReadContent(newContent); // Use the reference stored above
+    setEasyReadContent(newContent);
     setSelectedSets(newSelectedSets);
     setPreventDuplicateImages(newPreventDuplicates);
     setIsLoading(false);
     setIsProcessingPages(false);
     setTotalPages(0);
     setPagesProcessed(0);
-    setError(errorMsg); // Set error state (null if no error)
+    setError(errorMsg);
     
-    // Navigate *after* the single state update batch is processed
+    // Navigate after state updates
     navigate('/results', { state: { fromProcessing: true } });
   };
 
-  console.log('Render App:', { isLoading, isProcessingPages, totalPages, pagesProcessed, progressPercent });
 
   return (
     <Box>

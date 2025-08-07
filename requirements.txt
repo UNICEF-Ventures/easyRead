@@ -18,3 +18,4 @@ numpy
 svglib
 python-magic
 python-docx
+boto3

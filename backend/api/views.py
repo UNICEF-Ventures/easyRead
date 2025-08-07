@@ -1,5 +1,7 @@
 from django.shortcuts import render, get_object_or_404
-from rest_framework.decorators import api_view, parser_classes
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -148,6 +150,8 @@ except Exception as e:
 
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
+@permission_classes([AllowAny])
+@csrf_exempt
 def pdf_to_markdown(request):
     """
     API endpoint that accepts a PDF file upload and returns its Markdown conversion.
@@ -201,6 +205,8 @@ def pdf_to_markdown(request):
         return Response({"error": f"Error converting PDF: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def process_page(request):
     """
     API endpoint that receives a single markdown page string and returns 
@@ -368,6 +374,8 @@ def process_page(request):
     }, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def validate_completeness(request):
     """
     API endpoint that receives original markdown and a list of Easy Read sentences,
@@ -489,6 +497,8 @@ def validate_completeness(request):
         return Response({"error": f"LLM call failed during validation. Reason: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def revise_sentences(request):
     """
     API endpoint that receives original markdown, current sentences (with image queries),
@@ -613,6 +623,8 @@ def revise_sentences(request):
 # --- Updated Image Upload Endpoint ---
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser]) # Allow file uploads and form data
+@permission_classes([AllowAny])
+@csrf_exempt
 def upload_image(request):
     """
     API endpoint to upload an image, optionally with a description.
@@ -711,6 +723,8 @@ def upload_image(request):
 
 # --- Updated Image Similarity Search Endpoint ---
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def find_similar_images(request):
     """
     API endpoint to find N most similar images based on a text query.
@@ -825,6 +839,8 @@ def find_similar_images(request):
 
 # --- New Save Content Endpoint ---
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def save_processed_content(request):
     """
     API endpoint to save the original markdown, title, and the generated Easy Read JSON.
@@ -917,6 +933,8 @@ def list_images(request):
 # --- Batch Image Upload Endpoint ---
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
+@permission_classes([AllowAny])
+@csrf_exempt
 def batch_upload_images(request):
     """
     API endpoint to upload multiple images at once, optionally with a shared description.
@@ -1004,6 +1022,8 @@ def batch_upload_images(request):
 # --- Optimized Large Batch Upload Endpoint ---
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
+@permission_classes([AllowAny])
+@csrf_exempt
 def optimized_batch_upload(request):
     """
     API endpoint for optimized large batch uploads (1000+ images).
@@ -1126,6 +1146,8 @@ def upload_progress(request, session_id):
 # --- Folder Upload Endpoint ---
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
+@permission_classes([AllowAny])
+@csrf_exempt
 def upload_folder(request):
     """
     API endpoint to upload a folder structure with automatic set creation.
@@ -1324,6 +1346,8 @@ def get_saved_content_detail(request, content_id):
 
 # --- Update Saved Content Image Endpoint ---
 @api_view(['PATCH'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def update_saved_content_image(request, content_id):
     """
     API endpoint to update the image for a specific sentence in saved content.
@@ -1400,6 +1424,8 @@ def update_saved_content_image(request, content_id):
         return Response({"error": "Failed to update content image"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def generate_image_view(request):
     """
     Generates image(s) using a Gradio client based on a prompt.
@@ -1678,6 +1704,8 @@ def health_check(request):
 
 
 @api_view(['PUT'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def bulk_update_saved_content_images(request, content_id):
     """
     API endpoint to bulk update all image selections for saved content.
@@ -1785,6 +1813,8 @@ def export_content_docx(request, content_id=None):
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def export_current_content_docx(request):
     """
     Export current EasyRead content as DOCX (for ResultPage).
@@ -1825,6 +1855,8 @@ def export_current_content_docx(request):
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
 def find_similar_images_batch(request):
     """
     API endpoint to find similar images for multiple queries in a single request.

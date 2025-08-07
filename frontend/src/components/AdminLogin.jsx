@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import LockIcon from '@mui/icons-material/Lock';
+import apiClient from '../apiClient';
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(4),
@@ -48,19 +49,14 @@ const AdminLogin = ({ onLoginSuccess }) => {
     setError('');
 
     try {
-      const response = await fetch('/api/admin/api/login/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: 'admin',
-          password: password
-        }),
-        credentials: 'include', // Include cookies for session
+      const response = await apiClient.post('/admin/api/login/', {
+        username: 'admin',
+        password: password
+      }, {
+        withCredentials: true, // Include cookies for session
       });
 
-      const data = await response.json();
+      const data = response.data;
 
       if (data.success) {
         onLoginSuccess(data.username);
