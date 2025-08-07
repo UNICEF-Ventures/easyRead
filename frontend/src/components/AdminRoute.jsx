@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLogin from './AdminLogin';
 import ImageManagementPage from './ImageManagementPage';
 import LogoutIcon from '@mui/icons-material/Logout';
+import apiClient from '../apiClient';
 
 const AdminRoute = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -18,10 +19,10 @@ const AdminRoute = () => {
 
   const checkAuthStatus = async () => {
     try {
-      const response = await fetch('/api/admin/check-auth/', {
-        credentials: 'include',
+      const response = await apiClient.get('/admin/check-auth/', {
+        withCredentials: true,
       });
-      const data = await response.json();
+      const data = response.data;
       
       console.log('Auth check response:', data);
       
@@ -42,12 +43,11 @@ const AdminRoute = () => {
 
   const handleLogout = async () => {
     try {
-      const response = await fetch('/api/admin/api/logout/', {
-        method: 'POST',
-        credentials: 'include',
+      const response = await apiClient.post('/admin/api/logout/', {}, {
+        withCredentials: true,
       });
       
-      if (response.ok) {
+      if (response.status === 200) {
         setIsAuthenticated(false);
         setUsername('');
         // Optionally redirect to home page

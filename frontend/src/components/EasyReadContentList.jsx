@@ -131,7 +131,7 @@ function EasyReadContentList({
                     </Box>
                   )}
                   
-                  {!itemIsLoading && (selectedPath || images.length > 0) && (
+                  {!itemIsLoading && (selectedPath || (images && images.length > 0)) && (
                     <Tooltip 
                       title={item.image_retrieval || 'No retrieval query'} 
                       enterDelay={500}
@@ -182,13 +182,13 @@ function EasyReadContentList({
                             },
                           }}
                         >
-                          {!selectedPath && images.length > 0 && (
+                          {!selectedPath && images && images.length > 0 && (
                             <MenuItem value="" disabled sx={{ display: 'none' }}>
                               Select Image
                             </MenuItem>
                           )}
                           {/* If selectedPath exists but is not in images array, add it as an option */}
-                          {selectedPath && !images.some(img => img.url === selectedPath) && (
+                          {selectedPath && images && !images.some(img => img.url === selectedPath) && (
                             <MenuItem key={`${index}-selected-${selectedPath}`} value={selectedPath} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
                               <Box 
                                 component="img"
@@ -207,7 +207,7 @@ function EasyReadContentList({
                               />
                             </MenuItem>
                           )}
-                          {images.map((imgResult, imgIndex) => (
+                          {images && images.map((imgResult, imgIndex) => (
                             <MenuItem key={`${index}-${imgIndex}-${imgResult.url}`} value={imgResult.url} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
                               <Box 
                                 component="img"
@@ -231,7 +231,7 @@ function EasyReadContentList({
                     </Tooltip>
                   )}
                   
-                  {!itemIsLoading && !selectedPath && images.length === 0 && (
+                  {!itemIsLoading && !selectedPath && (!images || images.length === 0) && (
                     <Box sx={{
                       width: '100%', // Take full width of the column
                       height: 60,

@@ -191,6 +191,23 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:3000", # Docker frontend port
     "http://127.0.0.1:3000",
+    "http://localhost:5001", # Frontend dev server port (alternative)
+    "http://127.0.0.1:5001",
+]
+
+# Allow credentials for admin authentication
+CORS_ALLOW_CREDENTIALS = True
+
+# CSRF Configuration for API endpoints
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173", 
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5001",
+    "http://127.0.0.1:5001",
 ]
 
 # Optional: Allow all origins for quick testing (less secure)

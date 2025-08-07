@@ -66,27 +66,44 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
 
   // Initialize or update image state when content changes
   useEffect(() => {
-    // Cancel any existing requests
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    // Create new AbortController for this effect
-    abortControllerRef.current = new AbortController();
-    const { signal } = abortControllerRef.current;
     if (!initialContent || initialContent.length === 0) {
       setImageState({});
       contentRef.current = null;
       return;
     }
 
-    // Check if this is the same content reference we've already processed
-    const isSameContentRef = initialContent === contentRef.current;
-    if (isSameContentRef) {
+    // Check if this is the same content we've already processed
+    // Compare by serialized structure instead of object reference to handle recreated objects
+    const contentSignature = JSON.stringify(initialContent?.map(item => ({ 
+      sentence: item.sentence, 
+      image_retrieval: item.image_retrieval 
+    })));
+    
+    if (contentSignature === contentRef.current) {
+      if (import.meta.env.DEV) {
+        console.log('🔄 Content signature unchanged, skipping image fetch');
+      }
       return;
     }
 
-    // Update our content reference
-    contentRef.current = initialContent;
+    // Update our content signature BEFORE starting operations to prevent StrictMode double-execution
+    contentRef.current = contentSignature;
+
+    if (import.meta.env.DEV) {
+      console.log('🔄 Content signature changed, starting new image fetch');
+    }
+
+    // Cancel any existing requests ONLY when content actually changes
+    if (abortControllerRef.current) {
+      if (import.meta.env.DEV) {
+        console.log('🚫 Aborting existing image fetch requests due to content change');
+      }
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new AbortController for this effect
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
     
     // Reset sequential attribution flag for new content
     sequentialAttributionAppliedRef.current = false;
@@ -181,10 +198,20 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
             });
 
             if (batchQueries.length === 0) {
-                // No valid queries to process
+                // No valid queries to process - set all to "No image"
+                const noImageUpdates = {};
                 needsFetching.forEach(index => {
                     fetchingRef.current[index] = false;
+                    noImageUpdates[index] = {
+                        isLoading: false,
+                        error: 'No image'
+                    };
                 });
+                
+                setImageState(prev => ({
+                    ...prev,
+                    ...noImageUpdates
+                }));
                 return;
             }
 
@@ -202,6 +229,9 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
 
             // Check if request was aborted
             if (signal.aborted) {
+                if (import.meta.env.DEV) {
+                    console.log('🚫 Batch image request was aborted after completion');
+                }
                 needsFetching.forEach(index => {
                     fetchingRef.current[index] = false;
                 });
@@ -279,13 +309,28 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
 
         } catch (error) {
             // Handle batch request failure
-            console.error('Batch image fetch failed:', error);
+            if (import.meta.env.DEV) {
+                if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
+                    console.log('🚫 Batch image fetch was cancelled:', error.message);
+                } else {
+                    console.error('❌ Batch image fetch failed with error:', error);
+                }
+            }
             
             const errorUpdates = {};
             needsFetching.forEach(index => {
+                // If request was cancelled, it might be due to no images being available
+                // Show a more user-friendly message
+                let errorMessage = 'No image';
+                
+                // Only show technical error messages for non-cancellation errors
+                if (!signal.aborted && error.name !== 'CanceledError') {
+                    errorMessage = 'Failed to fetch';
+                }
+                
                 errorUpdates[index] = {
                     isLoading: false,
-                    error: signal.aborted ? 'Request cancelled' : 'Failed to fetch'
+                    error: errorMessage
                 };
             });
 
@@ -417,15 +462,12 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
       
       return currentState;
     });
-  }, [preventDuplicateImages, initialContent, imageState]);
+  }, [preventDuplicateImages, initialContent]); // Removed imageState to prevent infinite loop
   
-  // Cleanup effect for AbortController and request cache
+  // Cleanup effect for request cache only (no abort to prevent StrictMode conflicts)
   useEffect(() => {
     return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      // Clear any pending requests from cache
+      // Clear any pending requests from cache on unmount
       requestCache.clear();
     };
   }, []); 
