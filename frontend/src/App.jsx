@@ -95,7 +95,7 @@ function AppCore() {
       {isProcessingPages && (
           <Box sx={{ width: '80%', mx: 'auto', my: 3, maxWidth: 'md', p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
             <Typography variant="body1" sx={{ mb: 1, textAlign: 'center', fontWeight: 'bold' }}>
-              Processing page {pagesProcessed} of {totalPages}...
+              Processing page {Math.ceil(pagesProcessed)} of {totalPages}...
             </Typography>
             {currentProcessingStep && (
               <Typography variant="body2" sx={{ mb: 2, textAlign: 'center', color: 'primary.main', fontStyle: 'italic' }}>

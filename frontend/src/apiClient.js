@@ -77,6 +77,14 @@ export const generateEasyRead = async (markdownPage, selectedSets = [], onProgre
         easy_read_sentences.map(s => s.sentence)
       );
       
+      if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_VALIDATION) {
+        console.log('✅ Validation completed successfully');
+        console.log('📋 Validation feedback received:');
+        console.log('  Missing info:', validationResponse.data.missing_info || 'None');
+        console.log('  Extra info:', validationResponse.data.extra_info || 'None');
+        console.log('  Other feedback:', validationResponse.data.other_feedback || 'None');
+      }
+      
       // Step 3: Always revise content (regardless of validation result)
       onProgress?.("Revising content...");
       try {
@@ -86,9 +94,12 @@ export const generateEasyRead = async (markdownPage, selectedSets = [], onProgre
           validationResponse.data
         );
         
-        if (import.meta.env.DEV) {
+        if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_VALIDATION) {
           console.log('✨ Content revised and enhanced');
-          console.log('Validation was complete:', validationResponse.data.is_complete);
+          console.log('📋 Validation feedback:');
+          console.log('  Missing info:', validationResponse.data.missing_info || 'None');
+          console.log('  Extra info:', validationResponse.data.extra_info || 'None');
+          console.log('  Other feedback:', validationResponse.data.other_feedback || 'None');
         }
         
         return {
@@ -103,7 +114,12 @@ export const generateEasyRead = async (markdownPage, selectedSets = [], onProgre
       }
       
     } catch (validationError) {
-      console.warn('Validation failed, using original content:', validationError);
+      if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_VALIDATION) {
+        console.warn('⚠️ Validation failed, using original content:', validationError);
+        if (validationError.response?.data) {
+          console.log('📋 Validation error details:', validationError.response.data);
+        }
+      }
     }
     
     return initialResponse;

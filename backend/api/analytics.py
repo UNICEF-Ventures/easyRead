@@ -170,10 +170,15 @@ def track_image_selection_change(request, sentence_index, old_image=None, new_im
     return session
 
 
-def track_content_validation(request, is_complete, issues_found=None):
+def track_content_validation(request, missing_info="", extra_info="", other_feedback="", issues_found=None):
     """Track content validation results."""
     return track_event(request, 'content_validate', {
-        'is_complete': is_complete,
+        'has_missing_info': bool(missing_info.strip()),
+        'has_extra_info': bool(extra_info.strip()),
+        'has_other_feedback': bool(other_feedback.strip()),
+        'missing_info_length': len(missing_info),
+        'extra_info_length': len(extra_info),
+        'other_feedback_length': len(other_feedback),
         'issues_found': issues_found or []
     })
 

@@ -377,10 +377,8 @@ def validate_completeness(request):
         "easy_read_sentences": ["sentence1", "sentence2", ...]
     }
     Returns JSON: {
-        "is_complete": <boolean>,
-        "missing_info": [<str>, ...],
-        "extra_info": [<str>, ...],
-        "explanation": <str>
+        "missing_info": <str>,
+        "extra_info": <str>
     } or {"error": "..."}
     """
     logger = logging.getLogger(__name__)
@@ -454,19 +452,28 @@ def validate_completeness(request):
 
             llm_parsed_object = json.loads(llm_output_content)
             
-            # Basic structure validation based on the NEW prompt's expected output
-            expected_keys = ["is_complete", "missing_info", "extra_info"]
+            # Basic structure validation based on the expected output
+            expected_keys = ["missing_info", "extra_info", "other_feedback"]
             if not isinstance(llm_parsed_object, dict) or not all(key in llm_parsed_object for key in expected_keys):
                  raise ValueError(f"LLM response missing expected keys: {expected_keys}")
             
-            # Type validation for the new structure
-            if not isinstance(llm_parsed_object.get("is_complete"), bool): 
-                 raise ValueError("Type error: 'is_complete' should be boolean.")
+            # Type validation for the structure
             if not isinstance(llm_parsed_object.get("missing_info"), str):
                  raise ValueError("Type error: 'missing_info' should be a string.")
             if not isinstance(llm_parsed_object.get("extra_info"), str):
                  raise ValueError("Type error: 'extra_info' should be a string.")
+            if not isinstance(llm_parsed_object.get("other_feedback"), str):
+                 raise ValueError("Type error: 'other_feedback' should be a string.")
 
+            # Track analytics for validation
+            from api.analytics import track_content_validation
+            track_content_validation(
+                request,
+                missing_info=llm_parsed_object.get("missing_info", ""),
+                extra_info=llm_parsed_object.get("extra_info", ""),
+                other_feedback=llm_parsed_object.get("other_feedback", "")
+            )
+            
             # If validation passes, return the parsed object directly
             return Response(llm_parsed_object, status=status.HTTP_200_OK)
 
@@ -489,7 +496,7 @@ def revise_sentences(request):
     Expects JSON: {
         "original_markdown": "...",
         "current_sentences": [{"sentence": "...", "image_retrieval": "..."}, ...],
-        "validation_feedback": {"is_complete": bool, "missing_info": str, "extra_info": str}
+        "validation_feedback": {"missing_info": str, "extra_info": str}
     }
     Returns JSON: {
         "easy_read_sentences": [{"sentence": "...", "image_retrieval": "..."}, ...]
@@ -518,10 +525,10 @@ def revise_sentences(request):
          return Response({"error": "'current_sentences' must be a list of dicts, each with 'sentence' (string) and 'image_retrieval' (string) keys."}, status=status.HTTP_400_BAD_REQUEST)
     if not isinstance(validation_feedback, dict):
          return Response({"error": "'validation_feedback' must be a dictionary."}, status=status.HTTP_400_BAD_REQUEST)
-    if not all(key in validation_feedback for key in ['is_complete', 'missing_info', 'extra_info']):
-         return Response({"error": "'validation_feedback' dictionary missing required keys ('is_complete', 'missing_info', 'extra_info')."}, status=status.HTTP_400_BAD_REQUEST)
-    if not isinstance(validation_feedback.get('is_complete'), bool) or not isinstance(validation_feedback.get('missing_info'), str) or not isinstance(validation_feedback.get('extra_info'), str):
-         return Response({"error": "'validation_feedback' has keys with incorrect types (expected bool, str, str)."}, status=status.HTTP_400_BAD_REQUEST)
+    if not all(key in validation_feedback for key in ['missing_info', 'extra_info', 'other_feedback']):
+         return Response({"error": "'validation_feedback' dictionary missing required keys ('missing_info', 'extra_info', 'other_feedback')."}, status=status.HTTP_400_BAD_REQUEST)
+    if not isinstance(validation_feedback.get('missing_info'), str) or not isinstance(validation_feedback.get('extra_info'), str) or not isinstance(validation_feedback.get('other_feedback'), str):
+         return Response({"error": "'validation_feedback' has keys with incorrect types (expected str, str, str)."}, status=status.HTTP_400_BAD_REQUEST)
 
 
     # --- Load Prompt ---
