@@ -41,6 +41,42 @@ class Image(models.Model):
         unique_together = ['set', 'filename']  # Unique images per set
         ordering = ['set__name', 'filename']
     
+    def get_absolute_path(self):
+        """
+        Get the absolute file system path for this image.
+        Works in both Docker and non-Docker environments.
+        """
+        from django.conf import settings
+        import os
+        
+        # If path is already absolute, use it
+        if os.path.isabs(self.original_path):
+            return self.original_path
+            
+        # Otherwise, join with MEDIA_ROOT
+        return os.path.join(settings.MEDIA_ROOT, self.original_path)
+    
+    def get_url(self):
+        """
+        Get the URL for this image that works in web requests.
+        Handles both Docker and non-Docker environments.
+        """
+        from django.conf import settings
+        import os
+        
+        # If original_path is relative, it's already correct for URLs
+        if not os.path.isabs(self.original_path):
+            return f"{settings.MEDIA_URL.rstrip('/')}/{self.original_path}"
+            
+        # If absolute, extract the part after 'media/'
+        media_index = self.original_path.find('media/')
+        if media_index != -1:
+            relative_path = self.original_path[media_index + 6:]  # Remove 'media/'
+            return f"{settings.MEDIA_URL.rstrip('/')}/{relative_path}"
+            
+        # Fallback: use filename only
+        return f"{settings.MEDIA_URL.rstrip('/')}/images/{self.filename}"
+
     def __str__(self):
         return f"{self.set.name}/{self.filename}"
 
@@ -90,6 +126,9 @@ class ProcessedContent(models.Model):
     # Store the list of dicts including sentence, keyword, and SELECTED image path
     easy_read_json = models.JSONField() 
     created_at = models.DateTimeField(auto_now_add=True)
+    # Add a public UUID for token-based access (non-guessable) and soft delete timestamp
+    public_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         # Avoid loading large JSON in admin list view if possible

@@ -103,6 +103,23 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     try {
       const response = await saveContent(title, markdownContent, dataToSave);
       console.log('Save response:', response.data);
+
+      // Store token in LocalStorage
+      const token = response.data?.public_id;
+      if (token) {
+        try {
+          const key = 'easyread_saved_tokens';
+          const raw = localStorage.getItem(key);
+          const arr = raw ? JSON.parse(raw) : [];
+          if (!arr.includes(token)) {
+            arr.push(token);
+            localStorage.setItem(key, JSON.stringify(arr));
+          }
+        } catch (e) {
+          console.warn('Failed to persist token to LocalStorage:', e);
+        }
+      }
+
       setSaveSuccess(true);
       // Optional: Redirect to the saved content page after successful save
       // navigate(`/saved/${response.data.id}`);

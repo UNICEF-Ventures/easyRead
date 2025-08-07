@@ -21,11 +21,13 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { format } from 'date-fns';
-import { getSavedContent, deleteSavedContent } from '../apiClient';
+import { getSavedContentByTokens, deleteSavedContent } from '../apiClient';
 import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
 const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
+
+const LOCAL_TOKENS_KEY = 'easyread_saved_tokens';
 
 const SavedContentPage = () => {
   const [savedContent, setSavedContent] = useState([]);
@@ -38,12 +40,36 @@ const SavedContentPage = () => {
     fetchSavedContent();
   }, []);
 
+  const readTokens = () => {
+    try {
+      const raw = localStorage.getItem(LOCAL_TOKENS_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+      console.warn('Failed to read tokens from LocalStorage:', e);
+      return [];
+    }
+  };
+
+  const writeTokens = (tokens) => {
+    try {
+      localStorage.setItem(LOCAL_TOKENS_KEY, JSON.stringify(tokens));
+    } catch (e) {
+      console.warn('Failed to write tokens to LocalStorage:', e);
+    }
+  };
+
   const fetchSavedContent = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await getSavedContent();
-      setSavedContent(response.data.content || []);
+      const tokens = readTokens();
+      if (!tokens || tokens.length === 0) {
+        setSavedContent([]);
+      } else {
+        const response = await getSavedContentByTokens(tokens);
+        setSavedContent(response.data.content || []);
+      }
     } catch (err) {
       console.error('Error fetching saved content:', err);
       setError('Failed to load saved content. Please try again later.');
@@ -52,11 +78,11 @@ const SavedContentPage = () => {
     }
   };
 
-  const handleViewContent = (id) => {
-    navigate(`/saved/${id}`);
+  const handleViewContent = (publicId) => {
+    navigate(`/saved/${publicId}`);
   };
 
-  const handleDeleteContent = async (id, event) => {
+  const handleDeleteContent = async (id, publicId, event) => {
     event.stopPropagation();
     
     if (!window.confirm('Are you sure you want to delete this item?')) {
@@ -66,6 +92,12 @@ const SavedContentPage = () => {
     try {
       await deleteSavedContent(id);
       setSavedContent(prevContent => prevContent.filter(item => item.id !== id));
+
+      // Remove token from LocalStorage
+      const tokens = readTokens();
+      const updated = tokens.filter(t => t !== publicId);
+      writeTokens(updated);
+
       setDeleteFeedback({ open: true, message: 'Content deleted successfully', severity: 'success' });
     } catch (err) {
       console.error('Error deleting content:', err);
@@ -118,7 +150,7 @@ const SavedContentPage = () => {
                     flexDirection: 'column',
                   }}
                 >
-                  <CardContent sx={{ flexGrow: 1 }} onClick={() => handleViewContent(item.id)} style={{cursor: 'pointer'}}>
+                  <CardContent sx={{ flexGrow: 1 }} onClick={() => handleViewContent(item.public_id)} style={{cursor: 'pointer'}}>
                     <Typography variant="h6" component="h2" gutterBottom noWrap>
                       {item.title || `Conversion #${item.id}`}
                     </Typography>
@@ -132,7 +164,7 @@ const SavedContentPage = () => {
                   <CardActions sx={{ justifyContent: 'flex-end', pt: 0 }}>
                     <IconButton 
                       aria-label="delete"
-                      onClick={(e) => handleDeleteContent(item.id, e)}
+                      onClick={(e) => handleDeleteContent(item.id, item.public_id, e)}
                       color="error"
                       size="small"
                     >

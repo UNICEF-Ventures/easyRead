@@ -17,6 +17,10 @@ import {
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { extractMarkdown, generateEasyRead, getImageSets, listImages } from '../apiClient';
+import { config } from '../config.js';
+
+// Base URL for serving media files from Django dev server
+const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
 
 // Styled component for the drop zone
 const DropZone = styled(Box)(({ theme }) => ({
@@ -496,7 +500,9 @@ function HomePage({
                           <CardMedia
                             component="img"
                             height="60"
-                            image={image.image_url || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60"><rect width="60" height="60" fill="%23f0f0f0"/><text x="30" y="35" text-anchor="middle" fill="%23666" font-family="Arial" font-size="10">No Image</text></svg>'}
+                            image={(image.image_url && (image.image_url.startsWith('http://') || image.image_url.startsWith('https://')))
+                              ? image.image_url
+                              : (image.image_url ? `${MEDIA_BASE_URL}${image.image_url.startsWith('/') ? '' : '/'}${image.image_url}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60"><rect width="60" height="60" fill="%23f0f0f0"/><text x="30" y="35" text-anchor="middle" fill="%23666" font-family="Arial" font-size="10">No Image</text></svg>')}
                             alt={image.description || 'Sample image'}
                             sx={{ 
                               objectFit: 'contain',

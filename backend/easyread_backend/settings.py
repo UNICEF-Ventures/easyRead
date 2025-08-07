@@ -31,6 +31,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-r(!8baz4s5l9y&g6*^33kb8gu!
 DEBUG = os.getenv("DEBUG", "True").lower() in ["true", "1", "yes"]
 
 ALLOWED_HOSTS = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()]
+# Allow Django test client host during development
+if DEBUG and 'testserver' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS += ['localhost', '127.0.0.1', 'testserver']
 
 
 # Application definition
@@ -153,7 +156,17 @@ STATIC_URL = "static/"
 # Media files (User-uploaded files)
 # https://docs.djangoproject.com/en/5.2/topics/files/
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media' # Store media files in <backend>/media/
+# Environment-aware media root configuration  
+# In Docker: /app/media (mounted from project root via volume)
+# Outside Docker: /project/media (project root)
+# Check if we're in Docker by looking for container-specific indicators
+import os
+if os.path.exists('/.dockerenv') or os.environ.get('CONTAINER_ENV') == 'docker':
+    # Docker environment - media is mounted at /app/media
+    MEDIA_ROOT = BASE_DIR / 'media'
+else:
+    # Non-Docker environment - use project root media
+    MEDIA_ROOT = BASE_DIR.parent / 'media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

@@ -162,7 +162,13 @@ export const saveContent = (title, originalMarkdown, easyReadJson) => {
   });
 };
 
-// Function to retrieve all saved content
+// Function to retrieve saved content by tokens
+export const getSavedContentByTokens = (tokens = []) => {
+  const query = Array.isArray(tokens) && tokens.length > 0 ? `?tokens=${tokens.join(',')}` : '?tokens=';
+  return apiClient.get(`/list-saved-content/${query}`);
+};
+
+// Keep for backward compatibility (admin or legacy)
 export const getSavedContent = () => {
   return apiClient.get('/list-saved-content/');
 };
@@ -616,9 +622,19 @@ export const generateNewImage = async (prompt) => {
   }
 };
 
-// Function to delete saved content
+// Function to delete saved content by ID (legacy)
 export const deleteSavedContent = (contentId) => {
   return apiClient.delete(`/saved-content/${contentId}/`);
+};
+
+// Function to get saved content detail by token
+export const getSavedContentDetailByToken = (token) => {
+  return apiClient.get(`/saved-content/by-token/${token}/`);
+};
+
+// Function to delete saved content by token
+export const deleteSavedContentByToken = (token) => {
+  return apiClient.delete(`/saved-content/by-token/${token}/`);
 };
 
 // Function to bulk update all image selections for saved content
