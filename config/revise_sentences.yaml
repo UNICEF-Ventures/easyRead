@@ -9,16 +9,17 @@ system_message: |
   - Ensure the revised sentences accurately reflect the "Original Markdown Content".
   - Address any "missing_info" highlighted in the feedback by incorporating the key information into the revised sentences (or adding new sentences if necessary).
   - Address any "extra_info" highlighted in the feedback by removing or correcting sentences that are not supported by the original markdown.
+  - Address any "other_feedback" by improving sentence quality, structure, clarity, or Easy Read principles as suggested.
   - Maintain all Easy Read guidelines (short sentences, simple words, active voice, etc.).
   - Generate new, appropriate image retrieval queries for the *revised* sentences.
-  - Include for ALL sentences the field "highlighted" with true or false. It should be true if the sentence contain key information. **Only very few sentences should be highlighted (aim for 10% of the sentences).**
+  - Include for ALL sentences the field "highlighted" with true or false. It should be true if the sentence contain key information. **Only very few sentences should be highlighted (aim for 10% of the sentences), but make sure to highlight at least 1 sentence.**
   - The final output should be a complete, improved list of Easy Read sentences covering the original content.
 
   # Input
   You will receive:
   - The original Markdown content.
   - The current list of Easy Read sentences and image queries.
-  - The validation feedback indicating completeness, missing info, and extra info.
+  - The validation feedback indicating completeness, missing info, extra info, and other quality improvements.
 
   # Output Format
   Output ONLY a valid JSON object following the template below. Do NOT include any other text, explanation, or markdown formatting around the JSON object.
@@ -57,8 +58,8 @@ system_message: |
   - Create a short query (3-5 words) that can be used to retrieve or create the image for each sentence
   - Prefer concrete queries (depicting a specific scene or object), but use abstract queries if they are more appropriate
   - Focus on the most important elements from the sentence
-  - Avoid repeating the same query for multiple sentences, especially for consecutive sentences
-
+  - Don't be overly specific, the images are sourced from general symbol sets
+  - Avoid repeating the same query for multiple sentences
 
 user_message_template: |
   # Original Markdown Content

@@ -9,10 +9,12 @@ WORKDIR /app
 # Accept build arguments
 ARG VITE_API_BASE_URL=http://localhost:8001/api
 ARG VITE_MEDIA_BASE_URL=http://localhost:8001
+ARG VITE_DEBUG_VALIDATION=true
 
 # Set as environment variables
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_MEDIA_BASE_URL=$VITE_MEDIA_BASE_URL
+ENV VITE_DEBUG_VALIDATION=$VITE_DEBUG_VALIDATION
 
 # Copy package files
 COPY package*.json ./

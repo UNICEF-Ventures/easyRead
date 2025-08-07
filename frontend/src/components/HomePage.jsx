@@ -223,6 +223,18 @@ function HomePage({
             const onProgress = (step) => {
               console.log(`Page ${i+1}: ${step}`);
               setCurrentProcessingStep(step);
+              
+              // Calculate sub-step progress within this page
+              let stepProgress = 0;
+              if (step.includes("Converting")) stepProgress = 0.25; // 25% of page
+              else if (step.includes("Validating")) stepProgress = 0.50; // 50% of page  
+              else if (step.includes("Revising")) stepProgress = 0.75; // 75% of page
+              
+              // Calculate total progress including sub-steps
+              // For single page: i=0, so progress goes 0.25 → 0.50 → 0.75 → 1.0
+              // For multi-page: distributed across all pages
+              const totalProgress = i + stepProgress;
+              setPagesProcessed(Math.min(totalProgress, markdownPages.length));
             };
             
             try {
