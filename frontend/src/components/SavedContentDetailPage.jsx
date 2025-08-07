@@ -44,13 +44,35 @@ const SavedContentDetailPage = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
 
+  // Numeric ID for API calls
+  const [numericId, setNumericId] = useState(null);
+
+  // Access control state - check if user owns this content
+  const [canEdit, setCanEdit] = useState(false);
+
+  // Check if user has access to edit this content (has the token in LocalStorage)
+  const checkEditAccess = useCallback((contentId) => {
+    try {
+      const raw = localStorage.getItem('easyread_saved_tokens');
+      const tokens = raw ? JSON.parse(raw) : [];
+      return Array.isArray(tokens) && tokens.includes(contentId);
+    } catch (e) {
+      console.warn('Failed to read tokens from LocalStorage:', e);
+      return false;
+    }
+  }, []);
+
   // Fetch the saved content details (remains specific to this page)
   const fetchSavedContentDetail = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiClient.get(`/saved-content/${id}/`);
+      const response = await apiClient.get(`/saved-content/by-token/${id}/`);
       setContent(response.data);
+      // Store numeric ID for subsequent operations
+      setNumericId(response.data?.id);
+      // Check if user has edit access
+      setCanEdit(checkEditAccess(id));
       // The hook's useEffect will handle initializing imageState when content updates
     } catch (err) {
       console.error('Error fetching saved content details:', err);
@@ -59,11 +81,11 @@ const SavedContentDetailPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, checkEditAccess]);
 
   // Export function
   const handleExport = async () => {
-    if (!content || !id) {
+    if (!content || !numericId) {
       setExportError('Unable to export: content not loaded');
       return;
     }
@@ -72,7 +94,7 @@ const SavedContentDetailPage = () => {
     setExportError(null);
 
     try {
-      const response = await exportSavedContentDocx(id);
+      const response = await exportSavedContentDocx(numericId);
       
       // Create download link
       const blob = new Blob([response.data], { 
@@ -101,8 +123,13 @@ const SavedContentDetailPage = () => {
 
   // Save function to update the saved content
   const handleSave = async () => {
-    if (!content || !getCurrentImageSelections) {
+    if (!content || !getCurrentImageSelections || !numericId) {
       setSaveError('Unable to save: content not loaded');
+      return;
+    }
+
+    if (!canEdit) {
+      setSaveError('You do not have permission to edit this content. Only the creator can save changes.');
       return;
     }
 
@@ -122,8 +149,8 @@ const SavedContentDetailPage = () => {
         }
       });
 
-      // Call the bulk update API
-      await bulkUpdateSavedContentImages(id, imageSelections);
+      // Call the bulk update API using numeric ID
+      await bulkUpdateSavedContentImages(numericId, imageSelections);
       
       setSaveSuccess(true);
       
@@ -207,16 +234,20 @@ const SavedContentDetailPage = () => {
               startIcon={isSaving ? <CircularProgress size={20}/> : <SaveIcon />}
               variant="contained"
               onClick={handleSave}
-              disabled={isSaving || isExporting || loading}
+              disabled={isSaving || isExporting || loading || !canEdit}
+              title={!canEdit ? "You can only edit content that you created" : ""}
               sx={{
-                backgroundColor: 'var(--color-accent)',
+                backgroundColor: canEdit ? 'var(--color-accent)' : 'rgba(0, 0, 0, 0.12)',
                 borderRadius: 'var(--border-radius-md)',
                 '&:hover': {
-                  backgroundColor: '#0b8043',
+                  backgroundColor: canEdit ? '#0b8043' : 'rgba(0, 0, 0, 0.12)',
+                },
+                '&.Mui-disabled': {
+                  color: !canEdit ? 'rgba(0, 0, 0, 0.26)' : undefined,
                 }
               }}
             >
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? 'Saving...' : (canEdit ? 'Save Changes' : 'View Only')}
             </Button>
           </Box>
         </Box>
@@ -225,13 +256,21 @@ const SavedContentDetailPage = () => {
         {error ? (
           <Alert severity="error" sx={{ my: 2 }}>{error}</Alert>
         ) : (
-          <EasyReadContentList 
-            easyReadContent={content?.easy_read_content || []} 
-            imageState={imageState} // From hook
-            onImageSelectionChange={handleImageSelectionChange} // From hook
-            onGenerateImage={handleGenerateImage} // From hook
-            // isLoading prop might not be needed if hook handles initial loading state internally
-          />
+          <>
+            {!canEdit && (
+              <Alert severity="info" sx={{ my: 2 }}>
+                You are viewing shared content. Only the creator can make changes.
+              </Alert>
+            )}
+            <EasyReadContentList 
+              easyReadContent={content?.easy_read_content || []} 
+              imageState={imageState} // From hook
+              onImageSelectionChange={handleImageSelectionChange} // From hook
+              onGenerateImage={handleGenerateImage} // From hook
+              readOnly={!canEdit} // Disable editing if user doesn't have access
+              // isLoading prop might not be needed if hook handles initial loading state internally
+            />
+          </>
         )}
 
         {/* Original content collapse remains page-specific */}

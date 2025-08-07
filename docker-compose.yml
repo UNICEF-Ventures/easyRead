@@ -53,7 +53,7 @@ services:
       - ./media:/app/media
       - ./images:/app/images:ro
       - ./clipart_images:/app/clipart_images:ro
-      - ./config:/app/config:ro
+      - ./backend/config:/app/config:ro
     ports:
       - "${BACKEND_PORT:-8001}:8000"
     depends_on:

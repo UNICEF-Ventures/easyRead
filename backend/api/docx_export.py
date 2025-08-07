@@ -192,6 +192,15 @@ def create_docx_export(title, easy_read_content, original_markdown=None):
                         media_root = getattr(settings, 'MEDIA_ROOT', 'media')
                         full_image_path = os.path.join(media_root, relative_path)
                         
+                    elif image_path.startswith('/media/'):
+                        # URL path starting with /media/ - treat like HTTP URL
+                        relative_path = image_path[7:]  # Remove '/media/' prefix
+                        logger.info(f"Extracted relative path from media URL: {relative_path}")
+                        
+                        # Construct full file system path
+                        media_root = getattr(settings, 'MEDIA_ROOT', 'media')
+                        full_image_path = os.path.join(media_root, relative_path)
+                        
                     elif image_path.startswith('/'):
                         # Absolute file system path
                         full_image_path = image_path

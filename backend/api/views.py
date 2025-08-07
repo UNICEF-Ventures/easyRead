@@ -28,7 +28,7 @@ import io
 import glob # Might not be needed here if not listing
 import uuid # Moved import to top
 import time # Added for health check
-from .models import ProcessedContent, ImageMetadata # Import the new model
+from .models import ProcessedContent, ImageMetadata, Image # Import the new model
 # SentenceTransformer removed - using API-based embedding providers only
 from openai import OpenAI
 from .config import get_retry_config, load_prompt_template, VALIDATE_COMPLETENESS_PROMPT_FILE, REVISE_SENTENCES_PROMPT_FILE
@@ -36,6 +36,7 @@ from django.core.files.base import ContentFile
 from gradio_client import Client, handle_file # Added Gradio client import
 from django.http import HttpResponse
 from .docx_export import create_docx_export, get_safe_filename
+from django.utils import timezone
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -92,6 +93,83 @@ def has_meaningful_content(markdown_content, min_words=5):
     
     # Check if we have enough words
     return word_count >= min_words
+
+def convert_relative_paths_to_urls(easy_read_data, request):
+    """
+    Convert relative image paths in easy_read_data to full URLs.
+    
+    Args:
+        easy_read_data: List of dictionaries containing easy read content
+        request: Django request object for building absolute URIs
+    
+    Returns:
+        Modified easy_read_data with full URLs instead of relative paths
+    """
+    if not easy_read_data:
+        return easy_read_data
+    
+    # Create a copy to avoid modifying the original data
+    result_data = []
+    
+    for item in easy_read_data:
+        # Create a copy of the item
+        new_item = item.copy()
+        
+        # Convert selected_image_path if it exists
+        if new_item.get('selected_image_path'):
+            relative_path = new_item['selected_image_path']
+            # If it's already a full URL, keep it as is
+            if relative_path.startswith('http'):
+                new_item['selected_image_path'] = relative_path
+            else:
+                # Build full URL from relative path
+                if not relative_path.startswith('/'):
+                    relative_path = '/' + relative_path
+                full_url = request.build_absolute_uri(relative_path)
+                new_item['selected_image_path'] = full_url
+        
+        # Convert alternative_images if they exist
+        if new_item.get('alternative_images') and isinstance(new_item['alternative_images'], list):
+            converted_alternatives = []
+            for alt_path in new_item['alternative_images']:
+                if alt_path.startswith('http'):
+                    converted_alternatives.append(alt_path)
+                else:
+                    if not alt_path.startswith('/'):
+                        alt_path = '/' + alt_path
+                    full_url = request.build_absolute_uri(alt_path)
+                    converted_alternatives.append(full_url)
+            new_item['alternative_images'] = converted_alternatives
+        
+        result_data.append(new_item)
+    
+    return result_data
+
+def convert_url_to_relative_path(url):
+    """
+    Convert a full URL to a relative path for storage.
+    
+    Args:
+        url: Full URL or relative path
+    
+    Returns:
+        Relative path suitable for storage in database
+    """
+    if not url:
+        return url
+    
+    # If it's already a relative path, return as-is
+    if not url.startswith('http'):
+        return url
+    
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        # Return just the path portion
+        return parsed.path
+    except Exception:
+        # If parsing fails, return the original
+        return url
 
 # Create your views here.
 
@@ -791,43 +869,35 @@ def find_similar_images(request):
         
         # Format results for API response
         final_results = []
-        for img in similar_images:
+        # Get Image objects to use the get_url() method
+        image_ids = [img['id'] for img in similar_images]
+        image_objects = {img.id: img for img in Image.objects.filter(id__in=image_ids)}
+        
+        for img_data in similar_images:
             try:
-                # Build the image URL
-                if img.get('processed_path'):
-                    # Use processed path if available (e.g., PNG converted from SVG)
-                    image_path = img['processed_path']
-                else:
-                    # Fall back to original path
-                    image_path = img['original_path']
+                img_id = img_data['id']
+                image_obj = image_objects.get(img_id)
                 
-                # Create relative path from media root
-                from pathlib import Path
-                image_path = Path(image_path)
-                if image_path.is_absolute():
-                    # Try to make it relative to media root
-                    try:
-                        relative_path = image_path.relative_to(settings.MEDIA_ROOT)
-                        image_url = request.build_absolute_uri(settings.MEDIA_URL + str(relative_path))
-                    except ValueError:
-                        # If path is not under media root, just use the filename
-                        image_url = request.build_absolute_uri(settings.MEDIA_URL + 'images/' + image_path.name)
+                if image_obj:
+                    # Use the model's get_url method for consistent URL handling
+                    image_url = request.build_absolute_uri(image_obj.get_url())
                 else:
-                    # Already relative
-                    image_url = request.build_absolute_uri(settings.MEDIA_URL + str(image_path))
+                    # Fallback if image object not found
+                    logger.warning(f"Image object not found for ID {img_id}")
+                    image_url = None
                 
                 final_results.append({
-                    "id": img['id'],
+                    "id": img_data['id'],
                     "url": image_url,
-                    "description": img.get('description', ''),
-                    "similarity": img.get('similarity', 0.0),
-                    "filename": img.get('filename', ''),
-                    "set_name": img.get('set_name', ''),
-                    "file_format": img.get('file_format', '')
+                    "description": img_data.get('description', ''),
+                    "similarity": img_data.get('similarity', 0.0),
+                    "filename": img_data.get('filename', ''),
+                    "set_name": img_data.get('set_name', ''),
+                    "file_format": img_data.get('file_format', '')
                 })
                 
             except Exception as e:
-                logger.error(f"Error formatting image result {img.get('id')}: {e}")
+                logger.error(f"Error formatting image result {img_data.get('id')}: {e}")
                 continue
         
         logger.info(f"Returning {len(final_results)} similar images for query: '{query}'")
@@ -849,7 +919,7 @@ def save_processed_content(request):
         "title": "...",
         "easy_read_json": [{"sentence": "...", "image_retrieval": "...", "selected_image_path": "...", "alternative_images": [...]}, ...]
     }
-    Returns JSON: {"message": "Content saved successfully.", "id": <saved_object_id>}
+    Returns JSON: {"message": "Content saved successfully.", "id": <saved_object_id>, "public_id": "<uuid>"}
     or {"error": "..."}
     """
     logger = logging.getLogger(__name__)
@@ -869,403 +939,71 @@ def save_processed_content(request):
     if not isinstance(title, str):
          return Response({"error": "Invalid 'title' (must be a string)."}, status=status.HTTP_400_BAD_REQUEST)
 
-    if not easy_read_json or not isinstance(easy_read_json, list):
-         return Response({"error": "Missing or invalid 'easy_read_json' (must be a list)."}, status=status.HTTP_400_BAD_REQUEST)
+    # Validate easy_read_json is provided as a list
+    if not isinstance(easy_read_json, list):
+        return Response({"error": "Missing or invalid 'easy_read_json' (must be a list)."}, status=status.HTTP_400_BAD_REQUEST)
     # Optional: Add more detailed validation for the list items if needed
 
-    # --- Save to Database ---
+    # --- Convert URLs to relative paths before saving ---
     try:
+        # Convert any full URLs to relative paths for storage
+        easy_read_json_with_relative_paths = []
+        for item in easy_read_json:
+            new_item = item.copy()
+            
+            # Convert selected_image_path if it exists
+            if new_item.get('selected_image_path'):
+                new_item['selected_image_path'] = convert_url_to_relative_path(new_item['selected_image_path'])
+            
+            # Convert alternative_images if they exist
+            if new_item.get('alternative_images') and isinstance(new_item['alternative_images'], list):
+                new_item['alternative_images'] = [convert_url_to_relative_path(img) for img in new_item['alternative_images']]
+            
+            easy_read_json_with_relative_paths.append(new_item)
+            
+        # --- Save to Database ---
         processed_content = ProcessedContent.objects.create(
             title=title,
             original_markdown=original_markdown,
-            easy_read_json=easy_read_json
+            easy_read_json=easy_read_json_with_relative_paths
         )
         logger.info(f"Saved processed content with ID: {processed_content.id}, Title: {title}")
         return Response({
             "message": "Content saved successfully.",
-            "id": processed_content.id
+            "id": processed_content.id,
+            "public_id": str(processed_content.public_id),
         }, status=status.HTTP_201_CREATED)
     except Exception as e:
         logger.exception(f"Error saving processed content to database: {e}")
         return Response({"error": "Failed to save content to the database."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# --- Image List Endpoint --- (Updated for new database schema)
-@api_view(['GET'])
-def list_images(request):
-    """
-    API endpoint to list all images stored in the database, organized by sets.
-    Returns images grouped by their sets, with metadata.
-    """
-    from api.upload_handlers import get_image_list_formatted
-    
-    logger = logging.getLogger(__name__)
-    
-    try:
-        # Get formatted image list using the new system
-        result = get_image_list_formatted(request)
-        
-        if result.get("error"):
-            logger.error(f"Error getting image list: {result['error']}")
-            return Response({
-                "images_by_set": {},
-                "total_images": 0,
-                "total_sets": 0,
-                "error": result["error"]
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        logger.info(f"Retrieved {result['total_images']} images from {result['total_sets']} sets")
-        
-        return Response({
-            "images_by_set": result["images_by_set"],
-            "total_images": result["total_images"],
-            "total_sets": result["total_sets"]
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.exception(f"Error retrieving images from database: {e}")
-        return Response({
-            "images_by_set": {},
-            "total_images": 0,
-            "total_sets": 0,
-            "error": "Failed to retrieve images from database"
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-# --- Batch Image Upload Endpoint ---
-@api_view(['POST'])
-@parser_classes([MultiPartParser, FormParser])
-@permission_classes([AllowAny])
-@csrf_exempt
-def batch_upload_images(request):
-    """
-    API endpoint to upload multiple images at once, optionally with a shared description.
-    Uses the new database schema with ImageSet, Image, and Embedding models.
-    Expects form-data with 'images' (files), optional 'description' (text), and optional 'set_name' (text).
-    Enhanced with security validation and rate limiting.
-    """
-    from api.upload_handlers import handle_batch_image_upload
-    from api.security_utils import RateLimiter
-    from api.analytics import get_client_ip
-    
-    logger = logging.getLogger(__name__)
-    
-    # Check rate limiting for batch uploads (stricter limit)
-    ip_address = get_client_ip(request)
-    rate_check = RateLimiter.check_rate_limit(
-        identifier=ip_address,
-        action='batch_upload',
-        max_requests=50,  # 50 batch uploads per minute (for large sets)
-        window_seconds=60
-    )
-    
-    if not rate_check['allowed']:
-        return Response(
-            {
-                "error": rate_check['message'],
-                "code": "RATE_LIMIT_EXCEEDED",
-                "retry_after": rate_check['retry_after']
-            },
-            status=status.HTTP_429_TOO_MANY_REQUESTS
-        )
-
-    if 'images' not in request.FILES:
-        return Response(
-            {"error": "No image files provided", "code": "MISSING_FILES"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # Get all files from the request
-    image_files = request.FILES.getlist('images')
-    description = request.POST.get('description', '')  # Get description, default to empty
-    set_name = request.POST.get('set_name', 'General')  # Get set name, default to 'General'
-    
-    if not image_files:
-        return Response(
-            {"error": "Empty file list", "code": "EMPTY_FILES"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # Handle batch upload using the new system with request for validation
-    result = handle_batch_image_upload(image_files, description, set_name, request=request)
-    
-    # Build image URLs for successful uploads
-    for upload_result in result.get("results", []):
-        if upload_result.get("success") and upload_result.get("image_path"):
-            try:
-                upload_result["image_url"] = request.build_absolute_uri(
-                    settings.MEDIA_URL + upload_result["image_path"]
-                )
-            except Exception as e:
-                logger.error(f"Error building image URL for {upload_result.get('filename')}: {e}")
-    
-    # Standardize response format
-    response_data = {
-        "success": result["successful_uploads"] > 0,
-        "message": result["message"],
-        "data": {
-            "results": result["results"],
-            "successful_uploads": result["successful_uploads"],
-            "total_uploads": result["total_uploads"],
-            "description": result["description"],
-            "set_name": result["set_name"]
-        }
-    }
-    
-    # Determine HTTP status based on success rate
-    if result["successful_uploads"] > 0:
-        status_code = status.HTTP_200_OK if result["successful_uploads"] == result["total_uploads"] else status.HTTP_207_MULTI_STATUS
-    else:
-        status_code = status.HTTP_400_BAD_REQUEST
-    
-    return Response(response_data, status=status_code)
-
-
-# --- Optimized Large Batch Upload Endpoint ---
-@api_view(['POST'])
-@parser_classes([MultiPartParser, FormParser])
-@permission_classes([AllowAny])
-@csrf_exempt
-def optimized_batch_upload(request):
-    """
-    API endpoint for optimized large batch uploads (1000+ images).
-    Implements chunked processing, bulk operations, and progress tracking.
-    """
-    from api.optimized_upload_handlers import handle_optimized_batch_upload
-    from api.security_utils import RateLimiter
-    from api.analytics import get_client_ip
-    import uuid
-    
-    logger = logging.getLogger(__name__)
-    
-    # Generate session ID for progress tracking
-    session_id = request.POST.get('session_id') or str(uuid.uuid4())
-    
-    # Check rate limiting for large batch uploads (more restrictive)
-    ip_address = get_client_ip(request)
-    rate_check = RateLimiter.check_rate_limit(
-        identifier=ip_address,
-        action='large_batch_upload',
-        max_requests=5,  # Only 5 large batch uploads per hour
-        window_seconds=3600
-    )
-    
-    if not rate_check['allowed']:
-        return Response(
-            {
-                "error": rate_check['message'],
-                "code": "RATE_LIMIT_EXCEEDED",
-                "retry_after": rate_check['retry_after'],
-                "session_id": session_id
-            },
-            status=status.HTTP_429_TOO_MANY_REQUESTS
-        )
-
-    if 'images' not in request.FILES:
-        return Response(
-            {"error": "No image files provided", "code": "MISSING_FILES", "session_id": session_id},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # Get all files from the request
-    image_files = request.FILES.getlist('images')
-    description = request.POST.get('description', '')
-    set_name = request.POST.get('set_name', 'General')
-    batch_size = int(request.POST.get('batch_size', 50))  # Configurable batch size
-    
-    if not image_files:
-        return Response(
-            {"error": "Empty file list", "code": "EMPTY_FILES", "session_id": session_id},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    if len(image_files) < 100:
-        return Response(
-            {"error": "Use regular batch_upload_images endpoint for less than 100 images", "code": "USE_REGULAR_ENDPOINT", "session_id": session_id},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # Validate batch size
-    if batch_size < 10 or batch_size > 100:
-        batch_size = 50  # Reset to default if invalid
-
-    logger.info(f"Starting optimized batch upload: {len(image_files)} images in batches of {batch_size}")
-
-    # Handle optimized batch upload
-    result = handle_optimized_batch_upload(
-        image_files, description, set_name, batch_size, request, session_id
-    )
-    
-    # Build image URLs for successful uploads
-    if result.get("success") and result.get("results"):
-        for upload_result in result["results"]:
-            if upload_result.get("success") and upload_result.get("image_path"):
-                try:
-                    upload_result["image_url"] = request.build_absolute_uri(
-                        settings.MEDIA_URL + upload_result["image_path"]
-                    )
-                except Exception as e:
-                    logger.error(f"Error building image URL for {upload_result.get('filename')}: {e}")
-    
-    # Determine HTTP status based on results
-    if result.get("success"):
-        successful = result.get("successful_uploads", 0)
-        total = result.get("total_uploads", 0)
-        if successful == total:
-            status_code = status.HTTP_200_OK
-        elif successful > 0:
-            status_code = status.HTTP_207_MULTI_STATUS
-        else:
-            status_code = status.HTTP_400_BAD_REQUEST
-    else:
-        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    
-    return Response(result, status=status_code)
-
-
-# --- Upload Progress Tracking Endpoint ---
-@api_view(['GET'])
-def upload_progress(request, session_id):
-    """
-    API endpoint to check upload progress for a specific session.
-    """
-    from api.optimized_upload_handlers import get_upload_progress
-    
-    progress = get_upload_progress(session_id)
-    
-    if progress is None:
-        return Response(
-            {"error": "Session not found or expired", "session_id": session_id},
-            status=status.HTTP_404_NOT_FOUND
-        )
-    
-    return Response({
-        "success": True,
-        "progress": progress
-    }, status=status.HTTP_200_OK)
-
-
-# --- Folder Upload Endpoint ---
-@api_view(['POST'])
-@parser_classes([MultiPartParser, FormParser])
-@permission_classes([AllowAny])
-@csrf_exempt
-def upload_folder(request):
-    """
-    API endpoint to upload a folder structure with automatic set creation.
-    Expects form-data with files that include webkitRelativePath information.
-    Creates image sets based on folder names automatically.
-    Enhanced with security validation and rate limiting.
-    """
-    from api.upload_handlers import handle_folder_upload
-    from api.analytics import track_event
-    from api.security_utils import RateLimiter
-    from api.analytics import get_client_ip
-    
-    logger = logging.getLogger(__name__)
-    
-    # Check rate limiting for folder uploads
-    ip_address = get_client_ip(request)
-    rate_check = RateLimiter.check_rate_limit(
-        identifier=ip_address,
-        action='folder_upload',
-        max_requests=50,  # 50 folder uploads per minute (for large sets)
-        window_seconds=60
-    )
-    
-    if not rate_check['allowed']:
-        return Response(
-            {
-                "error": rate_check['message'],
-                "code": "RATE_LIMIT_EXCEEDED",
-                "retry_after": rate_check['retry_after']
-            },
-            status=status.HTTP_429_TOO_MANY_REQUESTS
-        )
-
-    if not request.FILES:
-        return Response(
-            {"error": "No files provided", "code": "MISSING_FILES"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # Extract folder structure from files
-    folder_data = {}
-    for key in request.FILES:
-        file_obj = request.FILES[key]
-        # Extract relative path from file name or form key
-        # Frontend should send files with keys like "folder_name/image.jpg"
-        if hasattr(file_obj, 'webkitRelativePath') and file_obj.webkitRelativePath:
-            relative_path = file_obj.webkitRelativePath
-        else:
-            # Fallback to using the form key as path
-            relative_path = key
-        
-        folder_data[relative_path] = file_obj
-
-    if not folder_data:
-        return Response(
-            {"error": "No valid folder structure found", "code": "INVALID_STRUCTURE"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # Track analytics
-    try:
-        track_event(request, 'folder_upload', {
-            'total_files': len(folder_data),
-            'folder_paths': list(folder_data.keys())[:5]  # Store first 5 paths for analysis
-        })
-    except Exception as e:
-        logger.warning(f"Failed to track folder upload analytics: {e}")
-
-    # Handle folder upload with request for validation
-    result = handle_folder_upload(folder_data, request=request)
-    
-    # Debug logging for folder upload result
-    logger.info(f"📋 Folder upload result: {result}")
-    logger.info(f"📋 Total successful: {result.get('total_successful', 0)}")
-    logger.info(f"📋 Total uploads: {result.get('total_uploads', 0)}")
-    logger.info(f"📋 Folders: {list(result.get('folders', {}).keys())}")
-    
-    # Build image URLs for successful uploads
-    for folder_name, folder_result in result.get("folders", {}).items():
-        for upload_result in folder_result.get("results", []):
-            if upload_result.get("success") and upload_result.get("image_path"):
-                upload_result["image_url"] = request.build_absolute_uri(
-                    f"{settings.MEDIA_URL}{upload_result['image_path']}"
-                )
-
-    # Standardize response format
-    response_data = {
-        "success": result.get("total_successful", 0) > 0,
-        "message": result["message"],
-        "data": {
-            "folders": result["folders"],
-            "total_successful": result["total_successful"],
-            "total_uploads": result["total_uploads"],
-            "sets_created": result["sets_created"]
-        }
-    }
-    
-    # Determine HTTP status
-    if result.get("total_successful", 0) > 0:
-        status_code = status.HTTP_200_OK if result["total_successful"] == result["total_uploads"] else status.HTTP_207_MULTI_STATUS
-    else:
-        status_code = status.HTTP_400_BAD_REQUEST
-    
-    return Response(response_data, status=status_code)
-
-
 # --- List Saved Content Endpoint ---
 @api_view(['GET'])
 def list_saved_content(request):
     """
-    API endpoint to list all saved content.
-    Returns a list of all saved content with basic metadata.
+    API endpoint to list saved content.
+    If 'tokens' query parameter is provided (comma-separated UUIDs), filters to those items.
+    Always excludes soft-deleted items.
     """
     logger = logging.getLogger(__name__)
     
     try:
-        # Query all saved content from the database
-        saved_content = ProcessedContent.objects.all().order_by('-created_at')
+        tokens_param = request.query_params.get('tokens')
+        queryset = ProcessedContent.objects.filter(deleted_at__isnull=True)
+        if tokens_param:
+            try:
+                token_list = [uuid.UUID(t.strip()) for t in tokens_param.split(',') if t.strip()]
+            except Exception:
+                return Response({"error": "Invalid tokens parameter."}, status=status.HTTP_400_BAD_REQUEST)
+            if token_list:
+                queryset = queryset.filter(public_id__in=token_list)
+            else:
+                queryset = queryset.none()
+        else:
+            # If no tokens provided, return empty list to avoid exposing all content by default
+            queryset = queryset.none()
+        
+        saved_content = queryset.order_by('-created_at')
         
         # Prepare response data with summary information
         content_list = []
@@ -1283,6 +1021,7 @@ def list_saved_content(request):
             
             content_list.append({
                 'id': item.id,
+                'public_id': str(item.public_id),
                 'title': item.title,
                 'created_at': item.created_at,
                 'sentence_count': sentence_count,
@@ -1292,16 +1031,18 @@ def list_saved_content(request):
         return Response({"content": content_list}, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.exception(f"Error retrieving saved content: {e}")
+        
         return Response({"error": "Failed to retrieve saved content"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # --- Get Saved Content Detail Endpoint ---
 @api_view(['GET', 'DELETE'])
 def get_saved_content_detail(request, content_id):
-    """Retrieves or deletes the details of a specific saved content."""
+    """Retrieves or deletes the details of a specific saved content by numeric ID."""
     content = get_object_or_404(ProcessedContent, pk=content_id)
 
     if request.method == 'GET':
+        if content.deleted_at is not None:
+            return Response({"error": "Content not found"}, status=status.HTTP_404_NOT_FOUND)
         easy_read_data = [] # Default to empty list
         try:
             # Directly use the field, assuming Django's JSONField handled deserialization
@@ -1321,31 +1062,94 @@ def get_saved_content_detail(request, content_id):
                  logger.error(f"easy_read_json for ID {content_id} is neither a list nor a string. Type: {type(content.easy_read_json)}")
                  easy_read_data = []
 
+
         except Exception as e:
              logger.error(f"Unexpected error processing easy_read_json for ID {content_id}: {e}")
              easy_read_data = [] # Ensure it defaults to empty list on any error
 
 
+        # Convert relative image paths to full URLs for frontend consumption
+        easy_read_with_urls = convert_relative_paths_to_urls(easy_read_data, request)
+        
         response_data = {
             'id': content.id,
+            'public_id': str(content.public_id),
             'title': content.title,
             'original_markdown': content.original_markdown,
-            'easy_read_content': easy_read_data, # Use the processed data
+            'easy_read_content': easy_read_with_urls, # Use the processed data with full URLs
             'created_at': content.created_at.isoformat(),
         }
         return Response(response_data)
     
     elif request.method == 'DELETE':
         try:
-            content.delete()
-            logger.info(f"Successfully deleted ProcessedContent with ID: {content_id}")
+            content.deleted_at = timezone.now()
+            content.save(update_fields=['deleted_at'])
+            logger.info(f"Soft-deleted ProcessedContent with ID: {content_id}")
             return Response(status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
-            logger.error(f"Error deleting ProcessedContent with ID {content_id}: {e}")
+            logger.error(f"Error soft-deleting ProcessedContent with ID {content_id}: {e}")
             return Response({"error": "Failed to delete content"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# --- Update Saved Content Image Endpoint ---
-@api_view(['PATCH'])
+# --- Get Saved Content Detail by Token Endpoint ---
+@api_view(['GET', 'DELETE'])
+@permission_classes([AllowAny])
+@csrf_exempt
+def get_saved_content_detail_by_token(request, public_id):
+    """Retrieves or deletes the details of a specific saved content by UUID token."""
+    try:
+        token_uuid = uuid.UUID(str(public_id))
+    except Exception:
+        return Response({"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)
+
+    content = get_object_or_404(ProcessedContent, public_id=token_uuid)
+
+    if request.method == 'GET':
+        if content.deleted_at is not None:
+            return Response({"error": "Content not found"}, status=status.HTTP_404_NOT_FOUND)
+        easy_read_data = []
+        try:
+            if isinstance(content.easy_read_json, list):
+                easy_read_data = content.easy_read_json
+            elif isinstance(content.easy_read_json, str):
+                logger.warning(f"easy_read_json for token {public_id} was a string, attempting json.loads")
+                try:
+                    easy_read_data = json.loads(content.easy_read_json)
+                    if not isinstance(easy_read_data, list):
+                        logger.error(f"Decoded easy_read_json string for token {public_id} is not a list.")
+                        easy_read_data = []
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to decode easy_read_json string for token {public_id}")
+                    easy_read_data = []
+            else:
+                logger.error(f"easy_read_json for token {public_id} is neither a list nor a string. Type: {type(content.easy_read_json)}")
+                easy_read_data = []
+        except Exception as e:
+            logger.error(f"Unexpected error processing easy_read_json for token {public_id}: {e}")
+            easy_read_data = []
+
+        easy_read_with_urls = convert_relative_paths_to_urls(easy_read_data, request)
+        response_data = {
+            'id': content.id,
+            'public_id': str(content.public_id),
+            'title': content.title,
+            'original_markdown': content.original_markdown,
+            'easy_read_content': easy_read_with_urls,
+            'created_at': content.created_at.isoformat(),
+        }
+        return Response(response_data)
+
+    elif request.method == 'DELETE':
+        try:
+            content.deleted_at = timezone.now()
+            content.save(update_fields=['deleted_at'])
+            logger.info(f"Soft-deleted ProcessedContent with token: {public_id}")
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            logger.error(f"Error soft-deleting ProcessedContent with token {public_id}: {e}")
+            return Response({"error": "Failed to delete content"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
 @permission_classes([AllowAny])
 @csrf_exempt
 def update_saved_content_image(request, content_id):
@@ -1395,25 +1199,28 @@ def update_saved_content_image(request, content_id):
             return Response({"error": f"Invalid sentence_index: {sentence_index}. Must be between 0 and {len(content.easy_read_json) - 1}."}, 
                            status=status.HTTP_400_BAD_REQUEST)
         
-        # Update the image path for the specified sentence
+        # Update the image path for the specified sentence (store as relative path)
         old_image_path = content.easy_read_json[sentence_index].get('selected_image_path')
-        content.easy_read_json[sentence_index]['selected_image_path'] = image_url
+        relative_image_path = convert_url_to_relative_path(image_url)
+        content.easy_read_json[sentence_index]['selected_image_path'] = relative_image_path
         
-        # Add all alternative images if provided
+        # Add all alternative images if provided (also store as relative paths)
         if all_images:
-            content.easy_read_json[sentence_index]['alternative_images'] = all_images
+            relative_alternatives = [convert_url_to_relative_path(img) for img in all_images]
+            content.easy_read_json[sentence_index]['alternative_images'] = relative_alternatives
         
         content.save()
         
         logger.info(f"Successfully updated content {content_id}, sentence {sentence_index}: '{old_image_path}' -> '{image_url}'")
         
-        # Prepare response data
+        # Prepare response data (convert relative paths back to full URLs for response)
+        easy_read_with_urls = convert_relative_paths_to_urls(content.easy_read_json, request)
         response_data = {
             'id': content.id,
             'title': content.title,
             'created_at': content.created_at,
             'original_markdown': content.original_markdown,
-            'easy_read_content': content.easy_read_json
+            'easy_read_content': easy_read_with_urls
         }
         
         logger.info(f"Updated image for content ID: {content.id}, sentence index: {sentence_index}")
@@ -1622,27 +1429,20 @@ def get_images_in_set(request, set_name):
         images = get_images_in_set(set_name, limit)
         logger.info(f"Retrieved {len(images)} images from set '{set_name}'")
         
-        # Add image URLs
+        # Add image URLs using Image model
+        image_ids = [img['id'] for img in images]
+        image_objects = {img.id: img for img in Image.objects.filter(id__in=image_ids)}
+        
         for image in images:
             try:
-                if image.get('processed_path'):
-                    image_path = image['processed_path']
-                else:
-                    image_path = image['original_path']
+                img_id = image['id']
+                image_obj = image_objects.get(img_id)
                 
-                # Create relative path from media root
-                from pathlib import Path
-                image_path = Path(image_path)
-                if image_path.is_absolute():
-                    try:
-                        relative_path = image_path.relative_to(settings.MEDIA_ROOT)
-                        image_url = request.build_absolute_uri(settings.MEDIA_URL + str(relative_path))
-                    except ValueError:
-                        image_url = request.build_absolute_uri(settings.MEDIA_URL + 'images/' + image_path.name)
+                if image_obj:
+                    image['url'] = request.build_absolute_uri(image_obj.get_url())
                 else:
-                    image_url = request.build_absolute_uri(settings.MEDIA_URL + str(image_path))
-                
-                image['url'] = image_url
+                    logger.warning(f"Image object not found for ID {img_id}")
+                    image['url'] = None
                 
             except Exception as e:
                 logger.error(f"Error building URL for image {image.get('id')}: {e}")
@@ -1741,12 +1541,13 @@ def bulk_update_saved_content_images(request, content_id):
         except (json.JSONDecodeError, AttributeError) as e:
             return Response({"error": f"Failed to parse content data: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        # Update the image selections
+        # Update the image selections (store as relative paths)
         for index_str, image_url in image_selections.items():
             try:
                 index = int(index_str)
                 if 0 <= index < len(easy_read_data):
-                    easy_read_data[index]['selected_image_path'] = image_url
+                    relative_image_path = convert_url_to_relative_path(image_url)
+                    easy_read_data[index]['selected_image_path'] = relative_image_path
             except (ValueError, IndexError):
                 continue  # Skip invalid indices
         
@@ -1962,40 +1763,35 @@ def find_similar_images_batch(request):
                 exclude_image_ids=exclude_ids
             )
             
-            # Format results for API response
+            # Format results for API response using Image model
             formatted_results = []
-            for img in similar_images:
+            # Get Image objects to use the get_url() method
+            image_ids = [img['id'] for img in similar_images]
+            image_objects = {img.id: img for img in Image.objects.filter(id__in=image_ids)}
+            
+            for img_data in similar_images:
                 try:
-                    # Build the image URL (same logic as individual endpoint)
-                    if img.get('processed_path'):
-                        image_path = img['processed_path']
-                    else:
-                        image_path = img['original_path']
+                    img_id = img_data['id']
+                    image_obj = image_objects.get(img_id)
                     
-                    # Create relative path from media root
-                    from pathlib import Path
-                    image_path = Path(image_path)
-                    if image_path.is_absolute():
-                        try:
-                            relative_path = image_path.relative_to(settings.MEDIA_ROOT)
-                            image_url = request.build_absolute_uri(settings.MEDIA_URL + str(relative_path))
-                        except ValueError:
-                            image_url = request.build_absolute_uri(settings.MEDIA_URL + 'images/' + image_path.name)
+                    if image_obj:
+                        image_url = request.build_absolute_uri(image_obj.get_url())
                     else:
-                        image_url = request.build_absolute_uri(settings.MEDIA_URL + str(image_path))
+                        logger.warning(f"Image object not found for ID {img_id} in query {index}")
+                        image_url = None
                     
                     formatted_results.append({
-                        "id": img['id'],
+                        "id": img_data['id'],
                         "url": image_url,
-                        "description": img.get('description', ''),
-                        "similarity": img.get('similarity', 0.0),
-                        "filename": img.get('filename', ''),
-                        "set_name": img.get('set_name', ''),
-                        "file_format": img.get('file_format', '')
+                        "description": img_data.get('description', ''),
+                        "similarity": img_data.get('similarity', 0.0),
+                        "filename": img_data.get('filename', ''),
+                        "set_name": img_data.get('set_name', ''),
+                        "file_format": img_data.get('file_format', '')
                     })
                     
                 except Exception as e:
-                    logger.error(f"Error formatting image result {img.get('id')} for query {index}: {e}")
+                    logger.error(f"Error formatting image result {img_data.get('id')} for query {index}: {e}")
                     continue
             
             logger.info(f"Query {index} completed: found {len(formatted_results)} images")
@@ -2098,3 +1894,52 @@ def find_similar_images_batch(request):
     except Exception as e:
         logger.exception(f"Error in find_similar_images_batch: {e}")
         return Response({"error": f"Failed to process batch image search: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# --- Image List Endpoint --- (compatibility)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@csrf_exempt
+def list_images(request):
+    """
+    API endpoint to list all images grouped by set in a structure used by the frontend.
+    Returns { images_by_set: { SetName: [ {id, image_url, relative_path, description, filename, set_name, file_format}, ... ] }, total_images, total_sets }
+    Note: image_url is returned as a path under MEDIA_URL (relative to host) so the frontend can prefix with its configured MEDIA_BASE_URL.
+    """
+    from api.models import Image
+    from django.conf import settings
+    logger = logging.getLogger(__name__)
+    try:
+        images = Image.objects.select_related('set').all().order_by('set__name', 'filename')
+        images_by_set = {}
+        for img in images:
+            set_name = img.set.name if img.set else 'General'
+            if set_name not in images_by_set:
+                images_by_set[set_name] = []
+            # Use model helper to get a URL path under MEDIA_URL
+            path_under_media = img.get_url()  # e.g., /media/images/...
+            # Normalize to ensure it begins with /media
+            if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
+                path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
+            images_by_set[set_name].append({
+                'id': img.id,
+                'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
+                'relative_path': img.original_path,
+                'description': img.description,
+                'filename': img.filename,
+                'set_name': set_name,
+                'file_format': img.file_format,
+            })
+        total_images = sum(len(v) for v in images_by_set.values())
+        return Response({
+            'images_by_set': images_by_set,
+            'total_images': total_images,
+            'total_sets': len(images_by_set),
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.exception(f"Error retrieving images: {e}")
+        return Response({
+            'images_by_set': {},
+            'total_images': 0,
+            'total_sets': 0,
+            'error': 'Failed to retrieve images from database'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

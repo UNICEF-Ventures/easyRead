@@ -552,21 +552,9 @@ def get_image_list_formatted(request):
             if set_name not in images_by_set:
                 images_by_set[set_name] = []
             
-            # Build image URL
+            # Build image URL using the model's get_url method
             try:
-                if image.processed_path:
-                    image_path = Path(image.processed_path)
-                else:
-                    image_path = Path(image.original_path)
-                
-                if image_path.is_absolute():
-                    try:
-                        relative_path = image_path.relative_to(settings.MEDIA_ROOT)
-                        image_url = request.build_absolute_uri(settings.MEDIA_URL + str(relative_path))
-                    except ValueError:
-                        image_url = request.build_absolute_uri(settings.MEDIA_URL + 'images/' + image_path.name)
-                else:
-                    image_url = request.build_absolute_uri(settings.MEDIA_URL + str(image_path))
+                image_url = request.build_absolute_uri(image.get_url())
                 
                 # Check if image has embeddings
                 text_embeddings = image.embeddings.filter(embedding_type='text')

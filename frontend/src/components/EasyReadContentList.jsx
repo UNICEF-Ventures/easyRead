@@ -28,8 +28,8 @@ const normalizeImageUrl = (url) => {
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
-  // If it's a relative URL, prepend MEDIA_BASE_URL + /media/
-  return `${MEDIA_BASE_URL}/media/${url}`;
+  // If it's a relative URL (e.g., /media/...), prepend MEDIA_BASE_URL
+  return `${MEDIA_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
 // Reusable component to display the list of Easy Read sentences and image selectors
@@ -38,7 +38,8 @@ function EasyReadContentList({
   imageState = {}, 
   onImageSelectionChange, 
   onGenerateImage,
-  isLoading = false // Prop to indicate parent loading state
+  isLoading = false, // Prop to indicate parent loading state
+  readOnly = false // Prop to disable editing capabilities
 }) {
   
   // Memoize the image selection change handler to prevent unnecessary re-renders
@@ -141,9 +142,10 @@ function EasyReadContentList({
                       <FormControl size="small" variant="outlined" sx={{ width: '100%' }}> 
                         <Select
                           value={selectedPath || ''}
-                          onChange={(e) => {
+                          onChange={readOnly ? undefined : (e) => {
                             handleImageSelectionChange(index, e.target.value);
                           }}
+                          disabled={readOnly}
                           displayEmpty
                           renderValue={(selected) => {
                             if (!selected) {
@@ -249,7 +251,7 @@ function EasyReadContentList({
                   )}
                   
                   {/* Center the generate icon below the image area */}
-                  {canGenerate && onGenerateImage && (
+                  {canGenerate && onGenerateImage && !readOnly && (
                     <Box sx={{ textAlign: 'center', mt: 1 }}>
                       <Tooltip title={isGenerating ? "Generating..." : "Generate Image"}>
                         <span> 
