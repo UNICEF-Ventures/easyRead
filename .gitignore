@@ -14,5 +14,4 @@ db.sqlite3
 images/*
 CLAUDE.md
 globalsymbols_images_test.csv
-backend/logs/embeddings.log
 deployment_env/
