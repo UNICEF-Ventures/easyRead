@@ -10,6 +10,7 @@ system_message: |
   - Address any "missing_info" highlighted in the feedback by incorporating the key information into the revised sentences (or adding new sentences if necessary).
   - Address any "extra_info" highlighted in the feedback by removing or correcting sentences that are not supported by the original markdown.
   - Address any "other_feedback" by improving sentence quality, structure, clarity, or Easy Read principles as suggested.
+  - Take into account that the feedback is not always correct, make your best judgement to reconcile the feedback with the original content.
   - Maintain all Easy Read guidelines (short sentences, simple words, active voice, etc.).
   - Generate new, appropriate image retrieval queries for the *revised* sentences.
   - Include for ALL sentences the field "highlighted" with true or false. It should be true if the sentence contain key information. **Only very few non-consecutive sentences should be highlighted (aim for 10% of the sentences), but make sure to highlight at least 1 sentence.**

@@ -37,6 +37,7 @@ import {
   Alert
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
+import config from '../config';
 
 // Icons
 import SearchIcon from '@mui/icons-material/Search';
@@ -54,6 +55,13 @@ import SelectAllIcon from '@mui/icons-material/SelectAll';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+
+// Helper function to build complete image URLs
+const buildImageUrl = (imageUrl) => {
+  if (!imageUrl) return '';
+  if (imageUrl.startsWith('http')) return imageUrl; // Already absolute
+  return `${config.MEDIA_BASE_URL}${imageUrl}`;
+};
 
 // Styled components
 const ViewModeButton = styled(ToggleButton)(({ theme }) => ({
@@ -353,7 +361,7 @@ const ImageGallery = ({
             </Box>
 
             <LazyImage
-              src={image.image_url}
+              src={buildImageUrl(image.image_url)}
               alt={image.description || 'Image'}
               style={{ height: density === 'compact' ? 120 : density === 'comfortable' ? 160 : 200 }}
             />
@@ -411,7 +419,7 @@ const ImageGallery = ({
               sx={{ width: 60, height: 60 }}
             >
               <LazyImage
-                src={image.image_url}
+                src={buildImageUrl(image.image_url)}
                 alt={image.description || 'Image'}
                 style={{ width: '100%', height: '100%' }}
               />
@@ -501,7 +509,7 @@ const ImageGallery = ({
                 />
               )}
               <LazyImage
-                src={image.image_url}
+                src={buildImageUrl(image.image_url)}
                 alt={image.description || 'Image'}
                 style={{ width: '100%', height: '100%' }}
               />
@@ -600,7 +608,7 @@ const ImageGallery = ({
                   </Box>
 
                   <LazyImage
-                    src={image.image_url}
+                    src={buildImageUrl(image.image_url)}
                     alt={image.description || 'Image'}
                     style={{ height: density === 'compact' ? 120 : density === 'comfortable' ? 160 : 200 }}
                   />

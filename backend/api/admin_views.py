@@ -232,10 +232,12 @@ def analytics_api(request):
         # System health metrics
         total_images = 0
         total_image_sets = 0
+        total_saved_content = 0
         try:
-            from .models import Image, ImageSet
+            from .models import Image, ImageSet, ProcessedContent
             total_images = Image.objects.count()
             total_image_sets = ImageSet.objects.count()
+            total_saved_content = ProcessedContent.objects.filter(deleted_at__isnull=True).count()
         except:
             pass
         
@@ -272,6 +274,9 @@ def analytics_api(request):
                 'popular_sets': list(image_set_selections),
                 'total_images': total_images,
                 'total_image_sets': total_image_sets
+            },
+            'saved_content': {
+                'total_saved': total_saved_content
             },
             'daily_activity': daily_stats,
             'recent_sessions': list(recent_sessions),

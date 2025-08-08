@@ -15,25 +15,22 @@ import json
 # Configure structured logging
 def setup_embeddings_logger():
     """
-    Set up a dedicated logger for embedding operations with structured output.
+    Set up a dedicated logger for embedding operations with console output only.
     """
     logger = logging.getLogger('easyread.embeddings')
     
     if not logger.handlers:
-        # Create file handler for embedding logs
-        log_file = Path(settings.BASE_DIR) / 'logs' / 'embeddings.log'
-        log_file.parent.mkdir(exist_ok=True)
+        # Create console handler for embedding logs (no file logging)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
         
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(logging.INFO)
-        
-        # Structured JSON formatter
+        # Structured formatter
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
         
-        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
         logger.setLevel(logging.INFO)
     
     return logger

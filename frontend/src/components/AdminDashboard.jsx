@@ -36,6 +36,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import DescriptionIcon from '@mui/icons-material/Description';
 import ImageIcon from '@mui/icons-material/Image';
 import DownloadIcon from '@mui/icons-material/Download';
+import SaveIcon from '@mui/icons-material/Save';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
@@ -155,7 +156,7 @@ const AdminDashboard = () => {
 
       {/* Key Metrics */}
       <Grid container spacing={3} mb={4}>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={2.4}>
           <MetricCard>
             <PeopleIcon fontSize="large" />
             <Box>
@@ -166,7 +167,7 @@ const AdminDashboard = () => {
             </Box>
           </MetricCard>
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={2.4}>
           <Tooltip title="Sentences generated from document processing (PDF upload → Easy Read conversion)">
             <MetricCard>
               <DescriptionIcon fontSize="large" />
@@ -182,7 +183,18 @@ const AdminDashboard = () => {
             </MetricCard>
           </Tooltip>
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={2.4}>
+          <MetricCard>
+            <SaveIcon fontSize="large" />
+            <Box>
+              <Typography variant="h4" component="div" fontWeight="bold">
+                {analyticsData.saved_content.total_saved}
+              </Typography>
+              <Typography variant="body2">Content Saved</Typography>
+            </Box>
+          </MetricCard>
+        </Grid>
+        <Grid item xs={12} sm={6} md={2.4}>
           <MetricCard>
             <DownloadIcon fontSize="large" />
             <Box>
@@ -193,7 +205,7 @@ const AdminDashboard = () => {
             </Box>
           </MetricCard>
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={2.4}>
           <MetricCard>
             <ImageIcon fontSize="large" />
             <Box>
