@@ -1,4 +1,3 @@
-google-genai
 cohere
 openai
 django
