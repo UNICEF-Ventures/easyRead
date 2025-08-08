@@ -596,7 +596,7 @@ export const updateSavedContentImage = (contentId, sentenceIndex, imageUrl, allI
   // Ensure sentenceIndex is a number to prevent validation errors
   const index = parseInt(sentenceIndex, 10);
   
-  return apiClient.patch(`/update-saved-content-image/${contentId}/`, {
+  return apiClient.patch(`/update-saved-content-image/by-token/${contentId}/`, {
     sentence_index: index,
     image_url: imageUrl,
     all_images: allImages // Add all images to be saved

@@ -192,7 +192,7 @@ def handle_image_upload(image_file, description: str = '', set_name: str = 'Gene
                     defaults={
                         'original_path': str(image_save_path),
                         'processed_path': str(processed_image_path),
-                        'description': description,
+                        'description': embedding_text,  # Store only the semantic label, not full filename
                         'file_format': image_info.get('file_format', 'PNG'),
                         'file_size': image_info.get('file_size'),
                         'width': image_info.get('width'),
@@ -203,7 +203,7 @@ def handle_image_upload(image_file, description: str = '', set_name: str = 'Gene
                 if not created:
                     logger.info(f"Image already exists, updating: {safe_filename}")
                     # Update existing image
-                    image_obj.description = description
+                    image_obj.description = embedding_text  # Store only the semantic label
                     image_obj.processed_path = str(processed_image_path)
                     image_obj.file_format = image_info.get('file_format', 'PNG')
                     image_obj.file_size = image_info.get('file_size')
@@ -262,7 +262,7 @@ def handle_image_upload(image_file, description: str = '', set_name: str = 'Gene
             "image_path": str(relative_path),
             "filename": safe_filename,
             "set_name": set_name,
-            "description": description,
+            "description": embedding_text,  # Return the semantic label that was stored
             "embeddings_created": 1,  # Always 1 since we require embeddings
             "has_embeddings": True,   # Always True since we require embeddings
             "search_ready": True,     # Always True since we require embeddings

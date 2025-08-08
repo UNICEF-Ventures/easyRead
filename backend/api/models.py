@@ -31,7 +31,13 @@ class Image(models.Model):
     original_path = models.CharField(max_length=500)  # Original file path
     processed_path = models.CharField(max_length=500, blank=True)  # PNG path if converted from SVG
     description = models.TextField(blank=True)
-    file_format = models.CharField(max_length=10, choices=[('PNG', 'PNG'), ('SVG', 'SVG')])
+    file_format = models.CharField(max_length=10, choices=[
+        ('PNG', 'PNG'),
+        ('SVG', 'SVG'),
+        ('JPG', 'JPEG'),
+        ('GIF', 'GIF'),
+        ('WEBP', 'WebP')
+    ])
     file_size = models.IntegerField(null=True, blank=True)
     width = models.IntegerField(null=True, blank=True)
     height = models.IntegerField(null=True, blank=True)

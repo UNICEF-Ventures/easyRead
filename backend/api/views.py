@@ -4,6 +4,11 @@ from rest_framework.decorators import api_view, parser_classes, permission_class
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from .analytics import (
+    track_pdf_upload, track_content_input, track_page_processing,
+    track_content_validation, track_sentence_revision, track_content_save,
+    track_content_export, track_image_search
+)
 from rest_framework.parsers import MultiPartParser, FormParser
 from docling.document_converter import DocumentConverter, PdfFormatOption
 # Import OCR options
@@ -12,6 +17,7 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliO
 import tempfile
 import os
 import logging
+import uuid
 import yaml
 import json
 from pathlib import Path
@@ -28,7 +34,8 @@ import io
 import glob # Might not be needed here if not listing
 import uuid # Moved import to top
 import time # Added for health check
-from .models import ProcessedContent, ImageMetadata, Image # Import the new model
+import threading # For background processing
+from .models import ProcessedContent, ImageSet, Image # Import the new models
 # SentenceTransformer removed - using API-based embedding providers only
 from openai import OpenAI
 from .config import get_retry_config, load_prompt_template, VALIDATE_COMPLETENESS_PROMPT_FILE, REVISE_SENTENCES_PROMPT_FILE
@@ -271,6 +278,14 @@ def pdf_to_markdown(request):
         # Clean up the temporary file
         os.remove(temp_pdf_path)
 
+        # Track PDF upload analytics
+        try:
+            track_pdf_upload(request, pdf_file.size)
+            track_content_input(request, len(full_markdown))
+        except Exception as analytics_error:
+            # Don't let analytics errors affect the main response
+            logger.warning(f"Analytics tracking failed: {analytics_error}")
+
         # Return the list of pages
         return Response({"pages": markdown_pages}, status=status.HTTP_200_OK)
 
@@ -444,6 +459,13 @@ def process_page(request):
                     retry_delay = min(retry_delay * 2, max_delay)  # Exponential backoff with cap
                 continue  # Try again
 
+    # Track page processing analytics
+    try:
+        page_number = request.data.get('page_number', 1)  # Default to page 1 if not provided
+        track_page_processing(request, page_number, len(easy_read_sentences))
+    except Exception as analytics_error:
+        logger.warning(f"Analytics tracking failed: {analytics_error}")
+
     # --- Return Response --- 
     return Response({
         "title": title,
@@ -559,6 +581,17 @@ def validate_completeness(request):
                 extra_info=llm_parsed_object.get("extra_info", ""),
                 other_feedback=llm_parsed_object.get("other_feedback", "")
             )
+            
+            # Track validation analytics
+            try:
+                track_content_validation(
+                    request, 
+                    missing_info=llm_parsed_object.get("missing_info", ""),
+                    extra_info=llm_parsed_object.get("extra_info", ""),
+                    other_feedback=llm_parsed_object.get("other_feedback", "")
+                )
+            except Exception as analytics_error:
+                logger.warning(f"Analytics tracking failed: {analytics_error}")
             
             # If validation passes, return the parsed object directly
             return Response(llm_parsed_object, status=status.HTTP_200_OK)
@@ -683,6 +716,17 @@ def revise_sentences(request):
                 raise ValueError("'easy_read_sentences' should contain a list.")
             if not all(isinstance(item, dict) and 'sentence' in item and 'image_retrieval' in item and isinstance(item['sentence'], str) and isinstance(item['image_retrieval'], str) for item in revised_sentences):
                  raise ValueError("Items in 'easy_read_sentences' list do not match expected structure ({'sentence': str, 'image_retrieval': str}).")
+
+            # Track sentence revision analytics
+            try:
+                original_sentences = request.data.get('current_sentences', [])
+                for i, revised_sentence in enumerate(revised_sentences):
+                    if i < len(original_sentences):
+                        original_text = original_sentences[i].get('sentence', '')
+                        revised_text = revised_sentence.get('sentence', '')
+                        track_sentence_revision(request, i, original_text, revised_text)
+            except Exception as analytics_error:
+                logger.warning(f"Analytics tracking failed: {analytics_error}")
 
             # If validation passes, return the parsed object
             return Response(llm_parsed_object, status=status.HTTP_200_OK)
@@ -901,6 +945,13 @@ def find_similar_images(request):
                 continue
         
         logger.info(f"Returning {len(final_results)} similar images for query: '{query}'")
+        
+        # Track image search analytics
+        try:
+            track_image_search(request, query, len(final_results))
+        except Exception as analytics_error:
+            logger.warning(f"Analytics tracking failed: {analytics_error}")
+        
         return Response({"results": final_results}, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -968,6 +1019,13 @@ def save_processed_content(request):
             easy_read_json=easy_read_json_with_relative_paths
         )
         logger.info(f"Saved processed content with ID: {processed_content.id}, Title: {title}")
+        
+        # Track content save analytics
+        try:
+            track_content_save(request, processed_content.id, title)
+        except Exception as analytics_error:
+            logger.warning(f"Analytics tracking failed: {analytics_error}")
+        
         return Response({
             "message": "Content saved successfully.",
             "id": processed_content.id,
@@ -1149,7 +1207,7 @@ def get_saved_content_detail_by_token(request, public_id):
             logger.error(f"Error soft-deleting ProcessedContent with token {public_id}: {e}")
             return Response({"error": "Failed to delete content"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@api_view(['POST'])
+@api_view(['PATCH', 'POST'])
 @permission_classes([AllowAny])
 @csrf_exempt
 def update_saved_content_image(request, content_id):
@@ -1228,6 +1286,97 @@ def update_saved_content_image(request, content_id):
         
     except Exception as e:
         logger.exception(f"Error updating saved content image: {e}")
+        return Response({"error": "Failed to update content image"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['PATCH', 'POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
+def update_saved_content_image_by_token(request, public_id):
+    """
+    API endpoint to update the image for a specific sentence in saved content using public token.
+    Expects JSON: {
+        "sentence_index": <int>,
+        "image_url": <string>,
+        "all_images": [<string>, ...]  # Optional list of all alternative images
+    }
+    Returns the updated content.
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Debug logging
+    logger.info(f"Update saved content image by token called - Public ID: {public_id}")
+    logger.info(f"Request data: {request.data}")
+    
+    try:
+        # Validate UUID
+        try:
+            token_uuid = uuid.UUID(str(public_id))
+        except Exception:
+            return Response({"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate input
+        if not isinstance(request.data, dict):
+            return Response({"error": "Invalid request format. Expected JSON object."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        sentence_index = request.data.get('sentence_index')
+        image_url = request.data.get('image_url')
+        all_images = request.data.get('all_images', [])
+        
+        logger.info(f"Parsed data - sentence_index: {sentence_index}, image_url: {image_url}, all_images count: {len(all_images) if all_images else 0}")
+        
+        if sentence_index is None or not isinstance(sentence_index, int):
+            return Response({"error": "Missing or invalid 'sentence_index' (must be an integer)."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not image_url or not isinstance(image_url, str):
+            return Response({"error": "Missing or invalid 'image_url' (must be a non-empty string)."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if all_images and not isinstance(all_images, list):
+            return Response({"error": "Invalid 'all_images' (must be a list of strings)."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Try to find the content with the given public_id
+        try:
+            content = ProcessedContent.objects.get(public_id=token_uuid)
+        except ProcessedContent.DoesNotExist:
+            return Response({"error": "Content not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if content is soft deleted
+        if content.deleted_at is not None:
+            return Response({"error": "Content not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Validate sentence_index is within range
+        if sentence_index < 0 or sentence_index >= len(content.easy_read_json):
+            return Response({"error": f"Invalid sentence_index: {sentence_index}. Must be between 0 and {len(content.easy_read_json) - 1}."}, 
+                           status=status.HTTP_400_BAD_REQUEST)
+        
+        # Update the image path for the specified sentence (store as relative path)
+        old_image_path = content.easy_read_json[sentence_index].get('selected_image_path')
+        relative_image_path = convert_url_to_relative_path(image_url)
+        content.easy_read_json[sentence_index]['selected_image_path'] = relative_image_path
+        
+        # Add all alternative images if provided (also store as relative paths)
+        if all_images:
+            relative_alternatives = [convert_url_to_relative_path(img) for img in all_images]
+            content.easy_read_json[sentence_index]['alternative_images'] = relative_alternatives
+        
+        content.save()
+        
+        logger.info(f"Successfully updated content {public_id}, sentence {sentence_index}: '{old_image_path}' -> '{image_url}'")
+        
+        # Prepare response data (convert relative paths back to full URLs for response)
+        easy_read_with_urls = convert_relative_paths_to_urls(content.easy_read_json, request)
+        response_data = {
+            'public_id': str(content.public_id),
+            'title': content.title,
+            'created_at': content.created_at,
+            'original_markdown': content.original_markdown,
+            'easy_read_content': easy_read_with_urls
+        }
+        
+        logger.info(f"Updated image for content public ID: {content.public_id}, sentence index: {sentence_index}")
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.exception(f"Error updating saved content image by token: {e}")
         return Response({"error": "Failed to update content image"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
@@ -1606,6 +1755,14 @@ def export_content_docx(request, content_id=None):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         response['Content-Length'] = len(docx_buffer.getvalue())
         
+        # Track export analytics
+        try:
+            # For the second export function, content_id might be None (current content export)
+            export_content_id = locals().get('content_id', None)
+            track_content_export(request, export_content_id, 'docx')
+        except Exception as analytics_error:
+            logger.warning(f"Analytics tracking failed: {analytics_error}")
+        
         return response
         
     except Exception as e:
@@ -1647,6 +1804,14 @@ def export_current_content_docx(request):
         )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         response['Content-Length'] = len(docx_buffer.getvalue())
+        
+        # Track export analytics
+        try:
+            # For the second export function, content_id might be None (current content export)
+            export_content_id = locals().get('content_id', None)
+            track_content_export(request, export_content_id, 'docx')
+        except Exception as analytics_error:
+            logger.warning(f"Analytics tracking failed: {analytics_error}")
         
         return response
         
@@ -1909,7 +2074,7 @@ def list_images(request):
     from django.conf import settings
     logger = logging.getLogger(__name__)
     try:
-        images = Image.objects.select_related('set').all().order_by('set__name', 'filename')
+        images = Image.objects.select_related('set').prefetch_related('embeddings').all().order_by('set__name', 'filename')
         images_by_set = {}
         for img in images:
             set_name = img.set.name if img.set else 'General'
@@ -1920,6 +2085,20 @@ def list_images(request):
             # Normalize to ensure it begins with /media
             if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
                 path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
+            # Check if image has embeddings
+            has_embeddings = img.embeddings.exists()
+            
+            # Get latest embedding info if available
+            embedding_info = None
+            if has_embeddings:
+                latest_embedding = img.embeddings.order_by('-created_at').first()
+                if latest_embedding:
+                    embedding_info = {
+                        "provider": latest_embedding.provider_name,
+                        "model": latest_embedding.model_name,
+                        "dimension": latest_embedding.embedding_dimension
+                    }
+            
             images_by_set[set_name].append({
                 'id': img.id,
                 'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
@@ -1928,12 +2107,39 @@ def list_images(request):
                 'filename': img.filename,
                 'set_name': set_name,
                 'file_format': img.file_format,
+                'file_size': img.file_size,
+                'width': img.width,
+                'height': img.height,
+                'created_at': img.created_at.isoformat() if img.created_at else None,
+                'has_embeddings': has_embeddings,
+                'embedding_info': embedding_info,
+                'search_ready': has_embeddings  # Indicates if image will work in similarity search
             })
         total_images = sum(len(v) for v in images_by_set.values())
+        
+        # Calculate embedding statistics
+        total_with_embeddings = 0
+        total_without_embeddings = 0
+        for set_images in images_by_set.values():
+            for image_data in set_images:
+                if image_data.get('has_embeddings', False):
+                    total_with_embeddings += 1
+                else:
+                    total_without_embeddings += 1
+        
+        embedding_coverage_percent = round((total_with_embeddings / total_images) * 100, 1) if total_images > 0 else 0
+        
+        embedding_stats = {
+            'with_embeddings': total_with_embeddings,
+            'without_embeddings': total_without_embeddings,
+            'embedding_coverage_percent': embedding_coverage_percent
+        }
+        
         return Response({
             'images_by_set': images_by_set,
             'total_images': total_images,
             'total_sets': len(images_by_set),
+            'embedding_stats': embedding_stats,
         }, status=status.HTTP_200_OK)
     except Exception as e:
         logger.exception(f"Error retrieving images: {e}")
@@ -1943,3 +2149,306 @@ def list_images(request):
             'total_sets': 0,
             'error': 'Failed to retrieve images from database'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Global dictionary to store upload progress
+upload_progress_store = {}
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+@permission_classes([AllowAny])
+def batch_upload_images(request):
+    """
+    API endpoint to upload multiple images at once.
+    Expects form-data with multiple 'images' files, optional 'description' and 'set_name'.
+    """
+    if 'images' not in request.FILES:
+        return Response({
+            'success': False,
+            'error': 'No images provided'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    images = request.FILES.getlist('images')
+    description = request.data.get('description', '')
+    set_name = request.data.get('set_name', 'Default')
+    
+    # Clean set name
+    set_name = set_name.strip() or 'Default'
+    
+    uploaded_images = []
+    errors = []
+    
+    try:
+        # Get or create the image set
+        image_set, _ = ImageSet.objects.get_or_create(name=set_name)
+        
+        for idx, image_file in enumerate(images):
+            try:
+                # Use the same upload logic as single image upload
+                result = process_single_image_upload(image_file, description, image_set)
+                uploaded_images.append(result)
+                
+            except Exception as e:
+                error_msg = f"Failed to upload {image_file.name}: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+        
+        return Response({
+            'success': True,
+            'uploaded': len(uploaded_images),
+            'total': len(images),
+            'errors': errors,
+            'images': uploaded_images
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.exception(f"Batch upload failed: {e}")
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST']) 
+@parser_classes([MultiPartParser, FormParser])
+@permission_classes([AllowAny])
+def optimized_batch_upload(request):
+    """
+    Optimized batch upload for large numbers of images (100+).
+    Processes images in chunks and provides progress tracking.
+    """
+    if 'images' not in request.FILES:
+        return Response({
+            'success': False,
+            'error': 'No images provided'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    images = request.FILES.getlist('images')
+    description = request.data.get('description', '')
+    set_name = request.data.get('set_name', 'Default')
+    batch_size = int(request.data.get('batch_size', 50))
+    session_id = request.data.get('session_id', str(uuid.uuid4()))
+    
+    # Initialize progress tracking
+    upload_progress_store[session_id] = {
+        'status': 'processing',
+        'total_images': len(images),
+        'processed': 0,
+        'successful': 0,
+        'failed': 0,
+        'errors': []
+    }
+    
+    # Start processing in a background thread
+    def process_optimized_batch():
+        try:
+            # Get or create the image set
+            image_set, _ = ImageSet.objects.get_or_create(name=set_name.strip() or 'Default')
+            
+            for idx, image_file in enumerate(images):
+                try:
+                    result = process_single_image_upload(image_file, description, image_set)
+                    upload_progress_store[session_id]['successful'] += 1
+                    
+                except Exception as e:
+                    error_msg = f"Failed to upload {image_file.name}: {str(e)}"
+                    upload_progress_store[session_id]['errors'].append(error_msg)
+                    upload_progress_store[session_id]['failed'] += 1
+                
+                # Update progress
+                upload_progress_store[session_id]['processed'] = idx + 1
+                
+                # Small delay to prevent overwhelming the system
+                if idx % batch_size == 0 and idx > 0:
+                    time.sleep(0.1)
+            
+            # Mark as completed
+            upload_progress_store[session_id]['status'] = 'completed'
+            
+        except Exception as e:
+            logger.exception(f"Optimized batch upload failed: {e}")
+            upload_progress_store[session_id]['status'] = 'failed'
+            upload_progress_store[session_id]['error'] = str(e)
+    
+    # Start background processing
+    thread = threading.Thread(target=process_optimized_batch)
+    thread.daemon = True
+    thread.start()
+    
+    return Response({
+        'success': True,
+        'session_id': session_id,
+        'message': f'Started processing {len(images)} images'
+    }, status=status.HTTP_202_ACCEPTED)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_upload_progress(request, session_id):
+    """
+    Get upload progress for a session.
+    """
+    if session_id not in upload_progress_store:
+        return Response({
+            'error': 'Session not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    progress = upload_progress_store[session_id]
+    
+    # Clean up completed sessions after a delay
+    if progress['status'] in ['completed', 'failed']:
+        # Schedule cleanup after 5 minutes
+        def cleanup_session():
+            time.sleep(300)  # 5 minutes
+            upload_progress_store.pop(session_id, None)
+        
+        cleanup_thread = threading.Thread(target=cleanup_session)
+        cleanup_thread.daemon = True  
+        cleanup_thread.start()
+    
+    return Response(progress, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+@permission_classes([AllowAny])
+def upload_folder(request):
+    """
+    Upload a folder structure with automatic set creation based on folder names.
+    Expects form-data where keys are relative paths and values are files.
+    """
+    if not request.FILES:
+        return Response({
+            'error': 'No files provided'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        results = {
+            'folders': {},
+            'total_successful': 0,
+            'total_uploads': 0,
+            'sets_created': 0,
+            'errors': []
+        }
+        
+        # Group files by folder
+        folders = {}
+        for file_path, file_obj in request.FILES.items():
+            # Extract folder name from path
+            path_parts = file_path.split('/')
+            folder_name = path_parts[0] if len(path_parts) > 1 else 'Default'
+            
+            if folder_name not in folders:
+                folders[folder_name] = []
+            folders[folder_name].append(file_obj)
+        
+        # Process each folder
+        for folder_name, files in folders.items():
+            try:
+                # Get or create image set
+                image_set, created = ImageSet.objects.get_or_create(name=folder_name)
+                
+                folder_result = {
+                    'set_name': folder_name,
+                    'results': [],
+                    'successful_uploads': 0,
+                    'total_files': len(files)
+                }
+                
+                # Always use optimized batch upload for all folder uploads
+                from api.optimized_upload_handlers import handle_optimized_batch_upload
+                import uuid
+                
+                # Generate session ID for progress tracking
+                session_id = str(uuid.uuid4())
+                
+                # Use optimized batch upload with embedding batching
+                batch_result = handle_optimized_batch_upload(
+                    files, 
+                    description='',  # Will generate from filenames
+                    set_name=folder_name,
+                    batch_size=min(50, len(files)),  # Reasonable batch size
+                    request=request,
+                    session_id=session_id
+                )
+                
+                if batch_result.get('success'):
+                    folder_result['successful_uploads'] = batch_result.get('successful_uploads', 0)
+                    
+                    # Parse the mixed results array from optimized handler
+                    folder_result['results'] = []
+                    for item in batch_result.get('results', []):
+                        if item.get('success'):
+                            folder_result['results'].append({
+                                'filename': item['filename'],
+                                'success': True,
+                                'image_id': item.get('image_id'),  # May not be present in optimized handler
+                                'has_embeddings': True
+                            })
+                        else:
+                            folder_result['results'].append({
+                                'filename': item['filename'],
+                                'success': False,
+                                'error': item.get('error', 'Upload failed')
+                            })
+                    
+                    results['total_successful'] += batch_result.get('successful_uploads', 0)
+                else:
+                    # Batch upload failed completely
+                    for file_obj in files:
+                        folder_result['results'].append({
+                            'filename': file_obj.name,
+                            'success': False,
+                            'error': batch_result.get('error', 'Batch upload failed')
+                        })
+                    results['errors'].append(f"Batch upload failed for folder {folder_name}: {batch_result.get('error')}")
+                
+                results['folders'][folder_name] = folder_result
+                results['total_uploads'] += len(files)
+                
+            except Exception as e:
+                error_msg = f"Failed to process folder {folder_name}: {str(e)}"
+                logger.error(error_msg)
+                results['errors'].append(error_msg)
+        
+        results['sets_created'] = len(results['folders'])
+        
+        return Response({
+            'data': results
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.exception(f"Folder upload failed: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def process_single_image_upload(image_file, description, image_set):
+    """
+    DEPRECATED: This function has been replaced with handle_image_upload 
+    which properly requires embeddings before storing images.
+    
+    This wrapper now uses the proper upload handler to prevent images without embeddings.
+    """
+    from api.upload_handlers import handle_image_upload
+    import os
+    
+    # Generate description from filename if not provided
+    if not description:
+        description = os.path.splitext(image_file.name)[0].replace('_', ' ').replace('-', ' ').strip()
+    
+    # Use proper upload handler that requires embeddings
+    result = handle_image_upload(image_file, description, image_set.name)
+    
+    if result.get('success'):
+        return {
+            'id': result.get('image_id'),
+            'filename': result.get('filename'),
+            'description': result.get('description'),
+            'set_name': result.get('set_name'),
+            'image_url': result.get('image_path')  # Note: different field name in new handler
+        }
+    else:
+        # Raise exception to maintain backward compatibility
+        raise ValueError(result.get('error', 'Upload failed - embeddings required'))

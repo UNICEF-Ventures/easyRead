@@ -1,21 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { Box, CircularProgress, Typography, Button } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { Box, CircularProgress, Typography, Button, Tabs, Tab } from '@mui/material';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminLogin from './AdminLogin';
 import ImageManagementPage from './ImageManagementPage';
+import AdminDashboard from './AdminDashboard';
 import LogoutIcon from '@mui/icons-material/Logout';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import ImageIcon from '@mui/icons-material/Image';
 import apiClient from '../apiClient';
 
 const AdminRoute = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [username, setUsername] = useState('');
+  const [currentTab, setCurrentTab] = useState(0);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Check authentication status on component mount
   useEffect(() => {
     checkAuthStatus();
-  }, []);
+    // Set initial tab from URL params
+    const tab = searchParams.get('tab');
+    if (tab === 'dashboard') {
+      setCurrentTab(0);
+    } else if (tab === 'images') {
+      setCurrentTab(1);
+    }
+  }, [searchParams]);
 
   const checkAuthStatus = async () => {
     try {
@@ -62,6 +74,12 @@ const AdminRoute = () => {
     }
   };
 
+  const handleTabChange = (event, newValue) => {
+    setCurrentTab(newValue);
+    const tabNames = ['dashboard', 'images'];
+    setSearchParams({ tab: tabNames[newValue] });
+  };
+
 
   console.log('AdminRoute render - isLoading:', isLoading, 'isAuthenticated:', isAuthenticated);
 
@@ -94,7 +112,7 @@ const AdminRoute = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, px: 2 }}>
         <Typography variant="h4" component="h1">
-          Image Management
+          Admin Panel
         </Typography>
         <Button
           variant="outlined"
@@ -109,10 +127,39 @@ const AdminRoute = () => {
             }
           }}
         >
-          Logout
+          Logout ({username})
         </Button>
       </Box>
-      <ImageManagementPage />
+
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
+        <Tabs value={currentTab} onChange={handleTabChange} aria-label="admin tabs">
+          <Tab 
+            icon={<DashboardIcon />} 
+            label="Analytics Dashboard" 
+            id="tab-0" 
+            aria-controls="tabpanel-0"
+          />
+          <Tab 
+            icon={<ImageIcon />} 
+            label="Image Management" 
+            id="tab-1" 
+            aria-controls="tabpanel-1"
+          />
+        </Tabs>
+      </Box>
+
+      <Box sx={{ mt: 2 }}>
+        {currentTab === 0 && (
+          <Box role="tabpanel" id="tabpanel-0" aria-labelledby="tab-0">
+            <AdminDashboard />
+          </Box>
+        )}
+        {currentTab === 1 && (
+          <Box role="tabpanel" id="tabpanel-1" aria-labelledby="tab-1">
+            <ImageManagementPage />
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 };
