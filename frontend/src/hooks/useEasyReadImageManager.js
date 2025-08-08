@@ -122,10 +122,29 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
       if (!currentState || (hasSavedSelection && currentState.selectedPath !== item.selected_image_path)) {
         const shouldFetch = !item.selected_image_path && item.image_retrieval && item.image_retrieval !== 'error';
         
+        // Build the complete images array including both selected and alternatives
+        let allImages = [];
+        
+        // Start with alternative images if they exist
+        if (item.alternative_images && item.alternative_images.length > 0) {
+          allImages = item.alternative_images.map(url => ({ url }));
+        }
+        
+        // Ensure selected image is included (might not be in alternatives)
+        if (item.selected_image_path) {
+          const selectedExists = allImages.some(img => img.url === item.selected_image_path);
+          if (!selectedExists) {
+            allImages.unshift({ url: item.selected_image_path }); // Add to beginning
+          }
+        }
+        
+        // If no images at all, use selected as the only image
+        if (allImages.length === 0 && item.selected_image_path) {
+          allImages = [{ url: item.selected_image_path }];
+        }
+
         initialImageState[index] = {
-          images: item.alternative_images 
-                      ? item.alternative_images.map(url => ({ url })) 
-                      : (item.selected_image_path ? [{ url: item.selected_image_path }] : []),
+          images: allImages,
           selectedPath: item.selected_image_path || null,
           isLoading: shouldFetch,
           isGenerating: false,

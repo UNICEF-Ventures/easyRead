@@ -46,6 +46,7 @@ import SearchOffIcon from '@mui/icons-material/SearchOff';
 import WarningIcon from '@mui/icons-material/Warning';
 import { listImages, uploadImage, batchUploadImages, optimizedBatchUpload, uploadFolder, getImageSets } from '../apiClient';
 import UploadProgressDialog from './UploadProgressDialog';
+import ImageGallery from './ImageGallery';
 
 // Maximum file size in bytes (5MB)
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -81,7 +82,7 @@ const DropZone = styled(Box)(({ theme, isDragging }) => ({
 const ImageManagementPage = () => {
   // Separate state for uploaded and generated images
   const [uploadedImages, setUploadedImages] = useState({}); // Now stores images by set
-  const [generatedImages, setGeneratedImages] = useState([]);
+  // const [generatedImages, setGeneratedImages] = useState([]); // Removed - no longer used with new ImageGallery
   const [embeddingStats, setEmbeddingStats] = useState(null);
   
   const [loading, setLoading] = useState(false);
@@ -101,7 +102,7 @@ const ImageManagementPage = () => {
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
   
   // Folder upload mode state
-  const [uploadMode, setUploadMode] = useState('files'); // 'files' or 'folders'
+  const [uploadMode, setUploadMode] = useState('folders'); // 'files' or 'folders'
   const [folderPreview, setFolderPreview] = useState({}); // Preview folder structure
   const [manualFolderName, setManualFolderName] = useState(''); // Manual folder name input
   const [showManualFolderName, setShowManualFolderName] = useState(false); // Show manual input
@@ -140,14 +141,12 @@ const ImageManagementPage = () => {
       // Store embedding statistics
       setEmbeddingStats(response.data.embedding_stats);
       
-      // For backward compatibility, also store generated images separately
-      const generatedImages = imagesBySet.Generated || [];
-      setGeneratedImages(generatedImages); 
+      // Generated images are now handled as part of imagesBySet 
     } catch (error) {
       console.error('Error fetching images:', error);
       showAlert('Error loading images', 'error');
       setUploadedImages({}); // Clear on error
-      setGeneratedImages([]); // Clear on error
+      // Generated images cleared as part of imagesBySet
     } finally {
       setLoading(false);
     }
@@ -909,108 +908,6 @@ const ImageManagementPage = () => {
     setAlert({ ...alert, open: false });
   };
 
-  // Helper function to render an image list section
-  const renderImageList = (title, imageList) => (
-    <Box sx={{ mb: 4 }}>
-      <Typography variant="h5" component="h2" gutterBottom sx={{ 
-        borderBottom: '2px solid #e0e0e0', 
-        pb: 1,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1
-      }}>
-        {title}
-      </Typography>
-      {loading ? (
-        <CircularProgress />
-      ) : imageList.length === 0 ? (
-        <Typography color="textSecondary">No {title.toLowerCase()} found.</Typography>
-      ) : (
-        <Grid container spacing={2}>
-          {imageList.map((image) => (
-            <Grid item xs={12} sm={6} md={4} lg={3} key={image.id || image.db_id}> {/* Use db_id as fallback key */}
-              <Card sx={{ 
-                height: '100%', 
-                position: 'relative',
-                border: image.has_embeddings === false ? '2px solid #ff9800' : 'none',
-                backgroundColor: image.has_embeddings === false ? '#fff3e0' : 'inherit'
-              }}>
-                {/* Embedding status badge */}
-                <Box sx={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }}>
-                  {image.has_embeddings === false ? (
-                    <Tooltip title="Missing embeddings - image search won't work">
-                      <Chip
-                        icon={<SearchOffIcon />}
-                        label="No Search"
-                        size="small"
-                        color="warning"
-                        variant="filled"
-                      />
-                    </Tooltip>
-                  ) : null}
-                </Box>
-
-                <CardMedia
-                  component="img"
-                  height="160"
-                  image={image.image_url || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="160"><rect width="300" height="160" fill="%23f0f0f0"/><text x="150" y="85" text-anchor="middle" fill="%23666" font-family="Arial" font-size="14">No Preview</text></svg>'}
-                  alt={image.description || 'Image'}
-                  sx={{ objectFit: 'contain' }}
-                  onError={(e) => { 
-                    // Prevent infinite loop by hiding the image instead of loading another URL
-                    e.target.style.display = 'none';
-                  }}
-                />
-                <CardContent>
-                  <Typography variant="body2" color="text.secondary" noWrap>
-                    {image.description || 'No description'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Uploaded: {image.created_at ? new Date(image.created_at).toLocaleString() : 'N/A'}
-                  </Typography>
-                  
-                  {/* Warning message for missing embeddings */}
-                  {image.has_embeddings === false && (
-                    <Box sx={{ mt: 1 }}>
-                      <Chip
-                        icon={<WarningIcon />}
-                        label="Embedding failed"
-                        size="small"
-                        color="warning"
-                        variant="outlined"
-                      />
-                    </Box>
-                  )}
-                   {/* Optional: Add delete button here if needed */}
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-      )}
-    </Box>
-  );
-
-  const renderImagesBySet = (imagesBySet) => {
-    if (loading) {
-      return <CircularProgress />;
-    }
-
-    const setNames = Object.keys(imagesBySet);
-    if (setNames.length === 0) {
-      return <Typography color="textSecondary">No images found.</Typography>;
-    }
-
-    return setNames.map((setName) => {
-      const images = imagesBySet[setName];
-      return (
-        <Box key={setName}>
-          {renderImageList(`${setName} (${images.length} images)`, images)}
-        </Box>
-      );
-    });
-  };
-
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Paper sx={{ p: 3, mb: 4 }}>
@@ -1539,40 +1436,15 @@ const ImageManagementPage = () => {
         
         <Divider sx={{ my: 4 }} />
         
-        {/* Image Gallery Section - Now uses renderImageList */}
+        {/* Enhanced Image Gallery Section */}
         <Paper sx={{ p: 3 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h4" component="h1">
-              Image Gallery
-            </Typography>
-            
-            {/* Embedding Statistics */}
-            {embeddingStats && (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Chip 
-                  icon={<SearchIcon />}
-                  label={`${embeddingStats.with_embeddings} searchable`}
-                  color="success"
-                  size="small"
-                />
-                {embeddingStats.without_embeddings > 0 && (
-                  <Chip 
-                    icon={<WarningIcon />}
-                    label={`${embeddingStats.without_embeddings} missing embeddings`}
-                    color="warning"
-                    size="small"
-                  />
-                )}
-                <Typography variant="caption" color="text.secondary">
-                  {embeddingStats.embedding_coverage_percent}% search coverage
-                </Typography>
-              </Stack>
-            )}
-          </Box>
+          <Typography variant="h4" component="h1" sx={{ mb: 3 }}>
+            Image Gallery
+          </Typography>
           
           {/* Show warning if there are images without embeddings */}
           {embeddingStats && embeddingStats.without_embeddings > 0 && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
+            <Alert severity="warning" sx={{ mb: 3 }}>
               <Typography variant="body2">
                 {embeddingStats.without_embeddings} images are missing embeddings and won't appear in similarity search. 
                 You can regenerate embeddings using: <code>python manage.py regenerate_embeddings</code>
@@ -1580,7 +1452,15 @@ const ImageManagementPage = () => {
             </Alert>
           )}
           
-          {renderImagesBySet(uploadedImages)}
+          <ImageGallery
+            imagesBySet={uploadedImages}
+            loading={loading}
+            embeddingStats={embeddingStats}
+            onImageSelect={(image) => {
+              console.log('Image selected:', image);
+              // Optional: Add image selection handling here if needed
+            }}
+          />
         </Paper>
       </Paper>
       

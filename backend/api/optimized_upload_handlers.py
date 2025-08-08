@@ -176,8 +176,10 @@ def handle_optimized_batch_upload(
             "message": f"Processed {total_images} images: {total_successful} succeeded, {total_failed} failed",
             "results": all_results,
             "successful_uploads": total_successful,
+            "total_successful": total_successful,     # Frontend expects this field name
             "total_uploads": total_images,
             "failed_uploads": total_failed,
+            "sets_created": 1,                        # Always 1 for batch upload to single set
             "description": description,
             "set_name": set_name,
             "session_id": session_id,
@@ -262,13 +264,22 @@ def _process_image_batch(
         # Phase 3: Prepare bulk database operations
         for (i, image_file, file_result), embedding_result in zip(processed_files, embedding_results):
             if embedding_result['success']:
+                # Generate individual description from filename if shared description is empty
+                if description and description.strip():
+                    image_description = description
+                else:
+                    # Extract semantic label from filename: only the part before the first underscore/number
+                    filename_without_ext = os.path.splitext(file_result['filename'])[0]
+                    # Extract the semantic word (same logic as regular upload handler)
+                    image_description = filename_without_ext.split('_')[0]
+                
                 # Prepare Image object for bulk creation
                 image_obj = Image(
                     set=image_set,
                     filename=file_result['filename'],
                     original_path=file_result['image_path'],
                     processed_path=file_result['image_path'],
-                    description=description,
+                    description=image_description,
                     file_format=file_result.get('file_format', 'PNG'),
                     file_size=file_result.get('file_size'),
                     width=file_result.get('width'),
@@ -299,9 +310,15 @@ def _process_image_batch(
     
     # Phase 4: Bulk database operations
     if images_to_create:
-        successful_db = _bulk_create_images_and_embeddings(images_to_create, model_metadata)
+        successful_db, created_images = _bulk_create_images_and_embeddings(images_to_create, model_metadata)
         successful_count = successful_db
         failed_count += len(images_to_create) - successful_db
+        
+        # Update successful results with image IDs
+        successful_results = [r for r in batch_results if r.get('success')]
+        for i, result in enumerate(successful_results):
+            if i < len(created_images):
+                result['image_id'] = created_images[i].id
     
     return {
         "results": batch_results,
@@ -435,9 +452,10 @@ def _generate_batch_embeddings(processed_files: List[Tuple], embedding_model, mo
     
     return results
 
-def _bulk_create_images_and_embeddings(images_data: List[Tuple], model_metadata: Dict[str, str]) -> int:
+def _bulk_create_images_and_embeddings(images_data: List[Tuple], model_metadata: Dict[str, str]) -> Tuple[int, List]:
     """Bulk create Image and Embedding records in database"""
     successful_count = 0
+    created_images = []
     
     try:
         with transaction.atomic():
@@ -470,6 +488,7 @@ def _bulk_create_images_and_embeddings(images_data: List[Tuple], model_metadata:
             
     except Exception as e:
         logger.error(f"Error in bulk database operations: {e}")
+        created_images = []  # Reset on failure
         # Clean up files on database failure
         for img_obj, _, _ in images_data:
             try:
@@ -478,7 +497,7 @@ def _bulk_create_images_and_embeddings(images_data: List[Tuple], model_metadata:
             except Exception as cleanup_error:
                 logger.error(f"Error cleaning up file {img_obj.filename}: {cleanup_error}")
     
-    return successful_count
+    return successful_count, created_images
 
 def _cleanup_batch_memory():
     """Clean up memory between batches"""

@@ -35,6 +35,9 @@ function AppCore() {
         <Button color="inherit" component={Link} to="/saved">
           Saved Content
         </Button>
+        <Button color="inherit" component={Link} to="/admin">
+          Admin
+        </Button>
       </Toolbar>
     </AppBar>
   );

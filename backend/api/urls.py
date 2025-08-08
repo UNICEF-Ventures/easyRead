@@ -16,6 +16,10 @@ urlpatterns = [
     
     # Image upload and management endpoints
     path('upload-image/', views.upload_image, name='upload_image'),
+    path('batch-upload-images/', views.batch_upload_images, name='batch_upload_images'),
+    path('optimized-batch-upload/', views.optimized_batch_upload, name='optimized_batch_upload'),
+    path('upload-folder/', views.upload_folder, name='upload_folder'),
+    path('upload-progress/<str:session_id>/', views.get_upload_progress, name='get_upload_progress'),
     path('generate-image/', views.generate_image_view, name='generate_image'),
     path('list-images/', views.list_images, name='list_images'),
     
@@ -29,6 +33,7 @@ urlpatterns = [
     path('saved-content/<int:content_id>/', views.get_saved_content_detail, name='get_saved_content_detail'),
     path('saved-content/by-token/<uuid:public_id>/', views.get_saved_content_detail_by_token, name='get_saved_content_detail_by_token'),
     path('update-saved-content-image/<int:content_id>/', views.update_saved_content_image, name='update_saved_content_image'),
+    path('update-saved-content-image/by-token/<uuid:public_id>/', views.update_saved_content_image_by_token, name='update_saved_content_image_by_token'),
     path('bulk-update-saved-content-images/<int:content_id>/', views.bulk_update_saved_content_images, name='bulk_update_saved_content_images'),
     
     # New endpoints for the refactored system
@@ -49,4 +54,5 @@ urlpatterns = [
     path('admin/check-auth/', admin_views.check_auth_status, name='check_auth_status'),
     path('admin/api/login/', admin_views.admin_api_login, name='admin_api_login'),
     path('admin/api/logout/', admin_views.admin_api_logout, name='admin_api_logout'),
+    path('admin/api/analytics/', admin_views.analytics_api, name='admin_analytics_api'),
 ]
