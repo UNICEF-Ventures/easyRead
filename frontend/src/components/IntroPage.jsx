@@ -47,7 +47,7 @@ function IntroPage() {
 
           {/* Description */}
           <Typography
-            variant="h5"
+            variant="h6"
             component="p"
             sx={{
               mb: 4,
@@ -63,7 +63,7 @@ function IntroPage() {
 
           {/* Disclaimers */}
           <Typography
-            variant="body1"
+            variant="body2"
             sx={{
               mb: 6,
               color: '#666',

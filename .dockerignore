@@ -56,9 +56,9 @@ Thumbs.db
 *.temp
 .tmp
 
-# Database
-*.sqlite3
-db.sqlite3
+# Database - SQLite not supported, PostgreSQL required
+# *.sqlite3
+# db.sqlite3
 
 # Environment files
 .env

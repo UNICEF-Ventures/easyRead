@@ -16,6 +16,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SaveIcon from '@mui/icons-material/Save';
 import DownloadIcon from '@mui/icons-material/Download';
+import ShareIcon from '@mui/icons-material/Share';
 // Removed unused import: format from 'date-fns'
 import apiClient, { bulkUpdateSavedContentImages, exportSavedContentDocx } from '../apiClient';
 import EasyReadContentList from './EasyReadContentList';
@@ -43,6 +44,9 @@ const SavedContentDetailPage = () => {
   // Export functionality state
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
+  
+  // Share functionality state
+  const [shareSuccess, setShareSuccess] = useState(false);
 
   // Numeric ID for API calls
   const [numericId, setNumericId] = useState(null);
@@ -118,6 +122,29 @@ const SavedContentDetailPage = () => {
       setExportError(err.response?.data?.error || 'Failed to export content');
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // Share function to copy URL to clipboard
+  const handleShare = async () => {
+    try {
+      const currentUrl = window.location.href;
+      await navigator.clipboard.writeText(currentUrl);
+      setShareSuccess(true);
+    } catch (err) {
+      console.error('Failed to copy URL to clipboard:', err);
+      // Fallback for browsers that don't support clipboard API
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = window.location.href;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setShareSuccess(true);
+      } catch (fallbackErr) {
+        console.error('Fallback copy also failed:', fallbackErr);
+      }
     }
   };
 
@@ -212,6 +239,20 @@ const SavedContentDetailPage = () => {
           </Typography>
           
           <Box sx={{ display: 'flex', gap: 2 }}>
+            <IconButton
+              onClick={handleShare}
+              disabled={loading}
+              sx={{
+                color: 'var(--color-primary)',
+                '&:hover': {
+                  backgroundColor: 'rgba(74, 144, 226, 0.04)',
+                }
+              }}
+              title="Share - Copy URL to clipboard"
+            >
+              <ShareIcon />
+            </IconButton>
+            
             <Button
               startIcon={isExporting ? <CircularProgress size={20}/> : <DownloadIcon />}
               variant="outlined"
@@ -311,7 +352,7 @@ const SavedContentDetailPage = () => {
           open={notification.open}
           autoHideDuration={6000}
           onClose={handleCloseNotification}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         >
           <Alert onClose={handleCloseNotification} severity={notification.severity} sx={{ width: '100%' }}>
             {notification.message}
@@ -323,7 +364,7 @@ const SavedContentDetailPage = () => {
           open={saveSuccess} 
           autoHideDuration={6000} 
           onClose={() => setSaveSuccess(false)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         >
           <Alert onClose={() => setSaveSuccess(false)} severity="success" sx={{ width: '100%' }}>
             Content saved successfully!
@@ -334,7 +375,7 @@ const SavedContentDetailPage = () => {
           open={saveError !== null} 
           autoHideDuration={6000} 
           onClose={() => setSaveError(null)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         >
           <Alert onClose={() => setSaveError(null)} severity="error" sx={{ width: '100%' }}>
             {saveError}
@@ -345,10 +386,21 @@ const SavedContentDetailPage = () => {
           open={exportError !== null} 
           autoHideDuration={6000} 
           onClose={() => setExportError(null)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         >
           <Alert onClose={() => setExportError(null)} severity="error" sx={{ width: '100%' }}>
             {exportError}
+          </Alert>
+        </Snackbar>
+        
+        <Snackbar 
+          open={shareSuccess} 
+          autoHideDuration={3000} 
+          onClose={() => setShareSuccess(false)}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert onClose={() => setShareSuccess(false)} severity="success" sx={{ width: '100%' }}>
+            URL copied to clipboard!
           </Alert>
         </Snackbar>
       </Paper>
