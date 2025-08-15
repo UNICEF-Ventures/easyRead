@@ -96,6 +96,8 @@ services:
 volumes:
   postgres_data:
     driver: local
+  frontend_node_modules:
+    driver: local
 
 networks:
   easyread_network:

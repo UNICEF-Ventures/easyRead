@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Routes, Route, useNavigate, Link, BrowserRouter } from 'react-router-dom';
+import { Routes, Route, useNavigate, Link, BrowserRouter, useLocation } from 'react-router-dom';
+import IntroPage from './components/IntroPage';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
 import AdminRoute from './components/AdminRoute';
@@ -22,6 +23,10 @@ function AppCore() {
   const [error, setError] = useState(null);
 
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Only show header on pages that need it (not on intro page)
+  const shouldShowHeader = location.pathname !== '/';
 
   const AppHeader = () => (
     <AppBar position="static" sx={{ mb: 3 }}>
@@ -29,7 +34,7 @@ function AppCore() {
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
           EasyRead Generator
         </Typography>
-        <Button color="inherit" component={Link} to="/">
+        <Button color="inherit" component={Link} to="/easyread">
           Home
         </Button>
         <Button color="inherit" component={Link} to="/saved">
@@ -88,7 +93,7 @@ function AppCore() {
   return (
     <Box>
       <CssBaseline />
-      <AppHeader />
+      {shouldShowHeader && <AppHeader />}
       
       {isLoading && !isProcessingPages && (
           <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
@@ -122,6 +127,10 @@ function AppCore() {
       <Routes>
         <Route 
           path="/" 
+          element={<IntroPage />}
+        />
+        <Route 
+          path="/easyread" 
           element={
             <HomePage 
               setMarkdownContent={setMarkdownContent}
