@@ -7,8 +7,8 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 # Accept build arguments
-ARG VITE_API_BASE_URL=http://localhost:8001/api
-ARG VITE_MEDIA_BASE_URL=http://localhost:8001
+ARG VITE_API_BASE_URL
+ARG VITE_MEDIA_BASE_URL
 ARG VITE_DEBUG_VALIDATION=true
 
 # Set as environment variables

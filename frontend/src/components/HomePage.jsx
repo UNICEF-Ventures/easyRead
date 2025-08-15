@@ -323,15 +323,49 @@ function HomePage({
           Create Easy Read Content
         </Typography>
         
-        <Typography variant="body1" sx={{ 
-          mb: 4, 
-          color: 'var(--medium-gray)', 
-          maxWidth: '700px',
-        }}>
-          Upload a PDF document or paste text to generate accessible Easy Read content with appropriate images.
-        </Typography>
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="body1" sx={{ 
+            mb: 2, 
+            color: 'text.primary', 
+            fontWeight: 500,
+            maxWidth: '700px',
+          }}>
+            Transform your documents into accessible Easy Read format in 3 simple steps:
+          </Typography>
+          
+          <Box component="ol" sx={{ 
+            pl: 3, 
+            color: 'text.secondary',
+            '& li': { mb: 1, lineHeight: 1.6 }
+          }}>
+            <li><strong>Upload content:</strong> Choose a PDF file or paste your text directly</li>
+            <li><strong>Select image sets:</strong> Pick symbol collections that match your content theme</li>
+            <li><strong>Process:</strong> Let AI simplify the language and suggest relevant images from the chosen sets</li>
+          </Box>
+          
+          <Typography variant="body2" sx={{ 
+            mt: 2,
+            p: 2,
+            bgcolor: '#f0f7ff',
+            borderLeft: '4px solid #1976d2',
+            borderRadius: 1,
+            color: 'text.secondary',
+            fontStyle: 'italic'
+          }}>
+            💡 <strong>Tip:</strong> PDFs work best when they contain selectable text. Scanned documents may need OCR processing first.
+          </Typography>
+        </Box>
         
         {/* File Upload Section */}
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" sx={{ mb: 1, color: 'text.primary', fontWeight: 600 }}>
+            Step 1: Upload Your Document
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+            Upload a PDF document to automatically extract and process its content
+          </Typography>
+        </Box>
+        
         <DropZone 
           onDrop={handleDrop} 
           onDragOver={handleDragOver}
@@ -346,10 +380,13 @@ function HomePage({
           />
           <CloudUploadIcon sx={{ fontSize: 60, color: 'var(--color-primary)', mb: 2 }} />
           <Typography variant="h6" sx={{ fontWeight: 500, mb: 1 }}>
-            Drag & drop a PDF here
+            Drop your PDF here
           </Typography>
-          <Typography variant="body2" sx={{ color: 'var(--medium-gray)' }}>
-            or click to select a file
+          <Typography variant="body2" sx={{ color: 'var(--medium-gray)', mb: 1 }}>
+            or click to browse and select a file
+          </Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            Supported: PDF files up to 50MB
           </Typography>
           {fileName && (
             <Box sx={{ 
@@ -396,33 +433,65 @@ function HomePage({
         </Box>
 
         {/* Text Area Section */}
-        <Typography variant="h6" sx={{ mb: 2, color: 'var(--dark-gray)' }}>
-          Paste or Edit Text
-        </Typography>
-        <TextField
-          label="Content Markdown"
-          multiline
-          rows={12}
-          fullWidth
-          variant="outlined"
-          value={currentMarkdown}
-          onChange={handleMarkdownChange}
-          sx={{ 
-            backgroundColor: 'white',
-            '& .MuiOutlinedInput-root': {
-              '&.Mui-focused fieldset': {
-                borderColor: 'var(--color-primary)',
-                borderWidth: '2px'
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h6" sx={{ mb: 1, color: 'text.primary', fontWeight: 600 }}>
+            Step 1 Alternative: Paste Your Text
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+            Alternatively, paste or type your content directly. You can edit extracted PDF content here too.
+          </Typography>
+          
+          <TextField
+            label="Paste your content here (markdown format supported)"
+            placeholder="Enter or paste your text content here. You can use basic markdown formatting like **bold** and *italic*."
+            multiline
+            rows={12}
+            fullWidth
+            variant="outlined"
+            value={currentMarkdown}
+            onChange={handleMarkdownChange}
+            sx={{ 
+              backgroundColor: 'white',
+              '& .MuiOutlinedInput-root': {
+                '&.Mui-focused fieldset': {
+                  borderColor: 'var(--color-primary)',
+                  borderWidth: '2px'
+                }
               }
-            }
-          }}
-        />
+            }}
+          />
+          
+          <Typography variant="caption" sx={{ 
+            display: 'block', 
+            mt: 1, 
+            color: 'text.secondary',
+            fontStyle: 'italic' 
+          }}>
+          </Typography>
+        </Box>
 
         {/* Symbol Sets Selection Section */}
-        <Box sx={{ mt: 4, mb: 4 }}>
+        <Box sx={{ mt: 5, mb: 4 }}>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="h6" sx={{ mb: 1, color: 'text.primary', fontWeight: 600 }}>
+              Step 2: Choose Image Sets
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+              Select symbol collections that best match your content theme. Images from these sets will be suggested for your Easy Read sentences.
+            </Typography>
+            <Typography variant="body2" sx={{ 
+              mb: 2, 
+              color: 'text.secondary',
+              fontStyle: 'italic',
+              fontSize: '0.875rem'
+            }}>
+              🌍 <strong>Symbols kindly provided by <a href="https://www.globalsymbols.com" target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none' }}>GlobalSymbols</a></strong> - making communication accessible worldwide
+            </Typography>
+          </Box>
+          
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Select Symbol Sets for Image Matching
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
+              Available Symbol Collections
             </Typography>
             {!setsLoading && imageSets.length > 0 && (
               <Box sx={{ display: 'flex', gap: 1 }}>
@@ -445,9 +514,6 @@ function HomePage({
               </Box>
             )}
           </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Choose which symbol sets will be used to find relevant images for your content. If no sets are selected, content will be processed without images.
-          </Typography>
           
           {setsLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -572,30 +638,56 @@ function HomePage({
           </Box>
         </Box>
 
-        <Divider sx={{ my: 3 }} />
+        <Divider sx={{ my: 4 }} />
 
         <Box sx={{ mt: 4, textAlign: 'center' }}>
+          <Typography variant="h6" sx={{ mb: 2, color: 'text.primary', fontWeight: 600 }}>
+            Step 3: Generate Easy Read Content
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary', maxWidth: 500, mx: 'auto' }}>
+            Ready to transform your content? The AI will simplify the language, break it into clear sentences, and suggest appropriate images.
+          </Typography>
+          
           <Button
             variant="contained"
             size="large"
             onClick={handleProcessContent}
             disabled={!currentMarkdown || currentMarkdown.trim() === ''}
             sx={{ 
-              px: 4, 
-              py: 1.5,
+              px: 6, 
+              py: 2,
               borderRadius: 'var(--border-radius-md)',
               backgroundColor: 'var(--color-accent)',
-              fontWeight: 500,
+              fontWeight: 600,
+              fontSize: '1.1rem',
               '&:hover': {
                 backgroundColor: '#0b8043',
                 transform: 'translateY(-2px)',
                 boxShadow: '0 4px 12px rgba(15, 157, 88, 0.2)'
               },
+              '&:disabled': {
+                backgroundColor: '#ccc',
+                color: '#666'
+              },
               transition: 'all 0.2s ease'
             }}
           >
-            Process Content{selectedSets.size > 0 ? ` (${selectedSets.size} image sets selected)` : ' (no images)'}
+            {!currentMarkdown || currentMarkdown.trim() === '' 
+              ? 'Add content to begin' 
+              : `Start Processing ${selectedSets.size > 0 ? `(${selectedSets.size} image sets)` : '(text only)'}`
+            }
           </Button>
+          
+          {currentMarkdown && currentMarkdown.trim() !== '' && (
+            <Typography variant="caption" sx={{ 
+              display: 'block', 
+              mt: 2, 
+              color: 'text.secondary',
+              fontStyle: 'italic' 
+            }}>
+              ⏱️ Processing typically takes 1-3 minutes depending on content length
+            </Typography>
+          )}
         </Box>
       </Paper>
     </Container>
