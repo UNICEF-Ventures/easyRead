@@ -10,7 +10,8 @@ __pycache__/
 .DS_Store
 .env
 venv/
-db.sqlite3
+# SQLite not supported - PostgreSQL required
+# db.sqlite3
 images/*
 CLAUDE.md
 globalsymbols_images_test.csv

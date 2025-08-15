@@ -85,10 +85,18 @@ WSGI_APPLICATION = "easyread_backend.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# Database configuration - PostgreSQL with pgvector required
+# Validate required environment variables
+if not os.getenv("DB_ENGINE"):
+    raise ValueError("DB_ENGINE environment variable is required. Use 'django.db.backends.postgresql' for production.")
+
+if not os.getenv("DB_NAME"):
+    raise ValueError("DB_NAME environment variable is required.")
+
 DATABASES = {
     "default": {
-        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.sqlite3"),
-        "NAME": os.getenv("DB_NAME", BASE_DIR / "db.sqlite3"),
+        "ENGINE": os.getenv("DB_ENGINE"),
+        "NAME": os.getenv("DB_NAME"),
         "USER": os.getenv("DB_USER", ""),
         "PASSWORD": os.getenv("DB_PASSWORD", ""),
         "HOST": os.getenv("DB_HOST", ""),
