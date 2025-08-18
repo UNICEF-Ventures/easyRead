@@ -4,8 +4,7 @@ Provides a unified interface for various embedding providers.
 """
 
 from .base import EmbeddingProvider, ProviderError, ProviderNotAvailableError, EmbeddingError
-from .openai_provider import OpenAIProvider, OpenAIVisionProvider
-from .cohere_provider import CohereProvider
+from .bedrock_provider import BedrockEmbeddingProvider, TitanEmbeddingProvider, CohereBedrockEmbeddingProvider
 from .factory import EmbeddingProviderFactory, get_embedding_provider, list_available_providers, cleanup_global_provider
 
 __all__ = [
@@ -13,9 +12,9 @@ __all__ = [
     'ProviderError', 
     'ProviderNotAvailableError',
     'EmbeddingError',
-    'OpenAIProvider',
-    'OpenAIVisionProvider', 
-    'CohereProvider',
+    'BedrockEmbeddingProvider',
+    'TitanEmbeddingProvider', 
+    'CohereBedrockEmbeddingProvider',
     'EmbeddingProviderFactory',
     'get_embedding_provider',
     'list_available_providers',

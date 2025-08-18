@@ -10,10 +10,7 @@ from .analytics import (
     track_content_export, track_image_search
 )
 from rest_framework.parsers import MultiPartParser, FormParser
-from docling.document_converter import DocumentConverter, PdfFormatOption
-# Import OCR options
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliOcrOptions # Using Tesseract CLI as an example
+# PDF processing with PyMuPDF4LLM (imported in function to avoid startup overhead)
 import tempfile
 import os
 import logging
@@ -21,7 +18,7 @@ import uuid
 import yaml
 import json
 from pathlib import Path
-import litellm
+import boto3
 import re
 from django.conf import settings
 from django.http import JsonResponse
@@ -37,7 +34,7 @@ import time # Added for health check
 import threading # For background processing
 from .models import ProcessedContent, ImageSet, Image # Import the new models
 # SentenceTransformer removed - using API-based embedding providers only
-from openai import OpenAI
+# from openai import OpenAI
 from .config import get_retry_config, load_prompt_template, VALIDATE_COMPLETENESS_PROMPT_FILE, REVISE_SENTENCES_PROMPT_FILE
 from django.core.files.base import ContentFile
 from gradio_client import Client, handle_file # Added Gradio client import
@@ -181,7 +178,162 @@ def convert_url_to_relative_path(url):
 # Create your views here.
 
 # Setup LiteLLM logging (optional, but helpful)
-# litellm.set_verbose=True 
+# Initialize Bedrock client for LLM calls
+bedrock_runtime = None
+try:
+    bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
+    logger.info("Bedrock runtime client initialized successfully.")
+except Exception as e:
+    logger.error(f"Failed to initialize Bedrock runtime client: {e}")
+
+def extract_json_from_llm_response(raw_response: str) -> dict:
+    """
+    Extract JSON from LLM response that may be wrapped in markdown code blocks or contain additional text.
+    
+    Args:
+        raw_response: Raw response string from LLM
+        
+    Returns:
+        Parsed JSON object
+        
+    Raises:
+        ValueError: If no valid JSON can be extracted
+    """
+    if not raw_response or not isinstance(raw_response, str):
+        raise ValueError("Empty or invalid response")
+    
+    # First attempt: try parsing as-is
+    try:
+        return json.loads(raw_response.strip())
+    except json.JSONDecodeError:
+        pass
+    
+    # Second attempt: extract content from markdown code blocks
+    # Look for JSON wrapped in ```json ... ``` or ``` ... ```
+    code_block_patterns = [
+        r'```json\s*(.*?)\s*```',  # ```json ... ```
+        r'```\s*(.*?)\s*```',      # ``` ... ```
+    ]
+    
+    for pattern in code_block_patterns:
+        matches = re.findall(pattern, raw_response, re.DOTALL)
+        for match in matches:
+            try:
+                # Clean up the extracted content
+                cleaned_content = match.strip()
+                return json.loads(cleaned_content)
+            except json.JSONDecodeError:
+                continue
+    
+    # Third attempt: extract JSON-like content using regex
+    # Look for content between { and } (first complete JSON object)
+    json_pattern = r'\{.*?\}'
+    matches = re.findall(json_pattern, raw_response, re.DOTALL)
+    
+    for match in matches:
+        try:
+            return json.loads(match.strip())
+        except json.JSONDecodeError:
+            continue
+    
+    # Fourth attempt: find balanced braces for nested JSON
+    brace_count = 0
+    start_idx = None
+    
+    for i, char in enumerate(raw_response):
+        if char == '{':
+            if brace_count == 0:
+                start_idx = i
+            brace_count += 1
+        elif char == '}':
+            brace_count -= 1
+            if brace_count == 0 and start_idx is not None:
+                # Found a complete JSON object
+                json_candidate = raw_response[start_idx:i+1]
+                try:
+                    return json.loads(json_candidate.strip())
+                except json.JSONDecodeError:
+                    continue
+    
+    # Fifth attempt: clean up common issues and try again
+    # Remove common prefixes/suffixes that LLMs might add
+    cleaned_response = raw_response.strip()
+    
+    # Remove common text patterns that appear before/after JSON
+    patterns_to_remove = [
+        r'^.*?(?=\{)',  # Remove everything before the first {
+        r'\}.*?$',      # Remove everything after the last }
+    ]
+    
+    for pattern in patterns_to_remove:
+        test_response = re.sub(pattern, '', cleaned_response, flags=re.DOTALL)
+        if test_response.strip().startswith('{') and test_response.strip().endswith('}'):
+            try:
+                return json.loads(test_response.strip())
+            except json.JSONDecodeError:
+                continue
+    
+    # If all attempts fail, raise an error with the original response for debugging
+    logger.error(f"Failed to extract JSON from LLM response. Response was: {raw_response[:500]}...")
+    raise ValueError(f"Could not extract valid JSON from LLM response. Response started with: {raw_response[:100]}...")
+
+
+def bedrock_completion(model: str, messages: list, response_format: dict = None):
+    """
+    Replace litellm.completion with direct Bedrock calls for Llama models.
+    """
+    if not bedrock_runtime:
+        raise Exception("Bedrock runtime client not initialized")
+    
+    # Extract model ID from bedrock/ prefix
+    if model.startswith('bedrock/'):
+        model_id = model[8:]  # Remove 'bedrock/' prefix
+    else:
+        model_id = model
+    
+    # Convert messages to Llama format
+    prompt = ""
+    for message in messages:
+        if message['role'] == 'system':
+            prompt += f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{message['content']}<|eot_id|>"
+        elif message['role'] == 'user':
+            prompt += f"<|start_header_id|>user<|end_header_id|>\n{message['content']}<|eot_id|>"
+    
+    prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
+    
+    # Prepare request body for Llama
+    body = {
+        "prompt": prompt,
+        "max_gen_len": 2048,
+        "temperature": 0.1,
+        "top_p": 0.9
+    }
+    
+    try:
+        response = bedrock_runtime.invoke_model(
+            modelId=model_id,
+            body=json.dumps(body),
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        
+        # Create litellm-compatible response format
+        class Choice:
+            def __init__(self, content):
+                self.message = type('obj', (object,), {'content': content})()
+        
+        class Response:
+            def __init__(self, content):
+                self.choices = [Choice(content)]
+        
+        generated_text = response_body['generation']
+        return Response(generated_text)
+        
+    except Exception as e:
+        logger.error(f"Bedrock completion error: {e}")
+        raise
 
 # File paths and settings are now managed in config.py
 
@@ -214,14 +366,8 @@ IMAGE_UPLOAD_DIR = settings.MEDIA_ROOT / "uploaded_images"
 
 # ChromaDB initialization removed - now using PostgreSQL with pgvector for embeddings
 
-# --- OpenAI Client Initialization ---
-openai_client = None
-try:
-    openai_client = OpenAI() # Assumes OPENAI_API_KEY is in environment
-    logger.info("OpenAI client initialized successfully.")
-except Exception as e:
-    logger.error(f"Failed to initialize OpenAI client: {e}")
-    # Handle the error appropriately (e.g., disable the feature)
+# --- OpenAI Client Removed ---
+# Using only AWS Bedrock for LLM completions
 
 # --- Gradio Client Initialization ---
 gradio_client = None
@@ -256,24 +402,27 @@ def pdf_to_markdown(request):
                 temp_pdf.write(chunk)
             temp_pdf_path = temp_pdf.name
 
-        # Convert PDF to Markdown using docling
-        # Configure basic OCR
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = False # Disable OCR for potentially faster text extraction
-        # You might need Tesseract installed on the system for TesseractCliOcrOptions
-        # pipeline_options.ocr_options = TesseractCliOcrOptions(force_full_page_ocr=True) 
-        # Let's try default OCR settings first if available with just do_ocr=True
+        # Convert PDF to Markdown using PyMuPDF4LLM (much simpler and faster)
+        import pymupdf4llm
         
-        converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
-        )
-        result = converter.convert(temp_pdf_path)
-        # Define our generic page break placeholder
-        page_break = "\n\n---PAGE_BREAK---\n\n"
-        # Export with our placeholder directly
-        full_markdown = result.document.export_to_markdown(page_break_placeholder=page_break)
-        # Split the markdown into pages
-        markdown_pages = full_markdown.split(page_break)
+        # Convert PDF directly to markdown - much faster than docling
+        full_markdown = pymupdf4llm.to_markdown(temp_pdf_path)
+        
+        # Split into pages using PyMuPDF's natural page breaks
+        # PyMuPDF4LLM includes page markers, so we can split on those
+        # If no specific page markers, split on common page indicators
+        if "-----" in full_markdown:  # PyMuPDF4LLM page separator
+            markdown_pages = full_markdown.split("-----")
+        elif "\n\n\n\n" in full_markdown:  # Multiple line breaks indicating page breaks
+            markdown_pages = full_markdown.split("\n\n\n\n")
+        else:
+            # Fall back to splitting on large content chunks
+            import re
+            # Split on headers or substantial content breaks
+            pages = re.split(r'\n\n(?=# |\## |\### |Page \d+|\f)', full_markdown)
+            markdown_pages = [page.strip() for page in pages if page.strip()]
+            if not markdown_pages:  # If no good splits found, treat as single page
+                markdown_pages = [full_markdown]
 
         # Clean up the temporary file
         os.remove(temp_pdf_path)
@@ -366,7 +515,7 @@ def process_page(request):
         try:
             logger.info(f"LLM call attempt {attempt + 1}/{max_retries}")
             
-            response = litellm.completion(
+            response = bedrock_completion(
                 model=llm_model, 
                 messages=messages,
                 response_format={"type": "json_object"} 
@@ -384,7 +533,7 @@ def process_page(request):
                 if llm_output_content is None:
                     raise ValueError("LLM returned None content.")
 
-                llm_parsed_object = json.loads(llm_output_content)
+                llm_parsed_object = extract_json_from_llm_response(llm_output_content)
                 
                 # Validate the structure
                 if not isinstance(llm_parsed_object, dict) or 'title' not in llm_parsed_object or 'easy_read_sentences' not in llm_parsed_object:
@@ -541,7 +690,7 @@ def validate_completeness(request):
 
     # --- LLM Call and Response Handling --- 
     try:
-        response = litellm.completion(
+        response = bedrock_completion(
             model=llm_model, 
             messages=messages,
             response_format={"type": "json_object"} 
@@ -558,7 +707,7 @@ def validate_completeness(request):
             if llm_output_content is None:
                 raise ValueError("LLM returned None content.")
 
-            llm_parsed_object = json.loads(llm_output_content)
+            llm_parsed_object = extract_json_from_llm_response(llm_output_content)
             
             # Basic structure validation based on the expected output
             expected_keys = ["missing_info", "extra_info", "other_feedback"]
@@ -688,7 +837,7 @@ def revise_sentences(request):
 
     # --- LLM Call and Response Handling ---
     try:
-        response = litellm.completion(
+        response = bedrock_completion(
             model=llm_model,
             messages=messages,
             response_format={"type": "json_object"}
@@ -705,7 +854,7 @@ def revise_sentences(request):
             if llm_output_content is None:
                 raise ValueError("LLM returned None content.")
 
-            llm_parsed_object = json.loads(llm_output_content)
+            llm_parsed_object = extract_json_from_llm_response(llm_output_content)
 
             # Validate the structure matches the expected output for this prompt
             if not isinstance(llm_parsed_object, dict) or 'easy_read_sentences' not in llm_parsed_object:

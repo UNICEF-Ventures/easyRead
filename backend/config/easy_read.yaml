@@ -12,7 +12,7 @@ system_message: |
   - For each sentence, provide a query that will be used to create or find an image that will help the reader understand the sentence
 
   # Output Format
-  Output ONLY a valid JSON object following the template below.
+  Output ONLY a valid JSON object following the template below, without any other text or comments.
   {
     "title": "Title of the content",
     "easy_read_sentences": [

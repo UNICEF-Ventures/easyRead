@@ -7,8 +7,6 @@ from typing import Dict, Any, Optional, List, Type
 from django.conf import settings
 
 from .base import EmbeddingProvider, ProviderError, ProviderNotAvailableError
-from .openai_provider import OpenAIProvider, OpenAIVisionProvider
-from .cohere_provider import CohereProvider
 from .bedrock_provider import BedrockEmbeddingProvider, TitanEmbeddingProvider, CohereBedrockEmbeddingProvider
 
 logger = logging.getLogger(__name__)
@@ -17,11 +15,8 @@ logger = logging.getLogger(__name__)
 class EmbeddingProviderFactory:
     """Factory for creating embedding providers."""
     
-    # Registry of available providers - API-only, no local models
+    # Registry of available providers - Bedrock only
     _providers: Dict[str, Type[EmbeddingProvider]] = {
-        'openai': OpenAIProvider,
-        'openai_vision': OpenAIVisionProvider,
-        'cohere': CohereProvider,
         'bedrock': BedrockEmbeddingProvider,
         'titan': TitanEmbeddingProvider,
         'cohere_bedrock': CohereBedrockEmbeddingProvider,
@@ -225,54 +220,7 @@ def cleanup_global_provider():
             _global_provider = None
 
 
-# Provider configuration helpers - API-only
-
-
-def get_openai_config(api_key: str, model: str = 'text-embedding-3-small') -> Dict[str, Any]:
-    """
-    Get OpenAI configuration.
-    
-    Args:
-        api_key: OpenAI API key
-        model: Model name
-        
-    Returns:
-        Configuration dictionary
-    """
-    return {
-        'provider': 'openai',
-        'config': {
-            'api_key': api_key,
-            'model': model,
-            'batch_size': 100,
-            'rate_limit_delay': 0.1,
-            'max_retries': 3
-        }
-    }
-
-
-def get_cohere_config(api_key: str, model: str = 'embed-english-v3.0') -> Dict[str, Any]:
-    """
-    Get Cohere configuration.
-    
-    Args:
-        api_key: Cohere API key
-        model: Model name
-        
-    Returns:
-        Configuration dictionary
-    """
-    return {
-        'provider': 'cohere',
-        'config': {
-            'api_key': api_key,
-            'model': model,
-            'input_type': 'search_document',
-            'batch_size': 96,
-            'rate_limit_delay': 0.1,
-            'max_retries': 3
-        }
-    }
+# Provider configuration helpers - Bedrock only
 
 
 def get_bedrock_config(model: str = 'amazon.titan-embed-text-v1', aws_region: str = 'us-east-1') -> Dict[str, Any]:
@@ -346,42 +294,30 @@ def get_cohere_bedrock_config(language: str = 'multilingual', aws_region: str = 
 
 def auto_configure_provider() -> Dict[str, Any]:
     """
-    Auto-configure provider based on available API keys.
-    API-only configuration - no local models supported.
+    Auto-configure provider based on available AWS credentials.
+    Bedrock-only configuration.
     
     Returns:
         Configuration dictionary for the best available provider
         
     Raises:
-        ProviderError: If no valid API keys are found
+        ProviderError: If no valid AWS credentials are found
     """
     import os
     
-    # Check for API keys in environment
-    openai_key = os.getenv('OPENAI_API_KEY')
-    cohere_key = os.getenv('COHERE_API_KEY')
+    # Check for AWS credentials in environment
     aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
     aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
     
-    # If we have AWS credentials, prefer AWS Bedrock for cost and performance
+    # Require AWS credentials for Bedrock
     if aws_access_key and aws_secret_key:
         logger.info("Found AWS credentials, using Cohere Multilingual embedding provider via Bedrock")
         return get_cohere_bedrock_config()
     
-    # If we have API keys, prefer API-based providers
-    if openai_key:
-        logger.info("Found OpenAI API key, using OpenAI provider")
-        return get_openai_config(openai_key)
-    
-    if cohere_key:
-        logger.info("Found Cohere API key, using Cohere provider")
-        return get_cohere_config(cohere_key)
-    
-    # No API keys found - this is an error in API-only mode
+    # No AWS credentials found - this is an error in Bedrock-only mode
     error_msg = (
-        "No embedding API keys found! This system requires external embedding APIs. "
-        "Please set one of: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, "
-        "OPENAI_API_KEY, or COHERE_API_KEY"
+        "No AWS credentials found! This system requires AWS Bedrock access. "
+        "Please set: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
     )
     logger.error(error_msg)
     raise ProviderError(error_msg)

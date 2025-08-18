@@ -26,10 +26,7 @@ class ApiConfig(AppConfig):
             signal.signal(signal.SIGBREAK, self._signal_handler)
         
         logger.info("API app ready, cleanup handlers registered")
-        
-        # Temporarily disable auto-warmup in Docker to prevent startup hangs
-        # Models will be loaded on-demand when first used
-        logger.info("Auto-warmup disabled in Docker environment")
+        logger.info("Using PyMuPDF4LLM for fast PDF processing - no model prefetching needed")
     
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
@@ -54,6 +51,8 @@ class ApiConfig(AppConfig):
             
             # Clean up similarity searcher
             cleanup_similarity_searcher()
+            
+            # PyMuPDF4LLM doesn't require special cleanup
             
             # Force cleanup of OpenCLIP resources
             force_cleanup_openclip_resources()
