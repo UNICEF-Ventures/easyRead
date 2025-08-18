@@ -2045,6 +2045,94 @@ def find_similar_images_batch(request):
     
     logger.info(f"Processing batch of {len(queries)} image search queries")
     
+    # --- Chunk Large Batches for Better Performance ---
+    CHUNK_SIZE = int(os.getenv('BATCH_CHUNK_SIZE', '50'))  # Process in chunks to avoid overwhelming the system
+    
+    def process_queries_chunk(queries_chunk):
+        """Process a chunk of queries and return results with batch optimization."""
+        from api.similarity_search import search_similar_images_batch
+        
+        chunk_results = {}
+        
+        try:
+            # Extract query texts for batch processing
+            query_texts = [query['query'] for query in queries_chunk]
+            
+            # Use batch similarity search for better performance
+            batch_results = search_similar_images_batch(
+                query_texts=query_texts,
+                n_results=queries_chunk[0].get('n_results', 10) if queries_chunk else 10,
+                image_set=image_set,
+                image_sets=image_sets,
+                exclude_image_ids=exclude_ids
+            )
+            
+            # Format results for API response
+            for i, query_item in enumerate(queries_chunk):
+                index = query_item['index']
+                similar_images = batch_results.get(i, [])
+                
+                try:
+                    # Format results using Image model
+                    formatted_results = []
+                    image_ids = [img['id'] for img in similar_images]
+                    image_objects = {img.id: img for img in Image.objects.filter(id__in=image_ids)} if image_ids else {}
+                    
+                    for img_data in similar_images:
+                        try:
+                            img_id = img_data['id']
+                            image_obj = image_objects.get(img_id)
+                            
+                            if image_obj:
+                                image_url = request.build_absolute_uri(image_obj.get_url())
+                            else:
+                                logger.warning(f"Image object not found for ID {img_id} in query {index}")
+                                image_url = None
+                            
+                            formatted_results.append({
+                                "id": img_data['id'],
+                                "url": image_url,
+                                "description": img_data.get('description', ''),
+                                "similarity": img_data.get('similarity', 0.0),
+                                "filename": img_data.get('filename', ''),
+                                "set_name": img_data.get('set_name', ''),
+                                "file_format": img_data.get('file_format', '')
+                            })
+                            
+                        except Exception as e:
+                            logger.error(f"Error formatting image result {img_data.get('id')} for query {index}: {e}")
+                            continue
+                    
+                    chunk_results[str(index)] = formatted_results
+                    logger.info(f"Query {index} completed: found {len(formatted_results)} images via batch processing")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing query {index}: {e}")
+                    chunk_results[str(index)] = []
+            
+        except Exception as e:
+            logger.error(f"Batch processing failed for chunk, falling back to individual processing: {e}")
+            
+            # Fallback to individual processing
+            max_workers = int(os.getenv('MAX_THREAD_POOL_WORKERS', '8'))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(queries_chunk), max_workers)) as executor:
+                future_to_query = {executor.submit(process_single_query, query): query for query in queries_chunk}
+                
+                for future in concurrent.futures.as_completed(future_to_query, timeout=300):
+                    try:
+                        result = future.result()
+                        chunk_results[result["index"]] = result["results"]
+                        
+                        if not result["success"]:
+                            logger.warning(f"Query {result['index']} failed: {result.get('error', 'Unknown error')}")
+                            
+                    except Exception as e:
+                        query_item = future_to_query[future]
+                        logger.error(f"Error getting result for query {query_item.get('index', 'unknown')}: {e}")
+                        chunk_results[str(query_item.get('index', 'error'))] = []
+        
+        return chunk_results
+    
     # --- Process Queries in Parallel ---
     def process_single_query(query_item):
         """Process a single query and return results with error handling."""
@@ -2111,28 +2199,36 @@ def find_similar_images_batch(request):
                 "error": str(e)
             }
     
-    # --- Execute Queries in Parallel ---
+    # --- Execute Queries in Chunks ---
     try:
         batch_results = {}
         
-        # Use ThreadPoolExecutor for I/O-bound database operations
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(queries), 5)) as executor:
-            # Submit all queries
-            future_to_query = {executor.submit(process_single_query, query): query for query in queries}
+        # Process queries in chunks for better performance and memory usage
+        if len(queries) > CHUNK_SIZE:
+            logger.info(f"Processing {len(queries)} queries in chunks of {CHUNK_SIZE}")
             
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(future_to_query, timeout=60):
+            # Split queries into chunks
+            for i in range(0, len(queries), CHUNK_SIZE):
+                chunk = queries[i:i + CHUNK_SIZE]
+                chunk_num = i // CHUNK_SIZE + 1
+                total_chunks = (len(queries) + CHUNK_SIZE - 1) // CHUNK_SIZE
+                
+                logger.info(f"Processing chunk {chunk_num}/{total_chunks} ({len(chunk)} queries)")
+                
                 try:
-                    result = future.result()
-                    batch_results[result["index"]] = result["results"]
+                    chunk_results = process_queries_chunk(chunk)
+                    batch_results.update(chunk_results)
                     
-                    if not result["success"]:
-                        logger.warning(f"Query {result['index']} failed: {result.get('error', 'Unknown error')}")
-                        
+                    logger.info(f"Completed chunk {chunk_num}/{total_chunks}")
+                    
                 except Exception as e:
-                    query_item = future_to_query[future]
-                    logger.error(f"Error getting result for query {query_item.get('index', 'unknown')}: {e}")
-                    batch_results[str(query_item.get('index', 'error'))] = []
+                    logger.error(f"Error processing chunk {chunk_num}: {e}")
+                    # Add empty results for failed chunk queries
+                    for query in chunk:
+                        batch_results[str(query.get('index', 'error'))] = []
+        else:
+            # Process all queries at once for small batches
+            batch_results = process_queries_chunk(queries)
         
         logger.info(f"Batch processing completed: {len(batch_results)} results returned")
         

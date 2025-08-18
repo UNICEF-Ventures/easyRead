@@ -5,6 +5,7 @@ import asyncio
 import threading
 from functools import wraps
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -44,5 +45,6 @@ class ConcurrencyLimiter:
         
         return wrapper
 
-# Global instance - limits to 2 concurrent similarity searches
-similarity_search_limiter = ConcurrencyLimiter(max_concurrent=2)
+# Global instance - read max concurrent searches from environment
+_max_concurrent = int(os.getenv('MAX_CONCURRENT_SIMILARITY_SEARCHES', '4'))
+similarity_search_limiter = ConcurrencyLimiter(max_concurrent=_max_concurrent)

@@ -4,9 +4,12 @@ Image similarity search functionality using PostgreSQL with pgvector.
 
 import logging
 import numpy as np
+import os
 from typing import List, Dict, Optional, Tuple
 from django.db import connection
 from django.db.models import Q
+from django.core.cache import cache
+import hashlib
 from pgvector.django import CosineDistance, L2Distance
 from api.models import ImageSet, Image, Embedding
 from api.embedding_adapter import get_embedding_model
@@ -16,6 +19,112 @@ from api.concurrency_limiter import similarity_search_limiter
 from api.model_config import pad_vector_to_standard, unpad_vector
 
 logger = logging.getLogger(__name__)
+
+# Cache embeddings - timeout configurable via environment
+EMBEDDING_CACHE_TIMEOUT = int(os.getenv('EMBEDDING_CACHE_TIMEOUT', '3600'))
+
+
+def search_similar_images_batch(query_texts: List[str], 
+                                n_results: int = 10,
+                                image_set: Optional[str] = None,
+                                image_sets: Optional[List[str]] = None,
+                                exclude_image_ids: Optional[List[int]] = None) -> Dict[int, List[Dict]]:
+    """
+    Batch search for similar images using multiple text queries.
+    
+    This function optimizes performance by:
+    1. Generating embeddings for all queries in batches
+    2. Performing database searches with optimized queries
+    3. Caching embeddings to avoid regeneration
+    
+    Args:
+        query_texts: List of text queries to search for
+        n_results: Number of results to return per query
+        image_set: Optional image set name to filter by
+        image_sets: Optional list of image set names to filter by
+        exclude_image_ids: Optional list of image IDs to exclude
+        
+    Returns:
+        Dictionary mapping query index to list of similar image dictionaries
+    """
+    import time
+    
+    logger.info(f"Starting batch similarity search for {len(query_texts)} queries")
+    start_time = time.time()
+    
+    try:
+        searcher = SimilaritySearcher()
+        results = {}
+        
+        # Separate cached and non-cached queries
+        cached_queries = []
+        non_cached_queries = []
+        cached_results = {}
+        
+        for i, query_text in enumerate(query_texts):
+            cached_embedding = searcher._get_cached_embedding(query_text)
+            if cached_embedding is not None:
+                cached_queries.append((i, query_text, cached_embedding))
+            else:
+                non_cached_queries.append((i, query_text))
+        
+        logger.info(f"Found {len(cached_queries)} cached embeddings, {len(non_cached_queries)} need generation")
+        
+        # Generate embeddings for non-cached queries in batch
+        if non_cached_queries:
+            indices, texts = zip(*non_cached_queries)
+            
+            # Use batch embedding generation
+            try:
+                embeddings = searcher.embedding_model.encode_texts(list(texts))
+                
+                # Cache the new embeddings
+                for i, (idx, query_text) in enumerate(non_cached_queries):
+                    embedding = embeddings[i]
+                    searcher._cache_embedding(query_text, embedding)
+                    cached_queries.append((idx, query_text, embedding))
+                    
+                logger.info(f"Generated {len(embeddings)} new embeddings via batch API")
+                
+            except Exception as e:
+                logger.warning(f"Batch embedding generation failed, falling back to individual calls: {e}")
+                # Fall back to individual embedding generation
+                for idx, query_text in non_cached_queries:
+                    try:
+                        embedding = searcher.embedding_model.encode_single_text(query_text)
+                        if embedding is not None:
+                            searcher._cache_embedding(query_text, embedding)
+                            cached_queries.append((idx, query_text, embedding))
+                    except Exception as e2:
+                        logger.error(f"Failed to generate embedding for query {idx}: {e2}")
+                        results[idx] = []
+        
+        # Now perform similarity searches for all queries
+        for idx, query_text, query_embedding in cached_queries:
+            try:
+                # Use the cached/generated embedding directly
+                similar_images = searcher._perform_similarity_search(
+                    query_embedding=query_embedding,
+                    n_results=n_results,
+                    image_set=image_set,
+                    image_sets=image_sets,
+                    exclude_image_ids=exclude_image_ids
+                )
+                results[idx] = similar_images
+                
+            except Exception as e:
+                logger.error(f"Similarity search failed for query {idx}: {e}")
+                results[idx] = []
+        
+        total_time = time.time() - start_time
+        logger.info(f"Batch similarity search completed in {total_time:.2f}s for {len(query_texts)} queries")
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Batch similarity search failed: {e}")
+        # Return empty results for all queries
+        return {i: [] for i in range(len(query_texts))}
 
 
 class SimilaritySearcher:
@@ -31,6 +140,137 @@ class SimilaritySearcher:
         
         # Get model metadata for filtering
         self.model_metadata = self.embedding_model.provider.get_model_metadata()
+    
+    def _get_cached_embedding(self, query_text: str) -> Optional[List[float]]:
+        """Get cached embedding for a text query."""
+        cache_key = f"embedding:{hashlib.md5(query_text.encode()).hexdigest()}:{self.model_metadata['model_name']}"
+        return cache.get(cache_key)
+    
+    def _cache_embedding(self, query_text: str, embedding: List[float]):
+        """Cache an embedding for a text query."""
+        cache_key = f"embedding:{hashlib.md5(query_text.encode()).hexdigest()}:{self.model_metadata['model_name']}"
+        cache.set(cache_key, embedding, EMBEDDING_CACHE_TIMEOUT)
+    
+    def _perform_similarity_search(self, query_embedding: np.ndarray, 
+                                   n_results: int = 10,
+                                   image_set: Optional[str] = None,
+                                   image_sets: Optional[List[str]] = None,
+                                   exclude_image_ids: Optional[List[int]] = None,
+                                   provider_name: Optional[str] = None,
+                                   model_name: Optional[str] = None) -> List[Dict]:
+        """
+        Perform similarity search using a pre-generated embedding.
+        
+        Args:
+            query_embedding: Pre-generated embedding vector
+            n_results: Number of results to return
+            image_set: Optional image set name to filter by
+            image_sets: Optional list of image set names to filter by
+            exclude_image_ids: Optional list of image IDs to exclude
+            provider_name: Optional provider name to filter by
+            model_name: Optional model name to filter by
+            
+        Returns:
+            List of dictionaries containing image information and similarity scores
+        """
+        try:
+            # Store original dimension before padding
+            original_query_dim = len(query_embedding)
+            
+            # Pad the query embedding to standard dimension for pgvector comparison
+            padded_query_embedding = pad_vector_to_standard(query_embedding)
+            
+            # Determine which model to use for filtering
+            search_provider = provider_name or self.model_metadata['provider_name']
+            search_model = model_name or self.model_metadata['model_name']
+            
+            # Build the base query for text embeddings - filter by ORIGINAL dimension stored in DB
+            embeddings_query = Embedding.objects.filter(
+                embedding_type='text',
+                provider_name=search_provider,
+                model_name=search_model,
+                embedding_dimension=original_query_dim
+            )
+            
+            # Filter by image set(s) if specified
+            if image_sets:
+                embeddings_query = embeddings_query.filter(image__set__name__in=image_sets)
+            elif image_set:
+                embeddings_query = embeddings_query.filter(image__set__name=image_set)
+            
+            # Exclude specific image IDs if provided
+            if exclude_image_ids:
+                embeddings_query = embeddings_query.exclude(image_id__in=exclude_image_ids)
+            
+            # Select related fields to avoid additional queries
+            embeddings_query = embeddings_query.select_related('image', 'image__set')
+            
+            # Get all text embeddings that match the criteria
+            text_embeddings = list(embeddings_query)
+            
+            if not text_embeddings:
+                # Try fallback to any compatible dimension from the same provider/model
+                fallback_query = Embedding.objects.filter(
+                    embedding_type='text',
+                    provider_name=search_provider,
+                    model_name=search_model
+                ).select_related('image', 'image__set')
+                
+                if image_sets:
+                    fallback_query = fallback_query.filter(image__set__name__in=image_sets)
+                elif image_set:
+                    fallback_query = fallback_query.filter(image__set__name=image_set)
+                
+                if exclude_image_ids:
+                    fallback_query = fallback_query.exclude(image_id__in=exclude_image_ids)
+                
+                text_embeddings = list(fallback_query)
+                
+                if not text_embeddings:
+                    return []
+            
+            # Use pgvector for efficient similarity search
+            query_vector = list(padded_query_embedding)
+            
+            # Validate query vector length
+            if len(query_vector) != 2000:
+                logger.error(f"Query vector dimension {len(query_vector)} doesn't match database field (2000)")
+                return []
+            
+            # Get embeddings with their cosine distances
+            similar_embeddings = (Embedding.objects
+                                .filter(id__in=[emb.id for emb in text_embeddings])
+                                .annotate(distance=CosineDistance('vector', query_vector))
+                                .select_related('image', 'image__set')
+                                .order_by('distance')[:n_results])
+            
+            similarities = []
+            for embedding_obj in similar_embeddings:
+                try:
+                    # Convert distance to similarity score
+                    similarity = max(0.0, 1.0 - embedding_obj.distance)
+                    
+                    # Build result dictionary
+                    image_obj = embedding_obj.image
+                    if image_obj:
+                        similarities.append({
+                            'id': image_obj.id,
+                            'description': image_obj.description or '',
+                            'filename': image_obj.filename or '',
+                            'similarity': float(similarity),
+                            'set_name': image_obj.set.name if image_obj.set else '',
+                            'file_format': image_obj.file_format or ''
+                        })
+                        
+                except Exception as e:
+                    logger.error(f"Error processing embedding result: {e}")
+                    continue
+            
+            return similarities
+            
+        except Exception as e:
+            logger.error(f"Error in similarity search: {e}")
+            return []
     
     def _validate_embedding_compatibility(self, embedding_obj, query_dimension: int, provider_name: str, model_name: str) -> bool:
         """
@@ -102,11 +342,20 @@ class SimilaritySearcher:
             List of dictionaries containing image information and similarity scores
         """
         try:
-            # Generate text embedding for the query
-            query_embedding = self.embedding_model.encode_single_text(query_text)
+            # Try to get cached embedding first
+            query_embedding = self._get_cached_embedding(query_text)
+            
             if query_embedding is None:
-                logger.error(f"Failed to generate embedding for query: {query_text}")
-                return []
+                # Generate text embedding for the query
+                query_embedding = self.embedding_model.encode_single_text(query_text)
+                if query_embedding is None:
+                    logger.error(f"Failed to generate embedding for query: {query_text}")
+                    return []
+                
+                # Cache the embedding
+                self._cache_embedding(query_text, query_embedding)
+            else:
+                logger.debug(f"Using cached embedding for query: {query_text[:50]}...")
             
             # Store original dimension before padding
             original_query_dim = len(query_embedding)
