@@ -1,6 +1,5 @@
 """
-Image similarity search functionality for the new embedding system.
-Uses PostgreSQL database with new models instead of ChromaDB.
+Image similarity search functionality using PostgreSQL with pgvector.
 """
 
 import logging

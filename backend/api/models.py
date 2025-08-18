@@ -142,16 +142,6 @@ class ProcessedContent(models.Model):
         return f"Processed Content (ID: {self.id}){title_str} - Created at {self.created_at.strftime('%Y-%m-%d %H:%M')}"
 
 
-class ImageMetadata(models.Model):
-    description = models.CharField(max_length=500, blank=True)
-    image = models.ImageField(upload_to='uploads/')
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-    is_generated = models.BooleanField(default=False)
-
-    def __str__(self):
-        source = "Generated" if self.is_generated else "Uploaded"
-        desc = self.description[:50] + '...' if len(self.description) > 50 else self.description
-        return f'{source} Image (ID: {self.id}) - "{desc}" - Created: {self.uploaded_at.strftime("%Y-%m-%d %H:%M")}'
 
 
 # Analytics Models for Session Tracking

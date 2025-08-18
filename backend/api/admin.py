@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import ProcessedContent, ImageMetadata, ImageSet, Image, Embedding
+from .models import ProcessedContent, ImageSet, Image, Embedding
 
 # Register your models here.
 
@@ -10,12 +10,6 @@ class ProcessedContentAdmin(admin.ModelAdmin):
     search_fields = ('title', 'original_markdown')
     readonly_fields = ('created_at',)
 
-@admin.register(ImageMetadata) 
-class ImageMetadataAdmin(admin.ModelAdmin):
-    list_display = ('id', 'description', 'is_generated', 'uploaded_at')
-    list_filter = ('is_generated', 'uploaded_at')
-    search_fields = ('description',)
-    readonly_fields = ('uploaded_at',)
 
 # New models for refactored system
 @admin.register(ImageSet)
