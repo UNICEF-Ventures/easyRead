@@ -14,18 +14,19 @@ from .base import EmbeddingProvider, ProviderError, ProviderNotAvailableError, E
 
 logger = logging.getLogger(__name__)
 
-# Try to import litellm for AWS Bedrock embeddings
+# Import boto3 for direct AWS Bedrock access
 try:
-    from litellm import embedding
-    LITELLM_AVAILABLE = True
+    import boto3
+    import json
+    BOTO3_AVAILABLE = True
 except ImportError:
-    LITELLM_AVAILABLE = False
-    logger.warning("litellm not available, AWS Bedrock provider will be disabled")
+    BOTO3_AVAILABLE = False
+    logger.warning("boto3 not available, AWS Bedrock provider will be disabled")
 
 
 class BedrockEmbeddingProvider(EmbeddingProvider):
     """
-    AWS Bedrock embedding provider using LiteLLM.
+    AWS Bedrock embedding provider using boto3 directly.
     
     Supports the following models:
     - amazon.titan-embed-text-v1 (1536 dimensions)
@@ -76,8 +77,8 @@ class BedrockEmbeddingProvider(EmbeddingProvider):
         """
         super().__init__(config)
         
-        if not LITELLM_AVAILABLE:
-            raise ProviderNotAvailableError("litellm package is required for AWS Bedrock provider")
+        if not BOTO3_AVAILABLE:
+            raise ProviderNotAvailableError("boto3 package is required for AWS Bedrock provider")
         
         self.model_name = model_name
         
@@ -87,14 +88,25 @@ class BedrockEmbeddingProvider(EmbeddingProvider):
         
         self.model_config = self.MODEL_CONFIGS[self.model_name]
         
-        # AWS credentials (will be picked up by litellm from environment)
+        # AWS credentials for boto3 client
         self.aws_access_key_id = (config or {}).get('aws_access_key_id') or os.environ.get('AWS_ACCESS_KEY_ID')
         self.aws_secret_access_key = (config or {}).get('aws_secret_access_key') or os.environ.get('AWS_SECRET_ACCESS_KEY')
         self.aws_region = (config or {}).get('aws_region') or os.environ.get('AWS_REGION_NAME', 'us-east-1')
         
-        # Validate AWS credentials
-        if not all([self.aws_access_key_id, self.aws_secret_access_key]):
-            logger.warning("AWS credentials not found. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.")
+        # Initialize boto3 client
+        if all([self.aws_access_key_id, self.aws_secret_access_key]):
+            self.bedrock_client = boto3.client(
+                'bedrock-runtime',
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                region_name=self.aws_region
+            )
+        else:
+            # Try to use default credentials
+            try:
+                self.bedrock_client = boto3.client('bedrock-runtime', region_name=self.aws_region)
+            except Exception as e:
+                raise ProviderNotAvailableError(f"AWS credentials not found and default credentials failed: {e}")
     
     def get_provider_info(self) -> Dict[str, Any]:
         """Get provider information."""
@@ -112,25 +124,10 @@ class BedrockEmbeddingProvider(EmbeddingProvider):
     
     def is_available(self) -> bool:
         """Check if AWS Bedrock provider is available."""
-        if not LITELLM_AVAILABLE:
+        if not BOTO3_AVAILABLE:
             return False
         
-        if not all([self.aws_access_key_id, self.aws_secret_access_key]):
-            return False
-        
-        try:
-            # Test with a simple embedding
-            response = embedding(
-                model=self.model_name,
-                input=["test"],
-                aws_access_key_id=self.aws_access_key_id,
-                aws_secret_access_key=self.aws_secret_access_key,
-                aws_region_name=self.aws_region
-            )
-            return True
-        except Exception as e:
-            logger.error(f"AWS Bedrock provider availability check failed: {e}")
-            return False
+        return hasattr(self, 'bedrock_client') and self.bedrock_client is not None
     
     def get_embedding_dimension(self) -> int:
         """Get embedding dimension."""
@@ -157,28 +154,40 @@ class BedrockEmbeddingProvider(EmbeddingProvider):
             if not filtered_texts:
                 return np.array([])
             
-            # Call AWS Bedrock via litellm
-            response = embedding(
-                model=self.model_name,
-                input=filtered_texts,
-                aws_access_key_id=self.aws_access_key_id,
-                aws_secret_access_key=self.aws_secret_access_key,
-                aws_region_name=self.aws_region
-            )
-            
-            # Extract embeddings from response
-            # Handle both object attributes and dictionary formats
             embeddings = []
-            for item in response.data:
-                if hasattr(item, 'embedding'):
-                    # Object format (OpenAI-style)
-                    embeddings.append(item.embedding)
-                elif isinstance(item, dict) and 'embedding' in item:
-                    # Dictionary format (Bedrock-style)
-                    embeddings.append(item['embedding'])
+            
+            # Process texts individually (Bedrock doesn't support batch for all models)
+            for text in filtered_texts:
+                # Prepare the request body based on model type
+                if self.model_name.startswith('amazon.titan'):
+                    body = json.dumps({"inputText": text})
+                elif self.model_name.startswith('cohere.embed'):
+                    body = json.dumps({
+                        "texts": [text],
+                        "input_type": "search_document"
+                    })
                 else:
-                    logger.error(f"Unknown embedding format: {type(item)}")
-                    raise EmbeddingError(f"Unknown embedding format: {type(item)}")
+                    raise EmbeddingError(f"Unsupported model: {self.model_name}")
+                
+                # Call AWS Bedrock directly
+                response = self.bedrock_client.invoke_model(
+                    modelId=self.model_name,
+                    body=body,
+                    contentType='application/json',
+                    accept='application/json'
+                )
+                
+                # Parse response
+                response_body = json.loads(response['body'].read())
+                
+                if self.model_name.startswith('amazon.titan'):
+                    embedding_vector = response_body['embedding']
+                elif self.model_name.startswith('cohere.embed'):
+                    embedding_vector = response_body['embeddings'][0]
+                else:
+                    raise EmbeddingError(f"Unknown response format for model: {self.model_name}")
+                
+                embeddings.append(embedding_vector)
             
             return np.array(embeddings)
             

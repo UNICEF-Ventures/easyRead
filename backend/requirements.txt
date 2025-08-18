@@ -1,13 +1,12 @@
-cohere
-openai
+# Removed: cohere, openai - using AWS Bedrock only
 django
 python-dotenv
 Pillow
 requests
-docling
+pymupdf4llm
 djangorestframework
 reportlab
-litellm
+# Removed: litellm - not needed for Bedrock-only setup
 PyYAML
 django-cors-headers
 psycopg2-binary
