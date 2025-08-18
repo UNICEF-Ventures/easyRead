@@ -1,21 +1,19 @@
-# Removed: cohere, openai - using AWS Bedrock only
+# Core Django & Web Framework
 django
-python-dotenv
-Pillow
-requests
-pymupdf4llm
 djangorestframework
-reportlab
-# Removed: litellm - not needed for Bedrock-only setup
-PyYAML
 django-cors-headers
+python-dotenv
 psycopg2-binary
 pgvector
 dj-database-url
-numpy
-svglib
-python-magic
+PyYAML
+
+# PDF Processing & Document Export  
+pymupdf4llm
 python-docx
+
+# Image Processing & AI
+Pillow
+numpy
 boto3
-botocore
 gradio_client

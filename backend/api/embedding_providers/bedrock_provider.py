@@ -156,38 +156,60 @@ class BedrockEmbeddingProvider(EmbeddingProvider):
             
             embeddings = []
             
-            # Process texts individually (Bedrock doesn't support batch for all models)
-            for text in filtered_texts:
-                # Prepare the request body based on model type
-                if self.model_name.startswith('amazon.titan'):
-                    body = json.dumps({"inputText": text})
-                elif self.model_name.startswith('cohere.embed'):
+            # Process texts with batching support
+            if self.model_name.startswith('cohere.embed'):
+                # Cohere models support batching up to 96 texts per call
+                batch_size = min(96, len(filtered_texts))
+                
+                # Process in batches
+                for i in range(0, len(filtered_texts), batch_size):
+                    batch_texts = filtered_texts[i:i + batch_size]
+                    
+                    # Prepare batch request
                     body = json.dumps({
-                        "texts": [text],
+                        "texts": batch_texts,
                         "input_type": "search_document"
                     })
-                else:
-                    raise EmbeddingError(f"Unsupported model: {self.model_name}")
-                
-                # Call AWS Bedrock directly
-                response = self.bedrock_client.invoke_model(
-                    modelId=self.model_name,
-                    body=body,
-                    contentType='application/json',
-                    accept='application/json'
-                )
-                
-                # Parse response
-                response_body = json.loads(response['body'].read())
-                
-                if self.model_name.startswith('amazon.titan'):
-                    embedding_vector = response_body['embedding']
-                elif self.model_name.startswith('cohere.embed'):
-                    embedding_vector = response_body['embeddings'][0]
-                else:
-                    raise EmbeddingError(f"Unknown response format for model: {self.model_name}")
-                
-                embeddings.append(embedding_vector)
+                    
+                    # Call AWS Bedrock with batch
+                    response = self.bedrock_client.invoke_model(
+                        modelId=self.model_name,
+                        body=body,
+                        contentType='application/json',
+                        accept='application/json'
+                    )
+                    
+                    # Parse batch response
+                    response_body = json.loads(response['body'].read())
+                    batch_embeddings = response_body['embeddings']
+                    embeddings.extend(batch_embeddings)
+                    
+            else:
+                # Titan models process individually (no batch support)
+                for text in filtered_texts:
+                    # Prepare the request body
+                    if self.model_name.startswith('amazon.titan'):
+                        body = json.dumps({"inputText": text})
+                    else:
+                        raise EmbeddingError(f"Unsupported model: {self.model_name}")
+                    
+                    # Call AWS Bedrock directly
+                    response = self.bedrock_client.invoke_model(
+                        modelId=self.model_name,
+                        body=body,
+                        contentType='application/json',
+                        accept='application/json'
+                    )
+                    
+                    # Parse response
+                    response_body = json.loads(response['body'].read())
+                    
+                    if self.model_name.startswith('amazon.titan'):
+                        embedding_vector = response_body['embedding']
+                    else:
+                        raise EmbeddingError(f"Unknown response format for model: {self.model_name}")
+                    
+                    embeddings.append(embedding_vector)
             
             return np.array(embeddings)
             
