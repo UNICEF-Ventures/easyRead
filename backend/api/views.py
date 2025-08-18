@@ -1,4 +1,4 @@
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -17,24 +17,13 @@ import logging
 import uuid
 import yaml
 import json
-from pathlib import Path
 import boto3
 import re
 from django.conf import settings
-from django.http import JsonResponse
-import base64
-# import cohere # Removed Cohere
-# ChromaDB removed - now using PostgreSQL with pgvector
 from dotenv import load_dotenv
-from PIL import Image
-import io
-import glob # Might not be needed here if not listing
-import uuid # Moved import to top
 import time # Added for health check
 import threading # For background processing
 from .models import ProcessedContent, ImageSet, Image # Import the new models
-# SentenceTransformer removed - using API-based embedding providers only
-# from openai import OpenAI
 from .config import get_retry_config, load_prompt_template, VALIDATE_COMPLETENESS_PROMPT_FILE, REVISE_SENTENCES_PROMPT_FILE
 from django.core.files.base import ContentFile
 from gradio_client import Client, handle_file # Added Gradio client import
@@ -342,7 +331,6 @@ load_dotenv(settings.BASE_DIR.parent / '.env') # Load .env from project root
 
 # COHERE_API_KEY = os.getenv("COHERE_API_KEY") # Removed Cohere API Key
 IMAGE_UPLOAD_DIR = settings.MEDIA_ROOT / "uploaded_images"
-# ChromaDB configuration removed - now using PostgreSQL with pgvector
 # COHERE_MODEL = "embed-english-light-v3.0" # Removed Cohere model
 # CLIP_MODEL_NAME = 'sentence-transformers/clip-ViT-B-32-multilingual-v1' # Removed - using API providers
 
@@ -364,7 +352,6 @@ IMAGE_UPLOAD_DIR = settings.MEDIA_ROOT / "uploaded_images"
 # All embedding processing now uses API-based providers (AWS Bedrock, OpenAI, Cohere)
 # through the embedding_adapter system for better scalability and memory efficiency
 
-# ChromaDB initialization removed - now using PostgreSQL with pgvector for embeddings
 
 # --- OpenAI Client Removed ---
 # Using only AWS Bedrock for LLM completions
@@ -999,7 +986,7 @@ def upload_image(request):
 def find_similar_images(request):
     """
     API endpoint to find N most similar images based on a text query.
-    Uses the new PostgreSQL database with embeddings instead of ChromaDB.
+    Uses PostgreSQL database with pgvector for similarity search.
     Expects JSON: {
         "query": "text description", 
         "n_results": <integer>,
