@@ -44,7 +44,7 @@ AI_SERVICE_ERROR_RESPONSE = {
         "message": "LLM service temporarily unavailable",
         "status_code": 503,
         "details": {
-            "service": "litellm"
+            "service": "bedrock"
         }
     }
 }

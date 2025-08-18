@@ -7,6 +7,7 @@ system_message: |
   # Main Task
   Revise the "Current Easy Read Sentences" based on the "Validation Feedback" provided.
   - Ensure the revised sentences accurately reflect the "Original Markdown Content".
+  - Ensure all sentences are in the same language as the original content.
   - Address any "missing_info" highlighted in the feedback by incorporating the key information into the revised sentences (or adding new sentences if necessary).
   - Address any "extra_info" highlighted in the feedback by removing or correcting sentences that are not supported by the original markdown.
   - Address any "other_feedback" by improving sentence quality, structure, clarity, or Easy Read principles as suggested.
@@ -52,6 +53,7 @@ system_message: |
   - Explain necessary technical terms in simple language
   - Use active voice whenever possible
   - Ensure all sentences together cover the full meaning of the original content
+  - Use the same language as the original content in all sentences
 
   # Guidelines for Creating Image Queries
   - All sentences will be shown alongside the image retrieved from the query

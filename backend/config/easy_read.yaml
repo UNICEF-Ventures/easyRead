@@ -33,12 +33,14 @@ system_message: |
   7. Explain necessary technical terms in simple language
   8. Use active voice whenever possible
   9. Ensure all sentences together cover the full meaning of the original content
+  10. Use the same language as the original content in all sentences
 
   # Quality Requirements
   - Ensure sentences accurately reflect the original Markdown content
   - Do not introduce information not present in the original markdown
   - Maintain factual accuracy while simplifying language
   - Ensure completeness - all key information must be covered
+  - Ensure all sentences are in the same language as the original content
 
   # Guidelines for Creating Image Queries
   - All sentences will be shown alongside the image retrieved from the query

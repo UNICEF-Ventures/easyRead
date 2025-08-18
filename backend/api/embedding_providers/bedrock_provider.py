@@ -1,5 +1,5 @@
 """
-AWS Bedrock embedding provider using LiteLLM.
+AWS Bedrock embedding provider.
 Supports Amazon Titan and Cohere embedding models via AWS Bedrock.
 """
 

@@ -164,9 +164,6 @@ def convert_url_to_relative_path(url):
         # If parsing fails, return the original
         return url
 
-# Create your views here.
-
-# Setup LiteLLM logging (optional, but helpful)
 # Initialize Bedrock client for LLM calls
 bedrock_runtime = None
 try:
@@ -268,9 +265,6 @@ def extract_json_from_llm_response(raw_response: str) -> dict:
 
 
 def bedrock_completion(model: str, messages: list, response_format: dict = None):
-    """
-    Replace litellm.completion with direct Bedrock calls for Llama models.
-    """
     if not bedrock_runtime:
         raise Exception("Bedrock runtime client not initialized")
     
