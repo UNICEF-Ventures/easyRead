@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState, useRef } from 'react';
 import {
   Box,
   List,
@@ -15,6 +15,11 @@ import {
   Button,
   IconButton
 } from '@mui/material';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import TextField from '@mui/material/TextField';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import { config } from '../config.js';
 
@@ -41,6 +46,11 @@ function EasyReadContentList({
   isLoading = false, // Prop to indicate parent loading state
   readOnly = false // Prop to disable editing capabilities
 }) {
+  const [promptModalOpen, setPromptModalOpen] = useState(false);
+  const [activeSentenceIndex, setActiveSentenceIndex] = useState(null);
+  const [editablePrompt, setEditablePrompt] = useState('');
+  const [userKeywords, setUserKeywords] = useState({}); // Store user-input keywords per sentence
+  const generatorButtonRefs = useRef({});
   
   // Memoize the image selection change handler to prevent unnecessary re-renders
   const handleImageSelectionChange = useCallback((index, value) => {
@@ -51,10 +61,34 @@ function EasyReadContentList({
   
   // Memoize the generate image handler to prevent unnecessary re-renders
   const handleGenerateImage = useCallback((index, retrieval) => {
-    if (onGenerateImage) {
-      onGenerateImage(index, retrieval);
+    // Open modal allowing user to edit the prompt before generating
+    setActiveSentenceIndex(index);
+    // Use stored user keywords if available, otherwise use original retrieval
+    setEditablePrompt(userKeywords[index] || retrieval || '');
+    setPromptModalOpen(true);
+  }, [onGenerateImage, userKeywords]);
+
+  const closeModal = useCallback(() => {
+    setPromptModalOpen(false);
+    // Restore focus to the generator button that opened the modal
+    if (activeSentenceIndex !== null && generatorButtonRefs.current[activeSentenceIndex]) {
+      try { generatorButtonRefs.current[activeSentenceIndex].focus(); } catch {}
     }
-  }, [onGenerateImage]);
+    setActiveSentenceIndex(null);
+    setEditablePrompt('');
+  }, [activeSentenceIndex]);
+
+  const submitPrompt = useCallback(() => {
+    const value = (editablePrompt || '').trim();
+    if (!value) return;
+    if (onGenerateImage && activeSentenceIndex !== null) {
+      // Store the user keywords for this sentence
+      setUserKeywords(prev => ({ ...prev, [activeSentenceIndex]: value }));
+      onGenerateImage(activeSentenceIndex, value);
+    }
+    // Close immediately; the per-item icon will show spinner via isGenerating
+    closeModal();
+  }, [editablePrompt, onGenerateImage, activeSentenceIndex, closeModal]);
   
   // Memoize the content list to prevent unnecessary re-renders when imageState changes
   const memoizedContentList = useMemo(() => {
@@ -100,7 +134,8 @@ function EasyReadContentList({
   }
 
   return (
-    <List disablePadding>
+    <React.Fragment>
+      <List disablePadding>
       {memoizedContentList.map((item) => {
         const { 
           images, 
@@ -134,7 +169,7 @@ function EasyReadContentList({
                   
                   {!itemIsLoading && (selectedPath || (images && images.length > 0)) && (
                     <Tooltip 
-                      title={item.image_retrieval || 'No retrieval query'} 
+                      title={userKeywords[index] || item.image_retrieval || 'No retrieval query'} 
                       enterDelay={500}
                       arrow
                     >
@@ -260,6 +295,8 @@ function EasyReadContentList({
                             onClick={() => handleGenerateImage(index, item.image_retrieval)}
                             disabled={isGenerating || itemIsLoading}
                             color="primary"
+                            aria-label="Generate image"
+                            ref={(el) => { generatorButtonRefs.current[index] = el; }}
                           >
                             {isGenerating ? <CircularProgress size={20} color="inherit" /> : <AutoFixHighIcon />}
                           </IconButton>
@@ -295,6 +332,40 @@ function EasyReadContentList({
         );
       })}
     </List>
+    
+    {/* Prompt Edit Modal */}
+    <Dialog open={promptModalOpen} onClose={closeModal} fullWidth maxWidth="sm" aria-labelledby="edit-prompt-title">
+      <DialogTitle id="edit-prompt-title">
+        Edit keywords for sentence: "{activeSentenceIndex !== null && easyReadContent[activeSentenceIndex] ? easyReadContent[activeSentenceIndex].sentence : ''}"
+      </DialogTitle>
+      <form onSubmit={(e) => { e.preventDefault(); submitPrompt(); }}>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Keywords / prompt"
+            type="text"
+            fullWidth
+            value={editablePrompt}
+            onChange={(e) => setEditablePrompt(e.target.value)}
+          />
+          <Typography variant="caption" color="text.secondary">
+            These keywords will be used to generate the image. You can adjust them.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeModal}>Cancel</Button>
+          <Button
+            variant="contained"
+            type="submit"
+            disabled={!editablePrompt || editablePrompt.trim() === ''}
+          >
+            Generate
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+    </React.Fragment>
   );
 }
 
