@@ -48,7 +48,7 @@ function IntroPage() {
           {/* Description */}
           <Typography
             variant="h6"
-            component="p"
+            component="div"
             sx={{
               mb: 4,
               color: '#333',
@@ -57,7 +57,7 @@ function IntroPage() {
             }}
           >
             <p><strong>Easy Read</strong> is a way of writing that makes information easier to understand for people who may find standard text difficult. It uses short sentences, simple words, and supportive images to explain ideas step by step. The focus is on clarity and inclusion, so that everyone can access and engage with important information.</p>
-            <br></br>
+            <br />
             <p>The EasyRead prototype from UNICEF’s Office of Innovation applies this approach with the help of AI. It automatically transforms complex documents—like policies, reports, or guides—into Easy Read format, simplifying language and restructuring content to improve accessibility. The aim is to ensure that vital information is available to all, regardless of reading ability or background.</p>
           </Typography>
 

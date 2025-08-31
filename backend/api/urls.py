@@ -35,6 +35,7 @@ urlpatterns = [
     path('update-saved-content-image/<int:content_id>/', views.update_saved_content_image, name='update_saved_content_image'),
     path('update-saved-content-image/by-token/<uuid:public_id>/', views.update_saved_content_image_by_token, name='update_saved_content_image_by_token'),
     path('bulk-update-saved-content-images/<int:content_id>/', views.bulk_update_saved_content_images, name='bulk_update_saved_content_images'),
+    path('update-saved-content/<int:content_id>/', views.update_saved_content_full, name='update_saved_content_full'),
     
     # New endpoints for the refactored system
     path('image-sets/', views.get_image_sets, name='get_image_sets'),

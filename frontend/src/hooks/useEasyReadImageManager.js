@@ -48,6 +48,8 @@ const cachedFindSimilarImages = (query, n_results, excludeList = [], signal, ima
 // Custom hook to manage image state and actions for EasyRead content
 function useEasyReadImageManager(initialContent = [], contentId = null, selectedSets = [], preventDuplicateImages = true) {
   const [imageState, setImageState] = useState({});
+  const [userKeywords, setUserKeywords] = useState({}); // Store user-input keywords per sentence
+  const [imageSearchSource, setImageSearchSource] = useState({}); // Track search source: 'original' | 'custom'
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState(0);
@@ -68,7 +70,10 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
   useEffect(() => {
     if (!initialContent || initialContent.length === 0) {
       setImageState({});
+      setUserKeywords({});
       contentRef.current = null;
+      // Clear any used images tracking
+      usedImagesRef.current.clear();
       return;
     }
 
@@ -92,6 +97,18 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     if (import.meta.env.DEV) {
       console.log('🔄 Content signature changed, starting new image fetch');
     }
+    
+    // Clean up old keywords that are no longer relevant when content changes
+    setUserKeywords(prev => {
+      const relevantKeywords = {};
+      Object.keys(prev).forEach(index => {
+        const numIndex = parseInt(index);
+        if (numIndex < initialContent.length) {
+          relevantKeywords[index] = prev[index];
+        }
+      });
+      return relevantKeywords;
+    });
 
     // Cancel any existing requests ONLY when content actually changes
     if (abortControllerRef.current) {
@@ -110,6 +127,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     
     
     const initialImageState = {};
+    const initialUserKeywords = {};
     const needsFetching = [];
 
     initialContent.forEach((item, index) => {
@@ -155,10 +173,19 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
           fetchingRef.current[index] = true;
         }
       }
+      
+      // Initialize user keywords from saved content
+      if (item.user_keywords) {
+        initialUserKeywords[index] = item.user_keywords;
+      }
     });
     
     if (Object.keys(initialImageState).length > 0) {
        setImageState(prev => ({ ...prev, ...initialImageState }));
+    }
+    
+    if (Object.keys(initialUserKeywords).length > 0) {
+       setUserKeywords(prev => ({ ...prev, ...initialUserKeywords }));
        
        // Initialize currentImageSelectionsRef with initial selections
        Object.keys(initialImageState).forEach(index => {
@@ -567,12 +594,42 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentId, preventDuplicateImages]); // Remove imageState dependency to prevent infinite loops
 
+  // Validation function for user keywords
+  const validateKeywords = useCallback((keywords) => {
+    if (!keywords || typeof keywords !== 'string') {
+      return { valid: false, message: 'Keywords must be a non-empty text.' };
+    }
+    
+    const trimmed = keywords.trim();
+    if (trimmed.length === 0) {
+      return { valid: false, message: 'Keywords cannot be empty.' };
+    }
+    
+    if (trimmed.length > 500) {
+      return { valid: false, message: 'Keywords cannot exceed 500 characters.' };
+    }
+    
+    // Check for potentially problematic content
+    if (trimmed.length < 2) {
+      return { valid: false, message: 'Keywords must be at least 2 characters long.' };
+    }
+    
+    return { valid: true, trimmed };
+  }, []);
+
   // Memoize the generate image handler to prevent unnecessary re-renders
   const handleGenerateImage = useCallback(async (sentenceIndex, prompt) => {
-    if (!prompt) {
-      setNotification({ open: true, message: 'Cannot generate image without a prompt.', severity: 'warning' });
+    // Validate the input keywords
+    const validation = validateKeywords(prompt);
+    if (!validation.valid) {
+      setNotification({ open: true, message: validation.message, severity: 'warning' });
       return;
     }
+
+    const validatedPrompt = validation.trimmed;
+    
+    // Store the user keywords for this sentence
+    setUserKeywords(prev => ({ ...prev, [sentenceIndex]: validatedPrompt }));
 
     // Store original state for potential revert
     let originalState;
@@ -590,7 +647,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     });
 
     try {
-      const response = await generateNewImage(prompt);
+      const response = await generateNewImage(validatedPrompt);
       
       let newImages = [];
       let newSelectedPath = null;
@@ -659,14 +716,152 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
       }
     } catch (err) {
       console.error(`useEasyReadImageManager: Error generating image for sentence ${sentenceIndex}:`, err);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Image generation failed. Please try again.';
+      if (err.response) {
+        // Server responded with error status
+        if (err.response.status === 429) {
+          errorMessage = 'Too many requests. Please wait a moment and try again.';
+        } else if (err.response.status === 400) {
+          errorMessage = 'Invalid keywords provided. Please check your input.';
+        } else if (err.response.data?.error) {
+          errorMessage = err.response.data.error;
+        }
+      } else if (err.code === 'ECONNABORTED') {
+        errorMessage = 'Request timed out. The image generation service may be busy.';
+      } else if (!navigator.onLine) {
+        errorMessage = 'No internet connection. Please check your connection and try again.';
+      }
+      
       setImageState(prev => ({
         ...prev,
         [sentenceIndex]: { ...originalState, isGenerating: false, error: 'Image generation failed' }
       }));
-      setNotification({ open: true, message: 'Image generation failed. Please try again.', severity: 'error' });
+      setNotification({ open: true, message: errorMessage, severity: 'error' });
     }
-  }, [contentId]); // Remove imageState dependency to prevent infinite loops
+  }, [contentId, validateKeywords]); // Remove imageState dependency to prevent infinite loops
 
+  // Function to search with custom keywords
+  const handleSearchWithCustomKeywords = useCallback(async (sentenceIndex, keywords) => {
+    // Validate the input keywords
+    const validation = validateKeywords(keywords);
+    if (!validation.valid) {
+      setNotification({ open: true, message: validation.message, severity: 'warning' });
+      return;
+    }
+
+    const validatedKeywords = validation.trimmed;
+    
+    // Store the user keywords for this sentence
+    setUserKeywords(prev => ({ ...prev, [sentenceIndex]: validatedKeywords }));
+
+    // Store original state for potential revert
+    let originalState;
+    setImageState(prev => {
+      originalState = prev[sentenceIndex] || { images: [], selectedPath: null, error: null, isLoading: false };
+      return {
+        ...prev,
+        [sentenceIndex]: {
+          ...originalState,
+          isLoading: true,
+          error: null
+        }
+      };
+    });
+
+    try {
+      // Debug logging for custom keyword search
+      if (import.meta.env.DEV) {
+        console.log(`🔍 Starting custom keyword search for: "${validatedKeywords}" in sets:`, selectedSets);
+      }
+      
+      // Search for images using custom keywords
+      const response = await cachedFindSimilarImages(validatedKeywords, 10, [], null, selectedSets);
+      
+      // Extract results from API response
+      const images = response.data.results || [];
+      
+      if (images && images.length > 0) {
+        const newImages = images.map(img => ({ url: img.url, id: img.id || img.url }));
+        
+        setImageState(prev => ({
+          ...prev,
+          [sentenceIndex]: {
+            ...originalState,
+            images: newImages,
+            selectedPath: newImages[0].url, // Auto-select first result
+            isLoading: false,
+            error: null
+          }
+        }));
+        
+        // Track that this sentence is using custom search results
+        setImageSearchSource(prev => ({ ...prev, [sentenceIndex]: 'custom' }));
+        
+        setNotification({ 
+          open: true, 
+          message: `Found ${newImages.length} images for "${validatedKeywords}"`, 
+          severity: 'success' 
+        });
+        
+        // Log success for debugging
+        if (import.meta.env.DEV) {
+          console.log(`🔍 Custom keyword search found ${newImages.length} images for: "${validatedKeywords}"`);
+        }
+        
+        // Update current selections ref
+        currentImageSelectionsRef.current[sentenceIndex] = newImages[0].url;
+        
+        // If it's saved content, update the backend
+        if (contentId !== null) {
+          try {
+            const allAlternativeUrls = newImages.map(img => img.url);
+            await updateSavedContentImage(contentId, sentenceIndex, newImages[0].url, allAlternativeUrls);
+          } catch (err) {
+            console.error(`useEasyReadImageManager: Error updating saved image after custom search for sentence ${sentenceIndex}:`, err);
+            setNotification({ open: true, message: 'Found images but failed to save selection', severity: 'warning' });
+          }
+        }
+      } else {
+        // No results found
+        setImageState(prev => ({
+          ...prev,
+          [sentenceIndex]: {
+            ...originalState,
+            isLoading: false,
+            error: 'No images found'
+          }
+        }));
+        
+        setNotification({ 
+          open: true, 
+          message: `No images found for "${validatedKeywords}". Try different keywords or generate a new image.`, 
+          severity: 'info' 
+        });
+      }
+    } catch (err) {
+      console.error(`useEasyReadImageManager: Error searching images with custom keywords for sentence ${sentenceIndex}:`, err);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Image search failed. Please try again.';
+      if (err.response) {
+        if (err.response.status === 429) {
+          errorMessage = 'Too many requests. Please wait a moment and try again.';
+        } else if (err.response.data?.error) {
+          errorMessage = err.response.data.error;
+        }
+      } else if (!navigator.onLine) {
+        errorMessage = 'No internet connection. Please check your connection and try again.';
+      }
+      
+      setImageState(prev => ({
+        ...prev,
+        [sentenceIndex]: { ...originalState, isLoading: false, error: 'Search failed' }
+      }));
+      setNotification({ open: true, message: errorMessage, severity: 'error' });
+    }
+  }, [validateKeywords, selectedSets, contentId]);
 
   // Function to refresh all images
   const handleRefreshAllImages = useCallback(async () => {
@@ -905,6 +1100,8 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
 
   return {
     imageState,
+    userKeywords,
+    imageSearchSource,
     setImageState, // Expose if direct manipulation is needed outside
     preventDuplicateImages,
     refreshingAll,
@@ -912,6 +1109,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     notification,
     handleImageSelectionChange,
     handleGenerateImage,
+    handleSearchWithCustomKeywords,
     handleRefreshAllImages,
     handleCloseNotification,
     getCurrentImageSelections // Expose function to get current selections

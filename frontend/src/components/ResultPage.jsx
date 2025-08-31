@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import PropTypes from 'prop-types';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -44,9 +45,12 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
   // Use the custom hook for image management
   const {
     imageState,
+    userKeywords,
+    imageSearchSource,
     notification,
     handleImageSelectionChange,
     handleGenerateImage,
+    handleSearchWithCustomKeywords,
     handleCloseNotification,
     getCurrentImageSelections
   } = useEasyReadImageManager(memoizedEasyReadContent, null, selectedSets, preventDuplicateImages); // Pass memoized content, selected sets, and duplicate prevention setting
@@ -92,7 +96,8 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
       return {
         ...item,
         selected_image_path: finalSelectedPath,
-        alternative_images: imageState[index]?.images?.map(img => img.url) || []
+        alternative_images: imageState[index]?.images?.map(img => img.url) || [],
+        user_keywords: userKeywords[index] || null // Include user keywords if available
       };
     });
 
@@ -129,6 +134,17 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Handle sentence changes from inline editing
+  const handleSentenceChange = (index, newSentence) => {
+    // Update the easyReadContent directly since it's passed as props
+    // The parent component would need to handle this state update
+    console.log(`Sentence at index ${index} changed to: "${newSentence}"`);
+    
+    // For now, we'll just log it. In a complete implementation,
+    // this would need to bubble up to the parent component that owns easyReadContent
+    // or we'd need to manage a local copy of the content with useState
   };
   
   // Snackbar handlers remain specific or could be part of the hook if generalized
@@ -295,8 +311,12 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
             <EasyReadContentList 
               easyReadContent={easyReadContent}
               imageState={imageState} // From hook
+              userKeywords={userKeywords} // From hook
+              imageSearchSource={imageSearchSource} // From hook
               onImageSelectionChange={handleImageSelectionChange} // From hook
               onGenerateImage={handleGenerateImage} // From hook
+              onSearchWithCustomKeywords={handleSearchWithCustomKeywords} // From hook
+              onSentenceChange={handleSentenceChange} // For inline editing
             />
           </Paper>
         </>
@@ -331,5 +351,10 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
 
 // Export the memoized component
 const ResultPage = React.memo(ResultPageComponent);
+
+// PropTypes for type safety
+ResultPage.propTypes = {
+  // No props as this component gets data from location.state
+};
 
 export default ResultPage; 

@@ -1,4 +1,5 @@
 import React, { useMemo, useCallback, useState, useRef } from 'react';
+import PropTypes from 'prop-types';
 import {
   Box,
   List,
@@ -13,7 +14,9 @@ import {
   Typography,
   Tooltip,
   Button,
-  IconButton
+  IconButton,
+  Chip,
+  Stack
 } from '@mui/material';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -21,6 +24,8 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import SearchIcon from '@mui/icons-material/Search';
+import EditIcon from '@mui/icons-material/Edit';
 import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
@@ -43,13 +48,17 @@ function EasyReadContentList({
   imageState = {}, 
   onImageSelectionChange, 
   onGenerateImage,
+  onSearchWithCustomKeywords, // New prop for searching with custom keywords
+  onSentenceChange, // New prop for handling sentence text changes
+  userKeywords = {}, // Receive userKeywords from hook
   isLoading = false, // Prop to indicate parent loading state
   readOnly = false // Prop to disable editing capabilities
 }) {
   const [promptModalOpen, setPromptModalOpen] = useState(false);
   const [activeSentenceIndex, setActiveSentenceIndex] = useState(null);
   const [editablePrompt, setEditablePrompt] = useState('');
-  const [userKeywords, setUserKeywords] = useState({}); // Store user-input keywords per sentence
+  const [editingSentences, setEditingSentences] = useState({}); // Track which sentences are being edited
+  const [editedSentenceTexts, setEditedSentenceTexts] = useState({}); // Store edited sentence content
   const generatorButtonRefs = useRef({});
   
   // Memoize the image selection change handler to prevent unnecessary re-renders
@@ -66,29 +75,103 @@ function EasyReadContentList({
     // Use stored user keywords if available, otherwise use original retrieval
     setEditablePrompt(userKeywords[index] || retrieval || '');
     setPromptModalOpen(true);
-  }, [onGenerateImage, userKeywords]);
+  }, [userKeywords]);
 
   const closeModal = useCallback(() => {
     setPromptModalOpen(false);
     // Restore focus to the generator button that opened the modal
     if (activeSentenceIndex !== null && generatorButtonRefs.current[activeSentenceIndex]) {
-      try { generatorButtonRefs.current[activeSentenceIndex].focus(); } catch {}
+      try { 
+        generatorButtonRefs.current[activeSentenceIndex].focus(); 
+      } catch (error) {
+        // Focus may fail if element is no longer available
+        console.debug('Failed to restore focus:', error);
+      }
     }
     setActiveSentenceIndex(null);
     setEditablePrompt('');
   }, [activeSentenceIndex]);
 
-  const submitPrompt = useCallback(() => {
+  const handleSearchImages = useCallback(() => {
     const value = (editablePrompt || '').trim();
-    if (!value) return;
+    if (!value) {
+      return;
+    }
+    if (onSearchWithCustomKeywords && activeSentenceIndex !== null) {
+      onSearchWithCustomKeywords(activeSentenceIndex, value);
+    }
+    closeModal();
+  }, [editablePrompt, onSearchWithCustomKeywords, activeSentenceIndex, closeModal]);
+  
+  const handleGenerateImageSubmit = useCallback(() => {
+    const value = (editablePrompt || '').trim();
+    if (!value) {
+      return;
+    }
     if (onGenerateImage && activeSentenceIndex !== null) {
-      // Store the user keywords for this sentence
-      setUserKeywords(prev => ({ ...prev, [activeSentenceIndex]: value }));
       onGenerateImage(activeSentenceIndex, value);
     }
-    // Close immediately; the per-item icon will show spinner via isGenerating
     closeModal();
   }, [editablePrompt, onGenerateImage, activeSentenceIndex, closeModal]);
+  
+  // Helper function to generate informative tooltip text
+  const getTooltipText = useCallback((index, item) => {
+    const customKeywords = userKeywords[index];
+    const originalKeywords = item.image_retrieval;
+    
+    if (!customKeywords && !originalKeywords) {
+      return 'No keywords available';
+    }
+    
+    // If user has custom keywords that differ from original, show as "Custom: ..."
+    if (customKeywords && originalKeywords && customKeywords !== originalKeywords) {
+      return `Custom: "${customKeywords}"`;
+    }
+    
+    // Otherwise, just show the keywords (whether custom or original)
+    const keywords = customKeywords || originalKeywords;
+    return `"${keywords}"`;
+  }, [userKeywords]);
+  
+  // Handlers for inline sentence editing
+  const handleSentenceClick = useCallback((index, currentSentence) => {
+    if (readOnly) return; // Don't allow editing in read-only mode
+    
+    setEditingSentences(prev => ({ ...prev, [index]: true }));
+    setEditedSentenceTexts(prev => ({ ...prev, [index]: currentSentence }));
+  }, [readOnly]);
+  
+  const handleSentenceKeyDown = useCallback((event, index) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      // Save the edited sentence
+      const newText = editedSentenceTexts[index]?.trim();
+      if (newText && newText !== easyReadContent[index]?.sentence) {
+        if (onSentenceChange) {
+          onSentenceChange(index, newText);
+        }
+      }
+      
+      // Exit editing mode
+      setEditingSentences(prev => ({ ...prev, [index]: false }));
+      setEditedSentenceTexts(prev => ({ ...prev, [index]: undefined }));
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      // Cancel editing
+      setEditingSentences(prev => ({ ...prev, [index]: false }));
+      setEditedSentenceTexts(prev => ({ ...prev, [index]: undefined }));
+    }
+  }, [editedSentenceTexts, easyReadContent, onSentenceChange]);
+  
+  const handleSentenceChange = useCallback((index, value) => {
+    setEditedSentenceTexts(prev => ({ ...prev, [index]: value }));
+  }, []);
+  
+  const handleSentenceBlur = useCallback((index) => {
+    // Cancel editing on blur without saving
+    setEditingSentences(prev => ({ ...prev, [index]: false }));
+    setEditedSentenceTexts(prev => ({ ...prev, [index]: undefined }));
+  }, []);
   
   // Memoize the content list to prevent unnecessary re-renders when imageState changes
   const memoizedContentList = useMemo(() => {
@@ -135,6 +218,23 @@ function EasyReadContentList({
 
   return (
     <React.Fragment>
+      {/* Instructions for users */}
+      {!readOnly && (
+        <Box 
+          sx={{ 
+            mb: 2, 
+            p: 2, 
+            backgroundColor: 'rgba(25, 118, 210, 0.05)',
+            borderRadius: 1,
+            border: '1px solid rgba(25, 118, 210, 0.2)'
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            💡 <strong>Tip:</strong> Click on any sentence to edit the text. Click on the edit icon next to images to search for different images or generate new ones.
+          </Typography>
+        </Box>
+      )}
+
       <List disablePadding>
       {memoizedContentList.map((item) => {
         const { 
@@ -168,11 +268,21 @@ function EasyReadContentList({
                   )}
                   
                   {!itemIsLoading && (selectedPath || (images && images.length > 0)) && (
-                    <Tooltip 
-                      title={userKeywords[index] || item.image_retrieval || 'No retrieval query'} 
-                      enterDelay={500}
-                      arrow
-                    >
+                    <Box>
+                      <Tooltip 
+                        title={getTooltipText(index, item)}
+                        enterDelay={500}
+                        arrow
+                        componentsProps={{
+                          tooltip: {
+                            sx: {
+                              whiteSpace: 'pre-line', // Allow line breaks in tooltip
+                              maxWidth: 300,
+                              fontSize: '0.75rem'
+                            }
+                          }
+                        }}
+                      >
                       {/* Adjust FormControl to not be fullWidth unnecessarily */}
                       <FormControl size="small" variant="outlined" sx={{ width: '100%' }}> 
                         <Select
@@ -265,7 +375,9 @@ function EasyReadContentList({
                           ))}
                         </Select>
                       </FormControl>
-                    </Tooltip>
+                      </Tooltip>
+                      
+                    </Box>
                   )}
                   
                   {!itemIsLoading && !selectedPath && (!images || images.length === 0) && (
@@ -285,20 +397,39 @@ function EasyReadContentList({
                     </Box>
                   )}
                   
+                  {/* Visual indicator for customized keywords */}
+                  {userKeywords[index] && userKeywords[index] !== item.image_retrieval && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 0.5 }}>
+                      <Chip 
+                        size="small" 
+                        label="Custom Keywords" 
+                        color="primary" 
+                        variant="outlined"
+                        sx={{ 
+                          fontSize: '0.65rem', 
+                          height: 18,
+                          '& .MuiChip-label': {
+                            px: 1
+                          }
+                        }}
+                      />
+                    </Box>
+                  )}
+                  
                   {/* Center the generate icon below the image area */}
                   {canGenerate && onGenerateImage && !readOnly && (
                     <Box sx={{ textAlign: 'center', mt: 1 }}>
-                      <Tooltip title={isGenerating ? "Generating..." : "Generate Image"}>
+                      <Tooltip title={isGenerating ? "Generating..." : "Edit Keywords"}>
                         <span> 
                           <IconButton 
                             size="small"
                             onClick={() => handleGenerateImage(index, item.image_retrieval)}
                             disabled={isGenerating || itemIsLoading}
                             color="primary"
-                            aria-label="Generate image"
+                            aria-label="Edit keywords"
                             ref={(el) => { generatorButtonRefs.current[index] = el; }}
                           >
-                            {isGenerating ? <CircularProgress size={20} color="inherit" /> : <AutoFixHighIcon />}
+                            {isGenerating ? <CircularProgress size={20} color="inherit" /> : <EditIcon />}
                           </IconButton>
                         </span>
                       </Tooltip>
@@ -308,23 +439,52 @@ function EasyReadContentList({
               
               {/* Sentence Column (takes remaining space) */}
               <Box sx={{ flexGrow: 1, minWidth: 0 }}> {/* minWidth: 0 prevents overflow issues */}
-                <ListItemText 
-                   primary={
-                     <Typography 
-                       variant="body1" 
-                       sx={{ 
-                         fontWeight: item.highlighted ? 'bold' : 'normal',
-                         ...(item.highlighted && { 
-                           color: 'primary.main',
-                           fontSize: '1.05em'
-                         })
-                       }}
-                     >
-                       {item.sentence}
-                     </Typography>
-                   }
-                   sx={{ m: 0 }}
-                />
+                {editingSentences[index] ? (
+                  <TextField
+                    fullWidth
+                    value={editedSentenceTexts[index] || item.sentence}
+                    onChange={(e) => handleSentenceChange(index, e.target.value)}
+                    onKeyDown={(e) => handleSentenceKeyDown(e, index)}
+                    onBlur={() => handleSentenceBlur(index)}
+                    autoFocus
+                    variant="outlined"
+                    size="small"
+                    multiline
+                    rows={2}
+                    sx={{ 
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                      }
+                    }}
+                  />
+                ) : (
+                  <ListItemText 
+                     primary={
+                       <Typography 
+                         variant="body1" 
+                         onClick={() => handleSentenceClick(index)}
+                         sx={{ 
+                           fontWeight: item.highlighted ? 'bold' : 'normal',
+                           cursor: 'pointer',
+                           '&:hover': {
+                             backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                             borderRadius: 1,
+                             padding: '4px 8px',
+                             margin: '-4px -8px'
+                           },
+                           ...(item.highlighted && { 
+                             color: 'primary.main',
+                             fontSize: '1.05em'
+                           })
+                         }}
+                         title="Click to edit sentence"
+                       >
+                         {item.sentence}
+                       </Typography>
+                     }
+                     sx={{ m: 0 }}
+                  />
+                )}
               </Box>
             </ListItem>
             {index < easyReadContent.length - 1 && <Divider component="li" />}
@@ -338,7 +498,7 @@ function EasyReadContentList({
       <DialogTitle id="edit-prompt-title">
         Edit keywords for sentence: "{activeSentenceIndex !== null && easyReadContent[activeSentenceIndex] ? easyReadContent[activeSentenceIndex].sentence : ''}"
       </DialogTitle>
-      <form onSubmit={(e) => { e.preventDefault(); submitPrompt(); }}>
+      <div>
         <DialogContent>
           <TextField
             autoFocus
@@ -346,27 +506,78 @@ function EasyReadContentList({
             label="Keywords / prompt"
             type="text"
             fullWidth
+            multiline
+            maxRows={3}
             value={editablePrompt}
             onChange={(e) => setEditablePrompt(e.target.value)}
+            inputProps={{ maxLength: 500 }}
+            helperText={`${editablePrompt.length}/500 characters`}
           />
           <Typography variant="caption" color="text.secondary">
-            These keywords will be used to generate the image. You can adjust them.
+            These keywords will be used to search image sets or generate new images. You can adjust them.
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeModal}>Cancel</Button>
           <Button
-            variant="contained"
-            type="submit"
+            onClick={handleSearchImages}
             disabled={!editablePrompt || editablePrompt.trim() === ''}
+            startIcon={<SearchIcon />}
           >
-            Generate
+            Search Image Sets
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleGenerateImageSubmit}
+            disabled={!editablePrompt || editablePrompt.trim() === ''}
+            startIcon={<AutoFixHighIcon />}
+          >
+            Generate New Image
           </Button>
         </DialogActions>
-      </form>
+      </div>
     </Dialog>
     </React.Fragment>
   );
 }
+
+// PropTypes for type safety
+EasyReadContentList.propTypes = {
+  easyReadContent: PropTypes.arrayOf(PropTypes.shape({
+    sentence: PropTypes.string.isRequired,
+    image_retrieval: PropTypes.string,
+    selected_image_path: PropTypes.string,
+    alternative_images: PropTypes.arrayOf(PropTypes.string),
+    user_keywords: PropTypes.string
+  })),
+  imageState: PropTypes.objectOf(PropTypes.shape({
+    images: PropTypes.arrayOf(PropTypes.shape({
+      url: PropTypes.string.isRequired,
+      id: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+    })),
+    selectedPath: PropTypes.string,
+    isLoading: PropTypes.bool,
+    isGenerating: PropTypes.bool,
+    error: PropTypes.string
+  })),
+  userKeywords: PropTypes.objectOf(PropTypes.string),
+  onImageSelectionChange: PropTypes.func,
+  onGenerateImage: PropTypes.func,
+  onSearchWithCustomKeywords: PropTypes.func,
+  isLoading: PropTypes.bool,
+  readOnly: PropTypes.bool
+};
+
+// Default props
+EasyReadContentList.defaultProps = {
+  easyReadContent: [],
+  imageState: {},
+  userKeywords: {},
+  onImageSelectionChange: null,
+  onGenerateImage: null,
+  onSearchWithCustomKeywords: null,
+  isLoading: false,
+  readOnly: false
+};
 
 export default React.memo(EasyReadContentList); 

@@ -644,6 +644,13 @@ export const bulkUpdateSavedContentImages = (contentId, imageSelections) => {
   });
 };
 
+// Function to update full saved content including user keywords
+export const updateSavedContentFull = (contentId, updatedContent) => {
+  return apiClient.put(`/update-saved-content/${contentId}/`, {
+    easy_read_json: updatedContent
+  });
+};
+
 // Function to export saved content as DOCX
 export const exportSavedContentDocx = (contentId) => {
   return apiClient.get(`/export/docx/${contentId}/`, {

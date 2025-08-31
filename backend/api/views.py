@@ -2678,3 +2678,81 @@ def process_single_image_upload(image_file, description, image_set):
     else:
         # Raise exception to maintain backward compatibility
         raise ValueError(result.get('error', 'Upload failed - embeddings required'))
+
+
+@api_view(['PUT'])
+@permission_classes([AllowAny])
+@csrf_exempt
+def update_saved_content_full(request, content_id):
+    """
+    API endpoint to update the full easy_read_json for saved content.
+    Supports updating both image selections and user keywords.
+    Expects JSON: {
+        "easy_read_json": [{
+            "sentence": "...",
+            "image_retrieval": "...",
+            "selected_image_path": "...",
+            "alternative_images": [...],
+            "user_keywords": "..."  // Optional
+        }, ...]
+    }
+    Returns JSON: {"message": "Content updated successfully."}
+    """
+    try:
+        # Validate input
+        if not isinstance(request.data, dict):
+            return Response({"error": "Invalid request format. Expected JSON object."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        easy_read_json = request.data.get('easy_read_json')
+        if not isinstance(easy_read_json, list):
+            return Response({"error": "Invalid 'easy_read_json' format. Expected array."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get the content object
+        content = get_object_or_404(ProcessedContent, pk=content_id)
+        
+        # Process the updated data (convert absolute paths to relative)
+        processed_data = []
+        for item in easy_read_json:
+            if not isinstance(item, dict):
+                continue
+                
+            processed_item = item.copy()
+            
+            # Convert selected image path to relative if needed
+            if item.get('selected_image_path'):
+                processed_item['selected_image_path'] = convert_url_to_relative_path(item['selected_image_path'])
+            
+            # Convert alternative image paths to relative if needed
+            if item.get('alternative_images') and isinstance(item['alternative_images'], list):
+                processed_item['alternative_images'] = [
+                    convert_url_to_relative_path(url) if url else url 
+                    for url in item['alternative_images']
+                ]
+            
+            # Validate user_keywords if present
+            if 'user_keywords' in item:
+                user_keywords = item['user_keywords']
+                if user_keywords is not None:
+                    if not isinstance(user_keywords, str):
+                        return Response({"error": "user_keywords must be a string or null."}, status=status.HTTP_400_BAD_REQUEST)
+                    if len(user_keywords) > 500:  # Reasonable limit
+                        return Response({"error": "user_keywords cannot exceed 500 characters."}, status=status.HTTP_400_BAD_REQUEST)
+                    processed_item['user_keywords'] = user_keywords.strip()
+            
+            processed_data.append(processed_item)
+        
+        # Update the content
+        content.easy_read_json = processed_data
+        content.save()
+        
+        # Convert back to URLs for response
+        response_data = convert_relative_paths_to_urls(processed_data, request)
+        
+        return Response({
+            "message": "Content updated successfully.",
+            "updated_content": response_data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in update_saved_content_full for content_id {content_id}: {str(e)}")
+        return Response({"error": "Internal server error occurred while updating content."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

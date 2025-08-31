@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -18,7 +19,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import DownloadIcon from '@mui/icons-material/Download';
 import ShareIcon from '@mui/icons-material/Share';
 // Removed unused import: format from 'date-fns'
-import apiClient, { bulkUpdateSavedContentImages, exportSavedContentDocx } from '../apiClient';
+import apiClient, { exportSavedContentDocx, updateSavedContentFull } from '../apiClient';
 import EasyReadContentList from './EasyReadContentList';
 import useEasyReadImageManager from '../hooks/useEasyReadImageManager';
 import { config } from '../config.js';
@@ -148,6 +149,29 @@ const SavedContentDetailPage = () => {
     }
   };
 
+  // Handle sentence changes from inline editing
+  const handleSentenceChange = (index, newSentence) => {
+    if (!canEdit) return; // Prevent editing if user doesn't have permission
+    
+    // Update the content state directly
+    setContent(prevContent => {
+      if (!prevContent?.easy_read_content) return prevContent;
+      
+      const updatedEasyReadContent = [...prevContent.easy_read_content];
+      updatedEasyReadContent[index] = {
+        ...updatedEasyReadContent[index],
+        sentence: newSentence
+      };
+      
+      return {
+        ...prevContent,
+        easy_read_content: updatedEasyReadContent
+      };
+    });
+    
+    console.log(`Sentence at index ${index} changed to: "${newSentence}"`);
+  };
+
   // Save function to update the saved content
   const handleSave = async () => {
     if (!content || !getCurrentImageSelections || !numericId) {
@@ -168,21 +192,33 @@ const SavedContentDetailPage = () => {
       // Get current image selections
       const currentSelections = getCurrentImageSelections();
       
-      // Convert to the format expected by the API (string keys)
-      const imageSelections = {};
-      Object.keys(currentSelections).forEach(index => {
-        if (currentSelections[index] !== null && currentSelections[index] !== undefined) {
-          imageSelections[index.toString()] = currentSelections[index];
-        }
+      // Prepare the full content update including both images and user keywords
+      const updatedContent = (content?.easy_read_content || []).map((item, index) => {
+        const finalSelectedPath = currentSelections[index] !== undefined 
+          ? currentSelections[index] 
+          : item.selected_image_path;
+        
+        return {
+          ...item,
+          selected_image_path: finalSelectedPath,
+          user_keywords: userKeywords[index] || item.user_keywords || null
+        };
       });
 
-      // Call the bulk update API using numeric ID
-      await bulkUpdateSavedContentImages(numericId, imageSelections);
+      // Call the full update API with error handling
+      const response = await updateSavedContentFull(numericId, updatedContent);
+      
+      // Log successful update for debugging
+      if (import.meta.env.DEV) {
+        console.log('Content updated successfully:', response.data);
+      }
       
       setSaveSuccess(true);
       
-      // Optionally refresh the content to ensure consistency
-      // await fetchSavedContentDetail();
+      // Refresh content to ensure consistency with server
+      setTimeout(() => {
+        fetchSavedContentDetail();
+      }, 1000); // Small delay to let the success message show
       
     } catch (err) {
       console.error('Error saving updated content:', err);
@@ -195,9 +231,12 @@ const SavedContentDetailPage = () => {
   // Use the custom hook for image management
   const {
     imageState,
+    userKeywords,
+    imageSearchSource,
     notification,
     handleImageSelectionChange,
     handleGenerateImage,
+    handleSearchWithCustomKeywords,
     handleCloseNotification,
     getCurrentImageSelections
   } = useEasyReadImageManager(content?.easy_read_content || [], id); // Pass content and id to the hook
@@ -306,8 +345,12 @@ const SavedContentDetailPage = () => {
             <EasyReadContentList 
               easyReadContent={content?.easy_read_content || []} 
               imageState={imageState} // From hook
+              userKeywords={userKeywords} // From hook
+              imageSearchSource={imageSearchSource} // From hook
               onImageSelectionChange={handleImageSelectionChange} // From hook
               onGenerateImage={handleGenerateImage} // From hook
+              onSearchWithCustomKeywords={handleSearchWithCustomKeywords} // From hook
+              onSentenceChange={handleSentenceChange} // For inline editing
               readOnly={!canEdit} // Disable editing if user doesn't have access
               // isLoading prop might not be needed if hook handles initial loading state internally
             />
@@ -406,6 +449,11 @@ const SavedContentDetailPage = () => {
       </Paper>
     </Container>
   );
+};
+
+// PropTypes for type safety
+SavedContentDetailPage.propTypes = {
+  // No props as this component gets data from URL params
 };
 
 export default SavedContentDetailPage; 
