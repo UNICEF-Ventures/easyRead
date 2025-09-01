@@ -146,6 +146,20 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     // this would need to bubble up to the parent component that owns easyReadContent
     // or we'd need to manage a local copy of the content with useState
   };
+
+  // Handle sentence reordering from drag and drop
+  const handleReorderSentences = (newOrder) => {
+    console.log('Sentences reordered:', newOrder);
+    // For now, just log it. In a complete implementation,
+    // this would update the parent's easyReadContent state
+  };
+
+  // Handle highlight changes for sentences
+  const handleHighlightChange = (index, highlighted) => {
+    console.log(`Sentence at index ${index} highlight changed to: ${highlighted}`);
+    // For now, just log it. In a complete implementation,
+    // this would update the parent's easyReadContent state
+  };
   
   // Snackbar handlers remain specific or could be part of the hook if generalized
   const handleCloseSuccessSnackbar = (event, reason) => {
@@ -317,6 +331,8 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
               onGenerateImage={handleGenerateImage} // From hook
               onSearchWithCustomKeywords={handleSearchWithCustomKeywords} // From hook
               onSentenceChange={handleSentenceChange} // For inline editing
+              onHighlightChange={handleHighlightChange} // For highlight toggle
+              onReorderSentences={handleReorderSentences} // For drag and drop reordering
             />
           </Paper>
         </>

@@ -86,7 +86,7 @@ const SavedContentDetailPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, checkEditAccess]);
+  }, [id]);
 
   // Export function
   const handleExport = async () => {
@@ -170,6 +170,46 @@ const SavedContentDetailPage = () => {
     });
     
     console.log(`Sentence at index ${index} changed to: "${newSentence}"`);
+  };
+
+  // Handle sentence reordering from drag and drop
+  const handleReorderSentences = (newOrder) => {
+    if (!canEdit) return; // Prevent reordering if user doesn't have permission
+    
+    // Update the content state with the new order
+    setContent(prevContent => {
+      if (!prevContent?.easy_read_content) return prevContent;
+      
+      return {
+        ...prevContent,
+        easy_read_content: newOrder
+      };
+    });
+    
+    console.log('Sentences reordered in saved content');
+  };
+
+  // Handle highlight changes for sentences
+  const handleHighlightChange = (index, highlighted) => {
+    if (!canEdit) return; // Prevent highlighting if user doesn't have permission
+    
+    // Update the content state with the highlight change
+    setContent(prevContent => {
+      if (!prevContent?.easy_read_content) return prevContent;
+      
+      const updatedEasyReadContent = [...prevContent.easy_read_content];
+      updatedEasyReadContent[index] = {
+        ...updatedEasyReadContent[index],
+        highlighted: highlighted
+      };
+      
+      return {
+        ...prevContent,
+        easy_read_content: updatedEasyReadContent
+      };
+    });
+    
+    console.log(`Sentence at index ${index} highlight changed to: ${highlighted}`);
   };
 
   // Save function to update the saved content
@@ -351,6 +391,8 @@ const SavedContentDetailPage = () => {
               onGenerateImage={handleGenerateImage} // From hook
               onSearchWithCustomKeywords={handleSearchWithCustomKeywords} // From hook
               onSentenceChange={handleSentenceChange} // For inline editing
+              onHighlightChange={handleHighlightChange} // For highlight toggle
+              onReorderSentences={handleReorderSentences} // For drag and drop reordering
               readOnly={!canEdit} // Disable editing if user doesn't have access
               // isLoading prop might not be needed if hook handles initial loading state internally
             />

@@ -16,8 +16,28 @@ import {
   Button,
   IconButton,
   Chip,
-  Stack
+  Stack,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -26,10 +46,302 @@ import TextField from '@mui/material/TextField';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import SearchIcon from '@mui/icons-material/Search';
 import EditIcon from '@mui/icons-material/Edit';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
 const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
+
+// Sortable Item Component
+const SortableItem = ({ 
+  item, 
+  index, 
+  readOnly, 
+  onImageSelectionChange, 
+  onGenerateImage,
+  onSentenceClick,
+  onSentenceKeyDown,
+  onSentenceChange,
+  onSentenceBlur,
+  onHighlightChange,
+  editingSentences,
+  editedSentenceTexts,
+  userKeywords,
+  generatorButtonRefs,
+  normalizeImageUrl,
+  getTooltipText
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: index });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const { 
+    images, 
+    selectedPath, 
+    isLoading: itemIsLoading, 
+    error 
+  } = item.imageData || {};
+
+  return (
+    <React.Fragment>
+      <ListItem 
+        ref={setNodeRef}
+        style={style}
+        sx={{ 
+          py: 3, 
+          display: 'flex', 
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 2
+        }}
+      >
+        {/* Drag Handle and Edit Button Column */}
+        {!readOnly && (
+          <Box 
+            sx={{ 
+              display: 'flex', 
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 0.5,
+              mr: 1
+            }}
+          >
+            {/* Drag Handle */}
+            <Box 
+              {...attributes} 
+              {...listeners}
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                cursor: isDragging ? 'grabbing' : 'grab',
+                color: 'text.secondary',
+                '&:hover': { color: 'primary.main' }
+              }}
+            >
+              <DragIndicatorIcon />
+            </Box>
+            
+            {/* Edit Button */}
+            {item.canGenerate && (
+              <Tooltip title={itemIsLoading ? "Generating..." : "Edit Keywords"}>
+                <span> 
+                  <IconButton
+                    size="small"
+                    onClick={() => onGenerateImage(index)}
+                    disabled={itemIsLoading}
+                    color="primary"
+                    aria-label="Edit keywords"
+                    ref={(el) => { generatorButtonRefs.current[index] = el; }}
+                    sx={{ minWidth: 'auto', p: 0.5 }}
+                  >
+                    {itemIsLoading ? <CircularProgress size={16} color="inherit" /> : <EditIcon fontSize="small" />}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+          </Box>
+        )}
+
+        {/* Image Column */}
+        <Box sx={{ flexShrink: 0, width: 120 }}>
+          {itemIsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 100 }}>
+              <CircularProgress size={30} />
+            </Box>
+          ) : error ? (
+            <Typography variant="caption" color="error" sx={{ textAlign: 'center', display: 'block' }}>
+              Error loading images
+            </Typography>
+          ) : (
+            <Grid container direction="column" spacing={1}>
+              <Grid item>
+                <Tooltip 
+                  title={getTooltipText(index, item)}
+                  enterDelay={500}
+                  arrow
+                  componentsProps={{
+                    tooltip: {
+                      sx: {
+                        whiteSpace: 'pre-line',
+                        maxWidth: 300,
+                        fontSize: '0.75rem'
+                      }
+                    }
+                  }}
+                >
+                  <FormControl fullWidth size="small">
+                    <Select
+                    value={selectedPath || ''}
+                    onChange={(e) => onImageSelectionChange(index, e.target.value)}
+                    displayEmpty
+                    disabled={readOnly}
+                    renderValue={(selected) => {
+                      if (!selected) return <em>No image selected</em>;
+                      return (
+                        <Box component="img"
+                          src={normalizeImageUrl(selected)}
+                          alt="Selected"
+                          sx={{ width: '100%', height: 60, objectFit: 'contain' }}
+                        />
+                      );
+                    }}
+                    MenuProps={{
+                      PaperProps: {
+                        sx: { maxHeight: 300, width: 'auto' },
+                      },
+                    }}
+                  >
+                    {!selectedPath && images && images.length > 0 && (
+                      <MenuItem value="" disabled sx={{ display: 'none' }}>
+                        Select Image
+                      </MenuItem>
+                    )}
+                    {selectedPath && images && !images.some(img => img.url === selectedPath) && (
+                      <MenuItem key={`${index}-selected-${selectedPath}`} value={selectedPath} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
+                        <Box 
+                          component="img"
+                          src={normalizeImageUrl(selectedPath)}
+                          alt="Current Selection"
+                          sx={{ 
+                            width: 100, 
+                            height: 100, 
+                            objectFit: 'contain'
+                          }}
+                          onError={(e) => { 
+                            e.target.style.display = 'none';
+                            console.error('Image load error:', selectedPath);
+                          }}
+                        />
+                      </MenuItem>
+                    )}
+                    {images && images.length > 0 && images.map((image) => (
+                      <MenuItem key={`${index}-${image.url}`} value={image.url} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
+                        <Tooltip 
+                          title={userKeywords[index] ? userKeywords[index] : (image.description || 'No description')}
+                          placement="right"
+                          arrow
+                        >
+                          <Box 
+                            component="img"
+                            src={normalizeImageUrl(image.url)}
+                            alt={image.description || 'Image option'}
+                            sx={{ 
+                              width: 100, 
+                              height: 100, 
+                              objectFit: 'contain'
+                            }}
+                            onError={(e) => { 
+                              e.target.style.display = 'none';
+                              console.error('Image load error:', image.url);
+                            }}
+                          />
+                        </Tooltip>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  </FormControl>
+                </Tooltip>
+              </Grid>
+            </Grid>
+          )}
+        </Box>
+        
+        {/* Sentence Column */}
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          {editingSentences[index] ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <TextField
+                fullWidth
+                value={editedSentenceTexts[index] || item.sentence}
+                onChange={(e) => onSentenceChange(index, e.target.value)}
+                onKeyDown={(e) => onSentenceKeyDown(e, index)}
+                onBlur={(e) => {
+                  // Don't close editing if the user clicked on the checkbox or its container
+                  const isCheckboxClick = e.relatedTarget && (
+                    e.relatedTarget.type === 'checkbox' ||
+                    e.relatedTarget.closest('.MuiFormControlLabel-root')
+                  );
+                  if (!isCheckboxClick) {
+                    onSentenceBlur(index);
+                  }
+                }}
+                autoFocus
+                variant="outlined"
+                size="small"
+                multiline
+                rows={2}
+                sx={{ 
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                  }
+                }}
+              />
+              <Box 
+                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking
+              >
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={item.highlighted || false}
+                      onChange={(e) => onHighlightChange && onHighlightChange(index, e.target.checked)}
+                      size="small"
+                      color="primary"
+                    />
+                  }
+                  label="Highlight this sentence"
+                  sx={{ fontSize: '0.875rem' }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Press Enter to save, Escape to cancel
+                </Typography>
+              </Box>
+            </Box>
+          ) : (
+            <ListItemText 
+               primary={
+                 <Typography 
+                   variant="body1" 
+                   onClick={() => onSentenceClick(index)}
+                   sx={{ 
+                     fontWeight: item.highlighted ? 'bold' : 'normal',
+                     cursor: readOnly ? 'default' : 'pointer',
+                     '&:hover': !readOnly && {
+                       backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                       borderRadius: 1,
+                       padding: '4px 8px',
+                       margin: '-4px -8px'
+                     },
+                     ...(item.highlighted && { 
+                       color: 'primary.main',
+                       fontSize: '1.05em'
+                     })
+                   }}
+                   title={readOnly ? undefined : "Click to edit sentence"}
+                 >
+                   {item.sentence}
+                 </Typography>
+               }
+               sx={{ m: 0 }}
+            />
+          )}
+        </Box>
+      </ListItem>
+      {index < item.totalLength - 1 && <Divider component="li" />}
+    </React.Fragment>
+  );
+};
 
 // Helper function to normalize image URLs
 const normalizeImageUrl = (url) => {
@@ -50,6 +362,8 @@ function EasyReadContentList({
   onGenerateImage,
   onSearchWithCustomKeywords, // New prop for searching with custom keywords
   onSentenceChange, // New prop for handling sentence text changes
+  onHighlightChange, // New prop for handling highlight changes
+  onReorderSentences, // New prop for handling sentence reordering
   userKeywords = {}, // Receive userKeywords from hook
   isLoading = false, // Prop to indicate parent loading state
   readOnly = false // Prop to disable editing capabilities
@@ -60,6 +374,14 @@ function EasyReadContentList({
   const [editingSentences, setEditingSentences] = useState({}); // Track which sentences are being edited
   const [editedSentenceTexts, setEditedSentenceTexts] = useState({}); // Store edited sentence content
   const generatorButtonRefs = useRef({});
+
+  // Sensors for drag and drop
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
   
   // Memoize the image selection change handler to prevent unnecessary re-renders
   const handleImageSelectionChange = useCallback((index, value) => {
@@ -172,6 +494,19 @@ function EasyReadContentList({
     setEditingSentences(prev => ({ ...prev, [index]: false }));
     setEditedSentenceTexts(prev => ({ ...prev, [index]: undefined }));
   }, []);
+
+  // Handle drag end for sentence reordering
+  const handleDragEnd = useCallback((event) => {
+    const { active, over } = event;
+
+    if (active.id !== over?.id && onReorderSentences) {
+      const oldIndex = easyReadContent.findIndex((_, index) => index === active.id);
+      const newIndex = easyReadContent.findIndex((_, index) => index === over.id);
+      
+      const newOrder = arrayMove(easyReadContent, oldIndex, newIndex);
+      onReorderSentences(newOrder);
+    }
+  }, [easyReadContent, onReorderSentences]);
   
   // Memoize the content list to prevent unnecessary re-renders when imageState changes
   const memoizedContentList = useMemo(() => {
@@ -230,268 +565,55 @@ function EasyReadContentList({
           }}
         >
           <Typography variant="body2" color="text.secondary">
-            💡 <strong>Tip:</strong> Click on any sentence to edit the text. Click on the edit icon next to images to search for different images or generate new ones.
+            💡 <strong>Tip:</strong> Click on any sentence to edit the text. Drag the grip handle to reorder sentences. Click on the edit icon next to images to search for different images or generate new ones.
           </Typography>
         </Box>
       )}
 
-      <List disablePadding>
-      {memoizedContentList.map((item) => {
-        const { 
-          images, 
-          selectedPath, 
-          isLoading: itemIsLoading, 
-          isGenerating,
-          error 
-        } = item.currentImageState;
-        const { index, canGenerate } = item;
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext 
+          items={memoizedContentList.map((_, index) => index)}
+          strategy={verticalListSortingStrategy}
+        >
+          <List disablePadding>
+          {memoizedContentList.map((item) => {
+        const { index } = item;
+
+        const itemData = {
+          ...item,
+          imageData: item.currentImageState,
+          totalLength: easyReadContent.length
+        };
 
         return (
-          <React.Fragment key={index}>
-            {/* Use Flexbox on ListItem for better control */}
-            <ListItem sx={{ 
-              py: 3, 
-              display: 'flex', 
-              flexDirection: 'row', // Explicitly row
-              alignItems: 'flex-start', // Align items at the top
-              gap: 2 // Add gap between image column and text column
-            }}>
-              {/* Image Controls Column (fixed width) */}
-              <Box sx={{ 
-                width: { xs: 100, sm: 120, md: 130 }, // Responsive fixed width
-                flexShrink: 0 // Prevent this column from shrinking
-              }}>
-                  {itemIsLoading && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 100 }}>
-                      <CircularProgress size={24} />
-                    </Box>
-                  )}
-                  
-                  {!itemIsLoading && (selectedPath || (images && images.length > 0)) && (
-                    <Box>
-                      <Tooltip 
-                        title={getTooltipText(index, item)}
-                        enterDelay={500}
-                        arrow
-                        componentsProps={{
-                          tooltip: {
-                            sx: {
-                              whiteSpace: 'pre-line', // Allow line breaks in tooltip
-                              maxWidth: 300,
-                              fontSize: '0.75rem'
-                            }
-                          }
-                        }}
-                      >
-                      {/* Adjust FormControl to not be fullWidth unnecessarily */}
-                      <FormControl size="small" variant="outlined" sx={{ width: '100%' }}> 
-                        <Select
-                          value={selectedPath || ''}
-                          onChange={readOnly ? undefined : (e) => {
-                            handleImageSelectionChange(index, e.target.value);
-                          }}
-                          disabled={readOnly}
-                          displayEmpty
-                          renderValue={(selected) => {
-                            if (!selected) {
-                              return <Box sx={{ height: 60, width: '100%', bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }} />;
-                            }
-                            
-                            // If selectedPath exists but not in current options, show it anyway
-                            // This handles the case where images are still loading but we have a saved selection
-                            const displayPath = selected || selectedPath;
-                            if (!displayPath) {
-                              return <Box sx={{ height: 60, width: '100%', bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }} />;
-                            }
-                            
-                            return (
-                              <Box 
-                                component="img"
-                                src={normalizeImageUrl(displayPath)}
-                                alt="Selected"
-                                sx={{ 
-                                  height: 60, 
-                                  width: '100%', // Take full width of the select box display area
-                                  objectFit: 'contain',
-                                  borderRadius: 1
-                                }}
-                                onError={(e) => { 
-                                  // Prevent infinite loop by hiding the image instead of loading another URL
-                                  e.target.style.display = 'none';
-                                  console.error('Image load error:', displayPath);
-                                }}
-                              />
-                            );
-                          }}
-                          MenuProps={{
-                            PaperProps: {
-                              sx: { maxHeight: 300, width: 'auto' }, // Adjust width if needed
-                            },
-                          }}
-                        >
-                          {!selectedPath && images && images.length > 0 && (
-                            <MenuItem value="" disabled sx={{ display: 'none' }}>
-                              Select Image
-                            </MenuItem>
-                          )}
-                          {/* If selectedPath exists but is not in images array, add it as an option */}
-                          {selectedPath && images && !images.some(img => img.url === selectedPath) && (
-                            <MenuItem key={`${index}-selected-${selectedPath}`} value={selectedPath} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
-                              <Box 
-                                component="img"
-                                src={normalizeImageUrl(selectedPath)}
-                                alt="Current Selection"
-                                sx={{ 
-                                  width: 100, 
-                                  height: 100, 
-                                  objectFit: 'contain'
-                                }}
-                                onError={(e) => { 
-                                  // Prevent infinite loop by hiding the image instead of loading another URL
-                                  e.target.style.display = 'none';
-                                  console.error('Image load error:', selectedPath);
-                                }}
-                              />
-                            </MenuItem>
-                          )}
-                          {images && images.map((imgResult, imgIndex) => (
-                            <MenuItem key={`${index}-${imgIndex}-${imgResult.url}`} value={imgResult.url} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
-                              <Box 
-                                component="img"
-                                src={normalizeImageUrl(imgResult.url)}
-                                alt={imgResult.description || `Option ${imgIndex + 1}`}
-                                sx={{ 
-                                  width: 100, 
-                                  height: 100, 
-                                  objectFit: 'contain'
-                                }}
-                                onError={(e) => { 
-                                  // Prevent infinite loop by hiding the image instead of loading another URL
-                                  e.target.style.display = 'none';
-                                  console.error('Image load error:', imgResult.url);
-                                }}
-                              />
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                      </Tooltip>
-                      
-                    </Box>
-                  )}
-                  
-                  {!itemIsLoading && !selectedPath && (!images || images.length === 0) && (
-                    <Box sx={{
-                      width: '100%', // Take full width of the column
-                      height: 60,
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      bgcolor: 'rgba(0, 0, 0, 0.04)',
-                      borderRadius: 1,
-                      mb: 1
-                    }}>
-                      <Typography variant="caption" color="text.secondary" align="center" sx={{ px: 1 }}>
-                        {error || 'No image'}
-                      </Typography>
-                    </Box>
-                  )}
-                  
-                  {/* Visual indicator for customized keywords */}
-                  {userKeywords[index] && userKeywords[index] !== item.image_retrieval && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 0.5 }}>
-                      <Chip 
-                        size="small" 
-                        label="Custom Keywords" 
-                        color="primary" 
-                        variant="outlined"
-                        sx={{ 
-                          fontSize: '0.65rem', 
-                          height: 18,
-                          '& .MuiChip-label': {
-                            px: 1
-                          }
-                        }}
-                      />
-                    </Box>
-                  )}
-                  
-                  {/* Center the generate icon below the image area */}
-                  {canGenerate && onGenerateImage && !readOnly && (
-                    <Box sx={{ textAlign: 'center', mt: 1 }}>
-                      <Tooltip title={isGenerating ? "Generating..." : "Edit Keywords"}>
-                        <span> 
-                          <IconButton 
-                            size="small"
-                            onClick={() => handleGenerateImage(index, item.image_retrieval)}
-                            disabled={isGenerating || itemIsLoading}
-                            color="primary"
-                            aria-label="Edit keywords"
-                            ref={(el) => { generatorButtonRefs.current[index] = el; }}
-                          >
-                            {isGenerating ? <CircularProgress size={20} color="inherit" /> : <EditIcon />}
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </Box>
-                  )}
-              </Box>
-              
-              {/* Sentence Column (takes remaining space) */}
-              <Box sx={{ flexGrow: 1, minWidth: 0 }}> {/* minWidth: 0 prevents overflow issues */}
-                {editingSentences[index] ? (
-                  <TextField
-                    fullWidth
-                    value={editedSentenceTexts[index] || item.sentence}
-                    onChange={(e) => handleSentenceChange(index, e.target.value)}
-                    onKeyDown={(e) => handleSentenceKeyDown(e, index)}
-                    onBlur={() => handleSentenceBlur(index)}
-                    autoFocus
-                    variant="outlined"
-                    size="small"
-                    multiline
-                    rows={2}
-                    sx={{ 
-                      '& .MuiOutlinedInput-root': {
-                        backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                      }
-                    }}
-                  />
-                ) : (
-                  <ListItemText 
-                     primary={
-                       <Typography 
-                         variant="body1" 
-                         onClick={() => handleSentenceClick(index)}
-                         sx={{ 
-                           fontWeight: item.highlighted ? 'bold' : 'normal',
-                           cursor: 'pointer',
-                           '&:hover': {
-                             backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                             borderRadius: 1,
-                             padding: '4px 8px',
-                             margin: '-4px -8px'
-                           },
-                           ...(item.highlighted && { 
-                             color: 'primary.main',
-                             fontSize: '1.05em'
-                           })
-                         }}
-                         title="Click to edit sentence"
-                       >
-                         {item.sentence}
-                       </Typography>
-                     }
-                     sx={{ m: 0 }}
-                  />
-                )}
-              </Box>
-            </ListItem>
-            {index < easyReadContent.length - 1 && <Divider component="li" />}
-          </React.Fragment>
+          <SortableItem
+            key={index}
+            item={itemData}
+            index={index}
+            readOnly={readOnly}
+            onImageSelectionChange={handleImageSelectionChange}
+            onGenerateImage={handleGenerateImage}
+            onSentenceClick={handleSentenceClick}
+            onSentenceKeyDown={handleSentenceKeyDown}
+            onSentenceChange={handleSentenceChange}
+            onSentenceBlur={handleSentenceBlur}
+            onHighlightChange={onHighlightChange}
+            editingSentences={editingSentences}
+            editedSentenceTexts={editedSentenceTexts}
+            userKeywords={userKeywords}
+            generatorButtonRefs={generatorButtonRefs}
+            normalizeImageUrl={normalizeImageUrl}
+            getTooltipText={getTooltipText}
+          />
         );
       })}
-    </List>
+          </List>
+        </SortableContext>
+      </DndContext>
     
     {/* Prompt Edit Modal */}
     <Dialog open={promptModalOpen} onClose={closeModal} fullWidth maxWidth="sm" aria-labelledby="edit-prompt-title">
@@ -564,6 +686,9 @@ EasyReadContentList.propTypes = {
   onImageSelectionChange: PropTypes.func,
   onGenerateImage: PropTypes.func,
   onSearchWithCustomKeywords: PropTypes.func,
+  onSentenceChange: PropTypes.func,
+  onHighlightChange: PropTypes.func,
+  onReorderSentences: PropTypes.func,
   isLoading: PropTypes.bool,
   readOnly: PropTypes.bool
 };
@@ -576,6 +701,9 @@ EasyReadContentList.defaultProps = {
   onImageSelectionChange: null,
   onGenerateImage: null,
   onSearchWithCustomKeywords: null,
+  onSentenceChange: null,
+  onHighlightChange: null,
+  onReorderSentences: null,
   isLoading: false,
   readOnly: false
 };
