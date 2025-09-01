@@ -89,20 +89,82 @@ def has_meaningful_content(markdown_content, min_words=5):
 
 def convert_relative_paths_to_urls(easy_read_data, request):
     """
-    Convert relative image paths in easy_read_data to full URLs.
+    Convert relative image paths in easy_read_data to full URLs and enhance with image metadata.
     
     Args:
         easy_read_data: List of dictionaries containing easy read content
         request: Django request object for building absolute URIs
     
     Returns:
-        Modified easy_read_data with full URLs instead of relative paths
+        Modified easy_read_data with full URLs and enhanced image objects
     """
     if not easy_read_data:
         return easy_read_data
     
     # Create a copy to avoid modifying the original data
     result_data = []
+    
+    # Collect all image paths to look up metadata efficiently
+    all_image_paths = set()
+    for item in easy_read_data:
+        if item.get('selected_image_path'):
+            all_image_paths.add(item['selected_image_path'])
+        if item.get('alternative_images'):
+            for img_path in item['alternative_images']:
+                all_image_paths.add(img_path)
+    
+    # Look up image metadata for all paths at once
+    image_metadata = {}
+    if all_image_paths:
+        # Convert paths to look up format
+        lookup_paths = []
+        for path in all_image_paths:
+            if not path.startswith('http'):
+                # Convert relative to lookup format - strip /media/ prefix if present
+                lookup_path = path.lstrip('/')
+                if lookup_path.startswith('media/'):
+                    lookup_path = lookup_path[6:]  # Remove 'media/' prefix
+                lookup_paths.append(lookup_path)
+        
+        logger.info(f"Looking up metadata for paths: {lookup_paths}")
+        
+        # Query database for image metadata
+        # We need to handle both absolute and relative paths
+        from django.db.models import Q
+        
+        q_objects = Q()
+        for path in lookup_paths:
+            # Match exact path
+            q_objects |= Q(original_path=path)
+            # Match with /app/media/ prefix
+            q_objects |= Q(original_path=f'/app/media/{path}')
+            # Match with media/ prefix  
+            q_objects |= Q(original_path=f'media/{path}')
+            # Match path that ends with our lookup path
+            q_objects |= Q(original_path__endswith=f'/{path}')
+        
+        images = Image.objects.select_related('set').filter(q_objects)
+        
+        logger.info(f"Found {images.count()} images in database for lookup")
+        
+        for img in images:
+            # Map both relative and absolute paths to metadata
+            relative_path = img.original_path.lstrip('/')
+            full_url = request.build_absolute_uri(img.get_url())
+            
+            metadata = {
+                'id': img.id,
+                'description': img.description or '',
+                'filename': img.filename or '',
+                'set_name': img.set.name if img.set else '',
+                'file_format': img.file_format or ''
+            }
+            
+            
+            # Store metadata for both path formats
+            image_metadata[relative_path] = metadata
+            image_metadata[f'/{relative_path}'] = metadata
+            image_metadata[full_url] = metadata
     
     for item in easy_read_data:
         # Create a copy of the item
@@ -121,18 +183,28 @@ def convert_relative_paths_to_urls(easy_read_data, request):
                 full_url = request.build_absolute_uri(relative_path)
                 new_item['selected_image_path'] = full_url
         
-        # Convert alternative_images if they exist
+        # Convert alternative_images to enhanced objects if they exist
         if new_item.get('alternative_images') and isinstance(new_item['alternative_images'], list):
-            converted_alternatives = []
+            enhanced_alternatives = []
             for alt_path in new_item['alternative_images']:
                 if alt_path.startswith('http'):
-                    converted_alternatives.append(alt_path)
+                    full_url = alt_path
                 else:
                     if not alt_path.startswith('/'):
                         alt_path = '/' + alt_path
                     full_url = request.build_absolute_uri(alt_path)
-                    converted_alternatives.append(full_url)
-            new_item['alternative_images'] = converted_alternatives
+                
+                # Create enhanced image object
+                img_obj = {'url': full_url}
+                
+                # Add metadata if available
+                metadata = image_metadata.get(alt_path) or image_metadata.get(full_url)
+                if metadata:
+                    img_obj.update(metadata)
+                
+                enhanced_alternatives.append(img_obj)
+            
+            new_item['alternative_images'] = enhanced_alternatives
         
         result_data.append(new_item)
     
@@ -1523,17 +1595,24 @@ def generate_image_view(request):
         return Response({"error": "Image generation service (Gradio) is not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     prompt = request.data.get('prompt')
+    style = request.data.get('style', 'Mulberry')  # Default to Mulberry if not provided
+    
     if not prompt:
         return Response({"error": "'prompt' is required."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Validate style parameter
+    valid_styles = ['Mulberry', 'Jellow', 'Tawasol', 'ARASAAC', 'DYVOGRA']
+    if style not in valid_styles:
+        return Response({"error": f"Invalid style. Must be one of: {', '.join(valid_styles)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-    logger.info(f"Generating images for prompt: '{prompt}' using Gradio client.")
+    logger.info(f"Generating images for prompt: '{prompt}' using style: '{style}' with Gradio client.")
 
     try:
         # --- Call Gradio Client for Image Generation ---
         # Parameters based on the example: config/temp/gradio.py
         # client.predict("Mulberry", "A red bus with a yellow stripe", None, "No", 50, 3, 0.75, 7.5, None, api_name="/process_symbol_generation")
         prediction_result = gradio_client.predict(
-            "Mulberry",  # First argument (style/category)
+            style,       # First argument (style/category) - now dynamic
             prompt,      # Second argument (the actual prompt)
             None,        # Third argument (reference image, not used)
             "No",        # Fourth argument

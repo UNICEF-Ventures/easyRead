@@ -95,9 +95,13 @@ const SortableItem = ({
   const { 
     images, 
     selectedPath, 
-    isLoading: itemIsLoading, 
+    isLoading, 
+    isGenerating,
     error 
   } = item.imageData || {};
+  
+  // Show loading state for both regular loading and image generation
+  const itemIsLoading = isLoading || isGenerating;
 
   return (
     <React.Fragment>
@@ -140,7 +144,7 @@ const SortableItem = ({
             
             {/* Edit Button */}
             {item.canGenerate && (
-              <Tooltip title={itemIsLoading ? "Generating..." : "Edit Keywords"}>
+              <Tooltip title={isGenerating ? "Generating image..." : (isLoading ? "Loading..." : "Edit Keywords")}>
                 <span> 
                   <IconButton
                     size="small"
@@ -231,17 +235,65 @@ const SortableItem = ({
                         />
                       </MenuItem>
                     )}
-                    {images && images.length > 0 && images.map((image) => (
-                      <MenuItem key={`${index}-${image.url}`} value={image.url} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
-                        <Tooltip 
-                          title={userKeywords[index] ? userKeywords[index] : (image.description || 'No description')}
-                          placement="right"
-                          arrow
-                        >
+                    {images && images.length > 0 && images.map((image, imgIndex) => {
+                      // Handle both old format (just URL strings) and new format (objects with metadata)
+                      let imageUrl, imageData;
+                      
+                      if (typeof image === 'string') {
+                        // Old format: image is just a URL string
+                        imageUrl = image;
+                        imageData = { url: image, description: '', filename: '' };
+                      } else if (image && typeof image === 'object') {
+                        // New format: image is an object with metadata
+                        // Handle nested URL structure: {url: {url: 'actual-url'}} or {url: 'actual-url'}
+                        if (typeof image.url === 'string') {
+                          imageUrl = image.url;
+                          imageData = image; // Use the full object with metadata
+                        } else if (image.url && typeof image.url === 'object' && typeof image.url.url === 'string') {
+                          console.warn('🐛 Found nested URL structure, extracting:', image);
+                          imageUrl = image.url.url; // Extract from nested structure
+                          imageData = image; // Still use the full object with metadata
+                        } else {
+                          imageUrl = '';
+                          imageData = image;
+                        }
+                        
+                        // Debug what we're actually using for tooltip
+                        if (import.meta.env.DEV) {
+                          console.log('🏷️ Tooltip data for', imageUrl, ':', {
+                            description: imageData.description,
+                            filename: imageData.filename,
+                            tooltip: imageData.description || imageData.filename || 'No description'
+                          });
+                        }
+                      } else {
+                        // Invalid format
+                        console.warn('🚨 Invalid image format:', image);
+                        return null;
+                      }
+                      
+                      if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
+                        console.warn('🚨 Image missing or invalid URL:', image);
+                        return null;
+                      }
+                      
+                      const normalizedUrl = normalizeImageUrl(imageUrl);
+                      if (!normalizedUrl) {
+                        console.warn('🚨 Could not normalize image URL:', imageUrl);
+                        return null;
+                      }
+                      
+                      return (
+                        <MenuItem key={`${index}-${imgIndex}-${imageUrl}`} value={imageUrl} sx={{ display: 'flex', justifyContent: 'center', p: 0.5 }}>
+                          <Tooltip 
+                            title={imageData.description || 'No description'}
+                            placement="right"
+                            arrow
+                          >
                           <Box 
                             component="img"
-                            src={normalizeImageUrl(image.url)}
-                            alt={image.description || 'Image option'}
+                            src={normalizedUrl}
+                            alt={imageData.description || 'Image option'}
                             sx={{ 
                               width: 100, 
                               height: 100, 
@@ -254,7 +306,8 @@ const SortableItem = ({
                           />
                         </Tooltip>
                       </MenuItem>
-                    ))}
+                      );
+                    })}
                   </Select>
                   </FormControl>
                 </Tooltip>
@@ -351,7 +404,7 @@ const SortableItem = ({
 
 // Helper function to normalize image URLs
 const normalizeImageUrl = (url) => {
-  if (!url) return '';
+  if (!url || typeof url !== 'string') return '';
   // If it's already an absolute URL, return it as is
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
@@ -377,9 +430,19 @@ function EasyReadContentList({
   const [promptModalOpen, setPromptModalOpen] = useState(false);
   const [activeSentenceIndex, setActiveSentenceIndex] = useState(null);
   const [editablePrompt, setEditablePrompt] = useState('');
+  const [selectedStyle, setSelectedStyle] = useState('Mulberry'); // Default style
   const [editingSentences, setEditingSentences] = useState({}); // Track which sentences are being edited
   const [editedSentenceTexts, setEditedSentenceTexts] = useState({}); // Store edited sentence content
   const generatorButtonRefs = useRef({});
+
+  // Image generation styles with descriptions
+  const imageStyles = [
+    { value: 'Mulberry', label: 'Mulberry', description: 'Classic pictographic style' },
+    { value: 'Jellow', label: 'Jellow', description: 'Bright and colorful' },
+    { value: 'Tawasol', label: 'Tawasol', description: 'Arabic-focused symbols' },
+    { value: 'ARASAAC', label: 'ARASAAC', description: 'Educational symbols' },
+    { value: 'DYVOGRA', label: 'DYVOGRA', description: 'Minimalist design' }
+  ];
 
   // Sensors for drag and drop
   const sensors = useSensors(
@@ -400,10 +463,11 @@ function EasyReadContentList({
   const handleGenerateImage = useCallback((index, retrieval) => {
     // Open modal allowing user to edit the prompt before generating
     setActiveSentenceIndex(index);
-    // Use stored user keywords if available, otherwise use original retrieval
-    setEditablePrompt(userKeywords[index] || retrieval || '');
+    // Use stored user keywords if available, otherwise use original retrieval from the content item
+    const originalRetrieval = easyReadContent[index]?.image_retrieval || '';
+    setEditablePrompt(userKeywords[index] || originalRetrieval);
     setPromptModalOpen(true);
-  }, [userKeywords]);
+  }, [userKeywords, easyReadContent]);
 
   const closeModal = useCallback(() => {
     setPromptModalOpen(false);
@@ -437,10 +501,10 @@ function EasyReadContentList({
       return;
     }
     if (onGenerateImage && activeSentenceIndex !== null) {
-      onGenerateImage(activeSentenceIndex, value);
+      onGenerateImage(activeSentenceIndex, value, selectedStyle);
     }
     closeModal();
-  }, [editablePrompt, onGenerateImage, activeSentenceIndex, closeModal]);
+  }, [editablePrompt, selectedStyle, onGenerateImage, activeSentenceIndex, closeModal]);
   
   // Helper function to generate informative tooltip text
   const getTooltipText = useCallback((index, item) => {
@@ -638,30 +702,98 @@ function EasyReadContentList({
             maxRows={3}
             value={editablePrompt}
             onChange={(e) => setEditablePrompt(e.target.value)}
-            inputProps={{ maxLength: 500 }}
+            slotProps={{ htmlInput: { maxLength: 500 } }}
             helperText={`${editablePrompt.length}/500 characters`}
+            sx={{ mb: 3 }}
           />
-          <Typography variant="caption" color="text.secondary">
-            These keywords will be used to search image sets or generate new images. You can adjust them.
-          </Typography>
+          
+          <Box sx={{ display: 'flex', gap: 2, minHeight: 180 }}>
+            {/* Search Section */}
+            <Box sx={{ 
+              flex: 1,
+              p: 2, 
+              border: '1px solid', 
+              borderColor: 'divider', 
+              borderRadius: 1,
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <Typography variant="h6" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                <SearchIcon sx={{ mr: 1, fontSize: 20 }} />
+                Search Image Sets
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, flexGrow: 1 }}>
+                Find existing images from our curated collections that match your keywords.
+              </Typography>
+              <Button
+                onClick={handleSearchImages}
+                disabled={!editablePrompt || editablePrompt.trim() === ''}
+                startIcon={<SearchIcon />}
+                variant="outlined"
+                fullWidth
+              >
+                Search Images
+              </Button>
+            </Box>
+            
+            {/* Generation Section */}
+            <Box sx={{ 
+              flex: 1,
+              p: 2, 
+              border: '1px solid', 
+              borderColor: 'divider', 
+              borderRadius: 1,
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <Typography variant="h6" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                <AutoFixHighIcon sx={{ mr: 1, fontSize: 20 }} />
+                Generate New Image
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Create a new image using GlobalSymbol's AI generation.
+              </Typography>
+              
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Style:
+              </Typography>
+              <FormControl size="small" sx={{ mb: 2 }}>
+                <Select
+                  value={selectedStyle}
+                  onChange={(e) => setSelectedStyle(e.target.value)}
+                  displayEmpty
+                >
+                  {imageStyles.map((style) => (
+                    <MenuItem key={style.value} value={style.value}>
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                          {style.label}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {style.description}
+                        </Typography>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              
+              <Box sx={{ mt: 'auto' }}>
+                <Button
+                  onClick={handleGenerateImageSubmit}
+                  disabled={!editablePrompt || editablePrompt.trim() === ''}
+                  startIcon={<AutoFixHighIcon />}
+                  variant="contained"
+                  fullWidth
+                >
+                  Generate with {selectedStyle}
+                </Button>
+              </Box>
+            </Box>
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeModal}>Cancel</Button>
-          <Button
-            onClick={handleSearchImages}
-            disabled={!editablePrompt || editablePrompt.trim() === ''}
-            startIcon={<SearchIcon />}
-          >
-            Search Image Sets
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleGenerateImageSubmit}
-            disabled={!editablePrompt || editablePrompt.trim() === ''}
-            startIcon={<AutoFixHighIcon />}
-          >
-            Generate New Image
-          </Button>
         </DialogActions>
       </div>
     </Dialog>

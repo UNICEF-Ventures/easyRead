@@ -603,12 +603,12 @@ export const updateSavedContentImage = (contentId, sentenceIndex, imageUrl, allI
   });
 };
 
-export const generateNewImage = async (prompt) => {
+export const generateNewImage = async (prompt, style = 'Mulberry') => {
   if (import.meta.env.DEV) {
-    console.log(`API Client: Generating image with prompt: "${prompt}"`);
+    console.log(`API Client: Generating image with prompt: "${prompt}" and style: "${style}"`);
   }
   try {
-    const response = await apiClient.post('/generate-image/', { prompt });
+    const response = await apiClient.post('/generate-image/', { prompt, style });
     if (import.meta.env.DEV) {
       console.log('API Client: Image generation response:', response.data);
     }

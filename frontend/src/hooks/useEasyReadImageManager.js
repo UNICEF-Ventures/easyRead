@@ -65,9 +65,16 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
   const sequentialAttributionAppliedRef = useRef(false);
   // Track current image selections for immediate access
   const currentImageSelectionsRef = useRef({});
+  // Flag to prevent useEffect reinitialization during reordering
+  const isReorderingRef = useRef(false);
 
   // Initialize or update image state when content changes
   useEffect(() => {
+    // Skip if we're in the middle of reordering
+    if (isReorderingRef.current) {
+      return;
+    }
+
     if (!initialContent || initialContent.length === 0) {
       setImageState({});
       setUserKeywords({});
@@ -91,8 +98,42 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
       return;
     }
 
+    // Check if this is just a reordering of the same content
+    const currentContentItems = initialContent?.map(item => ({ 
+      sentence: item.sentence, 
+      image_retrieval: item.image_retrieval 
+    })) || [];
+    
+    const sortedContentSignature = JSON.stringify([...currentContentItems].sort((a, b) => a.sentence.localeCompare(b.sentence)));
+    
+    let previousSortedSignature = null;
+    if (contentRef.current) {
+      try {
+        const previousContentItems = JSON.parse(contentRef.current);
+        previousSortedSignature = JSON.stringify([...previousContentItems].sort((a, b) => a.sentence.localeCompare(b.sentence)));
+      } catch (e) {
+        // If parsing fails, treat as not reordering
+        previousSortedSignature = null;
+      }
+    }
+    
+    const isReordering = previousSortedSignature === sortedContentSignature && contentRef.current !== null;
+
     // Update our content signature BEFORE starting operations to prevent StrictMode double-execution
     contentRef.current = contentSignature;
+
+    if (import.meta.env.DEV) {
+      console.log('🔄 Content signature changed. Previous:', previousSortedSignature?.substring(0, 100) + '...');
+      console.log('🔄 Current sorted:', sortedContentSignature?.substring(0, 100) + '...');
+      console.log('🔄 Is reordering:', isReordering);
+    }
+
+    if (isReordering) {
+      if (import.meta.env.DEV) {
+        console.log('🔄 Content reordering detected, skipping reinitialization');
+      }
+      return; // Skip reinitialization for reordering
+    }
 
     if (import.meta.env.DEV) {
       console.log('🔄 Content signature changed, starting new image fetch');
@@ -145,14 +186,39 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
         
         // Start with alternative images if they exist
         if (item.alternative_images && item.alternative_images.length > 0) {
-          allImages = item.alternative_images.map(url => ({ url }));
+          if (import.meta.env.DEV) {
+            console.log('🖼️ Processing alternative_images:', item.alternative_images);
+          }
+          
+          allImages = item.alternative_images.map(imageItem => {
+            // Handle both old format (URL strings) and new format (enhanced objects)
+            if (typeof imageItem === 'string') {
+              if (import.meta.env.DEV) {
+                console.log('📝 Found string URL:', imageItem);
+              }
+              return { url: imageItem };
+            } else if (imageItem && typeof imageItem === 'object') {
+              // Preserve the enhanced object with all metadata
+              if (import.meta.env.DEV) {
+                console.log('📝 Found enhanced object:', imageItem);
+              }
+              return imageItem;
+            } else {
+              if (import.meta.env.DEV) {
+                console.log('📝 Found unknown format:', imageItem);
+              }
+              return { url: imageItem };
+            }
+          });
         }
         
         // Ensure selected image is included (might not be in alternatives)
         if (item.selected_image_path) {
           const selectedExists = allImages.some(img => img.url === item.selected_image_path);
           if (!selectedExists) {
-            allImages.unshift({ url: item.selected_image_path }); // Add to beginning
+            // Try to find enhanced data for selected image, fallback to simple format
+            const selectedImageData = { url: item.selected_image_path };
+            allImages.unshift(selectedImageData); // Add to beginning
           }
         }
         
@@ -618,7 +684,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
   }, []);
 
   // Memoize the generate image handler to prevent unnecessary re-renders
-  const handleGenerateImage = useCallback(async (sentenceIndex, prompt) => {
+  const handleGenerateImage = useCallback(async (sentenceIndex, prompt, style = 'Mulberry') => {
     // Validate the input keywords
     const validation = validateKeywords(prompt);
     if (!validation.valid) {
@@ -647,7 +713,7 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     });
 
     try {
-      const response = await generateNewImage(validatedPrompt);
+      const response = await generateNewImage(validatedPrompt, style);
       
       let newImages = [];
       let newSelectedPath = null;
@@ -1098,6 +1164,112 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     return currentSelections;
   }, [imageState]);
 
+  // Function to reorder both userKeywords and imageState when sentences are reordered
+  const handleReorderContent = useCallback((oldIndex, newIndex, contentLength) => {
+    // Prevent double execution with a more aggressive approach
+    if (isReorderingRef.current) {
+      return;
+    }
+    
+    // Set flag immediately to prevent any race conditions
+    isReorderingRef.current = true;
+    
+    // Reorder userKeywords
+    setUserKeywords(prev => {
+      // If there are no keywords to reorder, return current state
+      if (Object.keys(prev).length === 0) {
+        return prev;
+      }
+      
+      // Create a completely new keywords object based on the full content length
+      // We need to rebuild the entire mapping, not just reorder existing ones
+      const newKeywords = {};
+      
+      // Use the passed contentLength parameter instead of initialContent length
+      
+      // Create an array representing all keyword positions
+      const allKeywords = Array(contentLength).fill(null);
+      
+      // Fill in existing keywords at their current positions
+      for (let i = 0; i < contentLength; i++) {
+        if (prev[i]) {
+          allKeywords[i] = prev[i];
+        }
+      }
+      
+      // Move the keyword from oldIndex to newIndex
+      if (oldIndex < allKeywords.length && newIndex < allKeywords.length) {
+        const [movedKeyword] = allKeywords.splice(oldIndex, 1);
+        allKeywords.splice(newIndex, 0, movedKeyword);
+      }
+      
+      // Rebuild the keywords object
+      allKeywords.forEach((keyword, index) => {
+        if (keyword) {
+          newKeywords[index] = keyword;
+        }
+      });
+      
+      return newKeywords;
+    });
+
+    // Reorder imageState
+    setImageState(prev => {
+      // If there's no image state to reorder, return current state
+      if (Object.keys(prev).length === 0) return prev;
+      
+      const newImageState = { ...prev };
+      
+      // Get the arrays of indices and their corresponding image states
+      const indices = Object.keys(newImageState).map(k => parseInt(k)).sort((a, b) => a - b);
+      const imageStateValues = indices.map(i => newImageState[i]);
+      
+      // Remove the old image states
+      indices.forEach(i => delete newImageState[i]);
+      
+      // Create the reordered array by moving the item from oldIndex to newIndex
+      const reorderedValues = [...imageStateValues];
+      const [movedImageState] = reorderedValues.splice(oldIndex, 1);
+      reorderedValues.splice(newIndex, 0, movedImageState);
+      
+      // Reassign image states to new indices
+      reorderedValues.forEach((imageStateItem, index) => {
+        if (imageStateItem) { // Only set if image state exists
+          newImageState[index] = imageStateItem;
+        }
+      });
+      
+      return newImageState;
+    });
+
+    // Also update the current image selections ref
+    const currentSelections = { ...currentImageSelectionsRef.current };
+    const indices = Object.keys(currentSelections).map(k => parseInt(k)).sort((a, b) => a - b);
+    const selectionValues = indices.map(i => currentSelections[i]);
+    
+    // Clear old selections
+    indices.forEach(i => delete currentSelections[i]);
+    
+    // Reorder selections
+    const reorderedSelections = [...selectionValues];
+    const [movedSelection] = reorderedSelections.splice(oldIndex, 1);
+    reorderedSelections.splice(newIndex, 0, movedSelection);
+    
+    // Reassign selections to new indices
+    reorderedSelections.forEach((selection, index) => {
+      if (selection) {
+        currentSelections[index] = selection;
+      }
+    });
+    
+    currentImageSelectionsRef.current = currentSelections;
+    
+    // Reset flag after reordering is complete with a slightly longer delay
+    setTimeout(() => {
+      isReorderingRef.current = false;
+    }, 100); // 100ms delay to ensure all React updates are processed
+  }, []);
+
   return {
     imageState,
     userKeywords,
@@ -1112,7 +1284,8 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
     handleSearchWithCustomKeywords,
     handleRefreshAllImages,
     handleCloseNotification,
-    getCurrentImageSelections // Expose function to get current selections
+    getCurrentImageSelections, // Expose function to get current selections
+    handleReorderContent // Expose function to reorder both keywords and image state when sentences are reordered
   };
 }
 
