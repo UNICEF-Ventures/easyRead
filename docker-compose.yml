@@ -54,6 +54,7 @@ services:
       - ./images:/app/images:ro
       - ./clipart_images:/app/clipart_images:ro
       - ./backend/config:/app/config:ro
+      - ./constants.json:/app/constants.json:ro
     ports:
       - "${BACKEND_PORT:-8001}:8000"
     depends_on:

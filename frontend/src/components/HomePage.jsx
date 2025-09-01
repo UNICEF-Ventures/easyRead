@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { GLOBALSYMBOLS_URL } from '../constants';
 import {
   Box,
   Typography,
@@ -485,7 +486,7 @@ function HomePage({
               fontStyle: 'italic',
               fontSize: '0.875rem'
             }}>
-              🌍 <strong>Symbols kindly provided by <a href="https://www.globalsymbols.com" target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none' }}>GlobalSymbols</a></strong> - making communication accessible worldwide
+              🌍 <strong>Symbols kindly provided by <a href={GLOBALSYMBOLS_URL} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none' }}>GlobalSymbols</a></strong> - making communication accessible worldwide
             </Typography>
           </Box>
           
