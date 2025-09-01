@@ -78,7 +78,13 @@ const SortableItem = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: index });
+  } = useSortable({ 
+    id: index,
+    animateLayoutChanges: ({ isSorting, wasDragging }) => {
+      // Don't animate layout changes after sorting is complete
+      return isSorting && !wasDragging;
+    }
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
