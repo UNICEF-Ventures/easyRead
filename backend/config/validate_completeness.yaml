@@ -1,4 +1,4 @@
-llm_model: "bedrock/us.meta.llama3-1-70b-instruct-v1:0" 
+llm_model: "bedrock/meta.llama3-1-70b-instruct-v1:0" 
 
 system_message: |
   # Goal

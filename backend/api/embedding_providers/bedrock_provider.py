@@ -92,6 +92,7 @@ class BedrockEmbeddingProvider(EmbeddingProvider):
         self.aws_access_key_id = (config or {}).get('aws_access_key_id') or os.environ.get('AWS_ACCESS_KEY_ID')
         self.aws_secret_access_key = (config or {}).get('aws_secret_access_key') or os.environ.get('AWS_SECRET_ACCESS_KEY')
         self.aws_region = (config or {}).get('aws_region') or os.environ.get('AWS_REGION_NAME', 'us-east-1')
+        print("fff", self.aws_region)
         
         # Initialize boto3 client
         if all([self.aws_access_key_id, self.aws_secret_access_key]):
@@ -193,6 +194,7 @@ class BedrockEmbeddingProvider(EmbeddingProvider):
                     else:
                         raise EmbeddingError(f"Unsupported model: {self.model_name}")
                     
+                    print("ffffff", self.model_name)
                     # Call AWS Bedrock directly
                     response = self.bedrock_client.invoke_model(
                         modelId=self.model_name,

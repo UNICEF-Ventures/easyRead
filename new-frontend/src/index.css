@@ -1,0 +1,45 @@
+@config "../tailwind.config.js";
+
+@import "tailwindcss";
+
+* {
+    font-family: 'Noto Sans', sans-serif;
+    box-shadow: none;
+    transition: none;
+    animation: none;
+}
+
+
+/* EXCLUDE loading widgets from the reset */
+[aria-label="Loading"],
+[aria-label="Loading"] *,
+[aria-label="Loading"] *::before,
+[aria-label="Loading"] *::after,
+.animate-spinner-linear-spin,
+.animate-spinner-ease-spin {
+  animation: revert-layer !important;   /* restores whatever was defined before */
+  transition: revert-layer !important;
+}
+
+.th{
+    color: "#1cabe2";
+}
+
+
+tbody[data-empty="true"] td {
+  text-align: center;
+}
+
+div[data-slot="input-wrapper"] {
+  @apply bg-secondary rounded-lg;
+
+}
+
+.translated-value{
+  @apply !bg-gray-100;
+}
+
+
+div[data-slot="base"][role="dialog"] {
+  @apply !bg-secondary rounded-lg;
+}

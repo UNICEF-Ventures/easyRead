@@ -87,43 +87,49 @@ WSGI_APPLICATION = "easyread_backend.wsgi.application"
 
 # Database configuration - PostgreSQL with pgvector required
 # Validate required environment variables
-if not os.getenv("DB_ENGINE"):
-    raise ValueError("DB_ENGINE environment variable is required. Use 'django.db.backends.postgresql' for production.")
+# if not os.getenv("DB_ENGINE"):
+#     raise ValueError("DB_ENGINE environment variable is required. Use 'django.db.backends.postgresql' for production.")
 
-if not os.getenv("DB_NAME"):
-    raise ValueError("DB_NAME environment variable is required.")
+# if not os.getenv("DB_NAME"):
+#     raise ValueError("DB_NAME environment variable is required.")
+
+# DATABASES = {
+#     "default": {
+#         "ENGINE": os.getenv("DB_ENGINE"),
+#         "NAME": os.getenv("DB_NAME"),
+#         "USER": os.getenv("DB_USER", ""),
+#         "PASSWORD": os.getenv("DB_PASSWORD", ""),
+#         "HOST": os.getenv("DB_HOST", ""),
+#         "PORT": os.getenv("DB_PORT", ""),
+#         "OPTIONS": {
+#             "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+#         } if os.getenv("DB_ENGINE") == "django.db.backends.mysql" else {},
+#     }
+# }
+
+# # PostgreSQL specific configuration
+# if os.getenv("DB_ENGINE") == "postgresql" or os.getenv("DATABASE_URL"):
+#     # Support both individual env vars and DATABASE_URL
+#     if os.getenv("DATABASE_URL"):
+#         import dj_database_url
+#         DATABASES["default"] = dj_database_url.parse(os.getenv("DATABASE_URL"))
+#     else:
+#         DATABASES["default"] = {
+#             "ENGINE": "django.db.backends.postgresql",
+#             "NAME": os.getenv("DB_NAME", "easyread"),
+#             "USER": os.getenv("DB_USER", "easyread_user"),
+#             "PASSWORD": os.getenv("DB_PASSWORD", "easyread_password"),
+#             "HOST": os.getenv("DB_HOST", "localhost"),
+#             "PORT": os.getenv("DB_PORT", "5432"),
+#             "OPTIONS": {},
+#         }
 
 DATABASES = {
-    "default": {
-        "ENGINE": os.getenv("DB_ENGINE"),
-        "NAME": os.getenv("DB_NAME"),
-        "USER": os.getenv("DB_USER", ""),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", ""),
-        "PORT": os.getenv("DB_PORT", ""),
-        "OPTIONS": {
-            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
-        } if os.getenv("DB_ENGINE") == "django.db.backends.mysql" else {},
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
-
-# PostgreSQL specific configuration
-if os.getenv("DB_ENGINE") == "postgresql" or os.getenv("DATABASE_URL"):
-    # Support both individual env vars and DATABASE_URL
-    if os.getenv("DATABASE_URL"):
-        import dj_database_url
-        DATABASES["default"] = dj_database_url.parse(os.getenv("DATABASE_URL"))
-    else:
-        DATABASES["default"] = {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("DB_NAME", "easyread"),
-            "USER": os.getenv("DB_USER", "easyread_user"),
-            "PASSWORD": os.getenv("DB_PASSWORD", "easyread_password"),
-            "HOST": os.getenv("DB_HOST", "localhost"),
-            "PORT": os.getenv("DB_PORT", "5432"),
-            "OPTIONS": {},
-        }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -214,6 +220,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:5001", # Frontend dev server port (alternative)
     "http://127.0.0.1:5001",
+    "http://127.0.0.1:6002",
+    "http://localhost:6002",
 ]
 
 # Allow credentials for admin authentication
@@ -229,6 +237,9 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:5001",
     "http://127.0.0.1:5001",
+    "http://127.0.0.1:6002",
+    "http://localhost:6002",
+
 ]
 
 # Optional: Allow all origins for quick testing (less secure)

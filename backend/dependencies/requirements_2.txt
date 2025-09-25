@@ -14,6 +14,6 @@ python-docx
 
 # Image Processing & AI
 Pillow
-numpy
 boto3
 gradio_client
+# playground-python-commons@ https://playground-python-commons.s3.eu-north-1.amazonaws.com/packages/playground-python-commons/0.8.0/playground_python_commons-0.8.0-py3-none-any.whl

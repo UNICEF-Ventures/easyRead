@@ -7,6 +7,7 @@ import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
+import Demo from './Demo';
 
 // Core App component that requires router context
 function AppCore() {
@@ -184,5 +185,4 @@ function App() {
 }
 
 // Export both the wrapped App (for standalone use) and AppCore (for federated use with custom routing)
-export { AppCore };
-export default App;
+export { AppCore, App };

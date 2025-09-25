@@ -1,4 +1,4 @@
-llm_model: "bedrock/us.meta.llama3-1-70b-instruct-v1:0"  # Llama 3.1 70B via AWS Bedrock inference profile 
+llm_model: "bedrock/meta.llama3-1-70b-instruct-v1:0"  # Llama 3.1 70B via AWS Bedrock inference profile 
 
 system_message: |
   # Goal

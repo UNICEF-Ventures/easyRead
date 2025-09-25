@@ -16,3 +16,7 @@ images/*
 CLAUDE.md
 globalsymbols_images_test.csv
 deployment_env/
+venv/
+
+*.zip
+db.sqlite3

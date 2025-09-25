@@ -167,7 +167,7 @@ def convert_url_to_relative_path(url):
 # Initialize Bedrock client for LLM calls
 bedrock_runtime = None
 try:
-    bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
+    bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-west-2')
     logger.info("Bedrock runtime client initialized successfully.")
 except Exception as e:
     logger.error(f"Failed to initialize Bedrock runtime client: {e}")
@@ -292,6 +292,7 @@ def bedrock_completion(model: str, messages: list, response_format: dict = None)
         "top_p": 0.9
     }
     
+    print("sssss", model_id)
     try:
         response = bedrock_runtime.invoke_model(
             modelId=model_id,
@@ -669,6 +670,7 @@ def validate_completeness(request):
         {"role": "user", "content": user_message}
     ]
 
+    logger.info(f"Using model: {llm_model}")
     # --- LLM Call and Response Handling --- 
     try:
         response = bedrock_completion(
@@ -1519,6 +1521,7 @@ def generate_image_view(request):
     Expects JSON: {"prompt": "description for the image"}
     Returns JSON: {"generated_images": [{"id": 1, "url": "path/to/image1.png"}, ...]}
     """
+    print("graddddddd")
     if not gradio_client:
         return Response({"error": "Image generation service (Gradio) is not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
@@ -1529,9 +1532,11 @@ def generate_image_view(request):
     logger.info(f"Generating images for prompt: '{prompt}' using Gradio client.")
 
     try:
+        print("ffffff")
         # --- Call Gradio Client for Image Generation ---
         # Parameters based on the example: config/temp/gradio.py
-        # client.predict("Mulberry", "A red bus with a yellow stripe", None, "No", 50, 3, 0.75, 7.5, None, api_name="/process_symbol_generation")
+        r = gradio_client.predict("Mulberry", "A red bus with a yellow stripe", None, "No", 50, 3, 0.75, 7.5, None, api_name="/process_symbol_generation")
+        print("graddddddd", r, "lllllllllll")
         prediction_result = gradio_client.predict(
             "Mulberry",  # First argument (style/category)
             prompt,      # Second argument (the actual prompt)
@@ -1544,6 +1549,8 @@ def generate_image_view(request):
             None,        # Ninth argument
             api_name="/process_symbol_generation"
         )
+
+        print("graddddddd orrpredictt", prediction_result)
 
         if not prediction_result or not isinstance(prediction_result, tuple) or len(prediction_result) == 0:
             logger.error(f"Gradio client returned an unexpected result: {prediction_result}")
@@ -2300,8 +2307,10 @@ def list_images(request):
     from django.conf import settings
     logger = logging.getLogger(__name__)
     try:
+        logger.info("hereee")
         images = Image.objects.select_related('set').prefetch_related('embeddings').all().order_by('set__name', 'filename')
         images_by_set = {}
+        logger.info(f"images, {images}")
         for img in images:
             set_name = img.set.name if img.set else 'General'
             if set_name not in images_by_set:
@@ -2309,6 +2318,7 @@ def list_images(request):
             # Use model helper to get a URL path under MEDIA_URL
             path_under_media = img.get_url()  # e.g., /media/images/...
             # Normalize to ensure it begins with /media
+            logger.info("hereee 2")
             if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
                 path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
             # Check if image has embeddings
@@ -2342,7 +2352,7 @@ def list_images(request):
                 'search_ready': has_embeddings  # Indicates if image will work in similarity search
             })
         total_images = sum(len(v) for v in images_by_set.values())
-        
+        logger.info("hereee 3")
         # Calculate embedding statistics
         total_with_embeddings = 0
         total_without_embeddings = 0
