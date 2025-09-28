@@ -23,6 +23,8 @@ export const config = {
   IS_DEVELOPMENT: import.meta.env.DEV,
   IS_PRODUCTION: import.meta.env.PROD,
   IS_CONTAINERIZED: isContainerized(),
+  // Feature flags
+  ENABLE_IMAGE_GENERATION: (import.meta.env.VITE_ENABLE_IMAGE_GENERATION ?? 'false') === 'true',
 };
 
 // Debug logging only in development

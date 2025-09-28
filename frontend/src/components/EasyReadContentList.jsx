@@ -771,7 +771,7 @@ function EasyReadContentList({
               <Box sx={{ mt: 'auto' }}>
                 <Button
                   onClick={handleGenerateImageSubmit}
-                  disabled={!editablePrompt || editablePrompt.trim() === ''}
+                  disabled={!config.ENABLE_IMAGE_GENERATION || !editablePrompt || editablePrompt.trim() === ''}
                   startIcon={<AutoFixHighIcon />}
                   variant="contained"
                   fullWidth
