@@ -23,6 +23,7 @@ import ShareIcon from '@mui/icons-material/Share';
 import apiClient, { exportSavedContentDocx, updateSavedContentFull } from '../apiClient';
 import EasyReadContentList from './EasyReadContentList';
 import useEasyReadImageManager from '../hooks/useEasyReadImageManager';
+import RevisionModal from './RevisionModal'; // Import the shared revision modal
 import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
@@ -49,6 +50,9 @@ const SavedContentDetailPage = () => {
   
   // Share functionality state
   const [shareSuccess, setShareSuccess] = useState(false);
+  
+  // Revision modal state
+  const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
 
   // Numeric ID for API calls
   const [numericId, setNumericId] = useState(null);
@@ -234,6 +238,23 @@ const SavedContentDetailPage = () => {
     console.log(`Sentence at index ${index} highlight changed to: ${highlighted}`);
   };
 
+  // Revision handlers - using shared RevisionModal
+  const handleOpenRevisionModal = () => {
+    setIsRevisionModalOpen(true);
+  };
+
+  const handleCloseRevisionModal = () => {
+    setIsRevisionModalOpen(false);
+  };
+
+  const handleRevisionComplete = (revisedSentences) => {
+    // Update the content with revised sentences
+    setContent(prevContent => ({
+      ...prevContent,
+      easy_read_content: revisedSentences
+    }));
+  };
+
   // Save function to update the saved content
   const handleSave = async () => {
     if (!content || !getCurrentImageSelections || !numericId) {
@@ -256,16 +277,34 @@ const SavedContentDetailPage = () => {
       
       // Prepare the full content update including both images and user keywords
       const updatedContent = (content?.easy_read_content || []).map((item, index) => {
-        const finalSelectedPath = currentSelections[index] !== undefined 
+        let finalSelectedPath = currentSelections[index] !== undefined 
           ? currentSelections[index] 
           : item.selected_image_path;
         
+        // Ensure finalSelectedPath is a string, not an object
+        if (finalSelectedPath && typeof finalSelectedPath === 'object') {
+          finalSelectedPath = finalSelectedPath.url || finalSelectedPath.path || null;
+        }
+        
+        // Ensure alternative_images are also strings, not objects
+        let alternativeImages = item.alternative_images;
+        if (alternativeImages && Array.isArray(alternativeImages)) {
+          alternativeImages = alternativeImages.map(img => {
+            if (img && typeof img === 'object') {
+              return img.url || img.path || null;
+            }
+            return img;
+          }).filter(Boolean); // Remove null/undefined values
+        }
+
         return {
           ...item,
           selected_image_path: finalSelectedPath,
+          alternative_images: alternativeImages,
           user_keywords: userKeywords[index] || item.user_keywords || null
         };
       });
+      
 
       // Call the full update API with error handling
       const response = await updateSavedContentFull(numericId, updatedContent);
@@ -420,6 +459,36 @@ const SavedContentDetailPage = () => {
               // isLoading prop might not be needed if hook handles initial loading state internally
             />
 
+            {/* Try Again Button */}
+            {canEdit && (
+              <Box sx={{ 
+                mt: 4, 
+                pt: 3, 
+                borderTop: '1px solid var(--lighter-gray)',
+                textAlign: 'center',
+                mb: 3
+              }}>
+                <Button
+                  variant="outlined"
+                  onClick={handleOpenRevisionModal}
+                  disabled={!content}
+                  sx={{
+                    borderColor: 'var(--color-primary)',
+                    color: 'var(--color-primary)',
+                    borderRadius: 'var(--border-radius-md)',
+                    px: 3,
+                    py: 1,
+                    '&:hover': {
+                      borderColor: '#357ae8',
+                      backgroundColor: 'rgba(74, 144, 226, 0.04)',
+                    }
+                  }}
+                >
+                  Try again with custom feedback
+                </Button>
+              </Box>
+            )}
+
             {/* Disclaimer and Acknowledgements */}
             <Box sx={{ 
               mt: 4, 
@@ -550,6 +619,15 @@ const SavedContentDetailPage = () => {
             URL copied to clipboard!
           </Alert>
         </Snackbar>
+
+        {/* Shared revision modal */}
+        <RevisionModal
+          open={isRevisionModalOpen}
+          onClose={handleCloseRevisionModal}
+          content={content}
+          onRevisionComplete={handleRevisionComplete}
+          disabled={!canEdit}
+        />
       </Paper>
     </Container>
   );

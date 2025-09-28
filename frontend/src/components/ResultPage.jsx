@@ -11,12 +11,20 @@ import {
   Snackbar,
   Alert,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Backdrop,
+  LinearProgress,
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import DownloadIcon from '@mui/icons-material/Download';
-import { saveContent, exportCurrentContentDocx } from '../apiClient'; // Removed unused findSimilarImages, generateNewImage
+import { saveContent, exportCurrentContentDocx } from '../apiClient'; // Removed unused findSimilarImages, generateNewImage, reviseSentencesWithFeedback
 import EasyReadContentList from './EasyReadContentList';
-import useEasyReadImageManager from '../hooks/useEasyReadImageManager'; // Import the custom hook
+import useContentManager from '../hooks/useContentManager'; // Import the unified content management hook
+import RevisionModal from './RevisionModal'; // Import the reusable revision modal
 import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
@@ -27,24 +35,23 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Debug output for easyReadContent structure
-  useEffect(() => {
-    if (easyReadContent && easyReadContent.length > 0) {
-      console.log("ResultPage: easyReadContent structure", {
-        firstItem: easyReadContent[0],
-        totalItems: easyReadContent.length,
-        hasImageRetrieval: easyReadContent.some(item => item.image_retrieval),
-        itemsWithImageRetrieval: easyReadContent.filter(item => item.image_retrieval).length,
-        imageRetrievalValues: easyReadContent.slice(0, 5).map(item => item.image_retrieval)
-      });
-    }
-  }, [easyReadContent]);
+  // Initial content structure
+  const initialContent = useMemo(() => ({
+    title: title,
+    original_markdown: markdownContent,
+    easy_read_content: easyReadContent
+  }), [title, markdownContent, easyReadContent]);
 
-  // Memoize the easyReadContent to prevent unnecessary reinitializations
-  const memoizedEasyReadContent = useMemo(() => easyReadContent, [easyReadContent]);
-
-  // Use the custom hook for image management
+  // Use the unified content management hook
   const {
+    content,
+    isEmpty,
+    easyReadContent: currentEasyReadContent,
+    updateEasyReadContent,
+    handleSentenceChange,
+    handleHighlightChange,
+    handleReorderSentences,
+    // Image management from the hook
     imageState,
     userKeywords,
     imageSearchSource,
@@ -53,9 +60,21 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     handleGenerateImage,
     handleSearchWithCustomKeywords,
     handleCloseNotification,
-    getCurrentImageSelections,
-    handleReorderContent
-  } = useEasyReadImageManager(memoizedEasyReadContent, null, selectedSets, preventDuplicateImages); // Pass memoized content, selected sets, and duplicate prevention setting
+    getCurrentImageSelections
+  } = useContentManager(initialContent, null, selectedSets, preventDuplicateImages);
+
+  // Debug output for easyReadContent structure
+  useEffect(() => {
+    if (currentEasyReadContent && currentEasyReadContent.length > 0) {
+      console.log("ResultPage: currentEasyReadContent structure", {
+        firstItem: currentEasyReadContent[0],
+        totalItems: currentEasyReadContent.length,
+        hasImageRetrieval: currentEasyReadContent.some(item => item.image_retrieval),
+        itemsWithImageRetrieval: currentEasyReadContent.filter(item => item.image_retrieval).length,
+        imageRetrievalValues: currentEasyReadContent.slice(0, 5).map(item => item.image_retrieval)
+      });
+    }
+  }, [currentEasyReadContent]);
 
   // State for saving feedback (remains specific to this page)
   const [isSaving, setIsSaving] = useState(false);
@@ -66,21 +85,20 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
 
+  // State for revision modal
+  const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
+
   // Redirect if no content (remains specific)
   useEffect(() => {
-    if (!location.state?.fromProcessing && (!easyReadContent || easyReadContent.length === 0)) {
+    if (!location.state?.fromProcessing && isEmpty) {
       console.log('Redirecting from ResultPage: No content found.');
       navigate('/');
     }
-  }, [location.state, easyReadContent, navigate]);
-
-  // Initial image fetching is handled by the hook
-
-  const isEmpty = !easyReadContent || easyReadContent.length === 0;
+  }, [location.state, isEmpty, navigate]);
   
   // Save function remains specific to this page
   const handleSave = async () => {
-    if (!markdownContent || easyReadContent.length === 0) {
+    if (!content?.original_markdown || isEmpty) {
       setSaveError("Content missing, cannot save.");
       return;
     }
@@ -91,9 +109,13 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     
     
     // Construct the JSON to save, including the selected image path from the current selections
-    const dataToSave = easyReadContent.map((item, index) => {
-      const finalSelectedPath = currentSelections[index] || imageState[index]?.selectedPath || null;
+    const dataToSave = currentEasyReadContent.map((item, index) => {
+      let finalSelectedPath = currentSelections[index] || imageState[index]?.selectedPath || null;
       
+      // Ensure finalSelectedPath is a string, not an object
+      if (finalSelectedPath && typeof finalSelectedPath === 'object') {
+        finalSelectedPath = finalSelectedPath.url || finalSelectedPath.path || null;
+      }
       
       return {
         ...item,
@@ -108,7 +130,7 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     setSaveError(null);
     setSaveSuccess(false);
     try {
-      const response = await saveContent(title, markdownContent, dataToSave);
+      const response = await saveContent(content.title, content.original_markdown, dataToSave);
       console.log('Save response:', response.data);
 
       // Store token in LocalStorage
@@ -138,51 +160,7 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     }
   };
 
-  // Handle sentence changes from inline editing
-  const handleSentenceChange = (index, newSentence) => {
-    // Update the easyReadContent directly since it's passed as props
-    // The parent component would need to handle this state update
-    console.log(`Sentence at index ${index} changed to: "${newSentence}"`);
-    
-    // For now, we'll just log it. In a complete implementation,
-    // this would need to bubble up to the parent component that owns easyReadContent
-    // or we'd need to manage a local copy of the content with useState
-  };
-
-  // Handle sentence reordering from drag and drop
-  const handleReorderSentences = (newOrder) => {
-    console.log('Sentences reordered:', newOrder);
-    
-    // Find which item was moved by comparing with current content
-    let oldIndex = -1;
-    let newIndex = -1;
-    
-    // Find the item that changed position
-    for (let i = 0; i < newOrder.length; i++) {
-      if (i < easyReadContent.length && newOrder[i] !== easyReadContent[i]) {
-        // Found a difference, now find where this item came from
-        const movedItem = newOrder[i];
-        oldIndex = easyReadContent.findIndex(item => item === movedItem);
-        newIndex = i;
-        break;
-      }
-    }
-    
-    // If we found valid indices, reorder both keywords and image state
-    if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-      handleReorderContent(oldIndex, newIndex, newOrder.length);
-    }
-    
-    // For now, just log it. In a complete implementation,
-    // this would update the parent's easyReadContent state
-  };
-
-  // Handle highlight changes for sentences
-  const handleHighlightChange = (index, highlighted) => {
-    console.log(`Sentence at index ${index} highlight changed to: ${highlighted}`);
-    // For now, just log it. In a complete implementation,
-    // this would update the parent's easyReadContent state
-  };
+  // Editing handlers are now provided by useContentManager hook
   
   // Snackbar handlers remain specific or could be part of the hook if generalized
   const handleCloseSuccessSnackbar = (event, reason) => {
@@ -197,7 +175,7 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
 
   // Export function
   const handleExport = async () => {
-    if (!markdownContent || easyReadContent.length === 0) {
+    if (!content?.original_markdown || isEmpty) {
       setExportError("Content missing, cannot export.");
       return;
     }
@@ -210,15 +188,21 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
       const currentSelections = getCurrentImageSelections();
       
       // Prepare content with selected images
-      const contentToExport = easyReadContent.map((item, index) => {
-        const finalSelectedPath = currentSelections[index] || imageState[index]?.selectedPath || null;
+      const contentToExport = currentEasyReadContent.map((item, index) => {
+        let finalSelectedPath = currentSelections[index] || imageState[index]?.selectedPath || null;
+        
+        // Ensure finalSelectedPath is a string, not an object
+        if (finalSelectedPath && typeof finalSelectedPath === 'object') {
+          finalSelectedPath = finalSelectedPath.url || finalSelectedPath.path || null;
+        }
+        
         return {
           ...item,
           selected_image_path: finalSelectedPath
         };
       });
 
-      const response = await exportCurrentContentDocx(title, contentToExport, markdownContent);
+      const response = await exportCurrentContentDocx(content.title, contentToExport, content.original_markdown);
       
       // Create download link
       const blob = new Blob([response.data], { 
@@ -229,7 +213,7 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
       link.href = url;
       
       // Generate filename
-      const safeTitle = (title || 'easyread_document').replace(/[^a-zA-Z0-9\-_]/g, '_').toLowerCase();
+      const safeTitle = (content.title || 'easyread_document').replace(/[^a-zA-Z0-9\-_]/g, '_').toLowerCase();
       link.download = `${safeTitle}.docx`;
       
       document.body.appendChild(link);
@@ -247,6 +231,20 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
 
   // Generate function is now provided by the hook (handleGenerateImage)
   // Image selection change is now provided by the hook (handleImageSelectionChange)
+
+  // Revision handlers - now using shared component
+  const handleOpenRevisionModal = () => {
+    setIsRevisionModalOpen(true);
+  };
+
+  const handleCloseRevisionModal = () => {
+    setIsRevisionModalOpen(false);
+  };
+
+  const handleRevisionComplete = (revisedSentences) => {
+    // Update the content using the unified content manager
+    updateEasyReadContent(revisedSentences);
+  };
 
   
   return (
@@ -304,7 +302,7 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
                 color: 'var(--dark-gray)', 
                 fontWeight: 600,
               }}>
-                {title || 'Untitled Content'}
+                {content?.title || 'Untitled Content'}
               </Typography>
               
               <Box sx={{ display: 'flex', gap: 2 }}>
@@ -346,21 +344,49 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
           
 
             <EasyReadContentList 
-              easyReadContent={easyReadContent}
+              easyReadContent={currentEasyReadContent}
               imageState={imageState} // From hook
               userKeywords={userKeywords} // From hook
               imageSearchSource={imageSearchSource} // From hook
               onImageSelectionChange={handleImageSelectionChange} // From hook
               onGenerateImage={handleGenerateImage} // From hook
               onSearchWithCustomKeywords={handleSearchWithCustomKeywords} // From hook
-              onSentenceChange={handleSentenceChange} // For inline editing
-              onHighlightChange={handleHighlightChange} // For highlight toggle
-              onReorderSentences={handleReorderSentences} // For drag and drop reordering
+              onSentenceChange={handleSentenceChange} // From unified content manager
+              onHighlightChange={handleHighlightChange} // From unified content manager
+              onReorderSentences={handleReorderSentences} // From unified content manager
             />
+
+            {/* Try Again Button */}
+            <Box sx={{ 
+              mt: 4, 
+              pt: 3, 
+              borderTop: '1px solid var(--lighter-gray)',
+              textAlign: 'center',
+              mb: 3
+            }}>
+              <Button
+                variant="outlined"
+                onClick={handleOpenRevisionModal}
+                disabled={isSaving || isExporting}
+                sx={{
+                  borderColor: 'var(--color-primary)',
+                  color: 'var(--color-primary)',
+                  borderRadius: 'var(--border-radius-md)',
+                  px: 3,
+                  py: 1,
+                  '&:hover': {
+                    borderColor: '#357ae8',
+                    backgroundColor: 'rgba(74, 144, 226, 0.04)',
+                  }
+                }}
+              >
+                Try again with custom feedback
+              </Button>
+            </Box>
 
             {/* Disclaimer and Acknowledgements */}
             <Box sx={{ 
-              mt: 4, 
+              mt: 2, 
               pt: 3, 
               borderTop: '1px solid var(--lighter-gray)',
               textAlign: 'center'
@@ -423,6 +449,14 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
           {notification.message}
         </Alert>
       </Snackbar>
+
+      {/* Shared revision modal */}
+      <RevisionModal
+        open={isRevisionModalOpen}
+        onClose={handleCloseRevisionModal}
+        content={content}
+        onRevisionComplete={handleRevisionComplete}
+      />
     </Container>
   );
 }

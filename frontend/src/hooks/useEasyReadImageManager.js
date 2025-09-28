@@ -849,7 +849,11 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
       const images = response.data.results || [];
       
       if (images && images.length > 0) {
-        const newImages = images.map(img => ({ url: img.url, id: img.id || img.url }));
+        const newImages = images.map(img => ({ 
+          url: img.url, 
+          id: img.id || img.url,
+          description: img.description || 'No description'
+        }));
         
         setImageState(prev => ({
           ...prev,

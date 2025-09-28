@@ -669,4 +669,19 @@ export const exportCurrentContentDocx = (title, easyReadContent, originalMarkdow
   });
 };
 
+// Function to manually revise sentences with custom user feedback
+export const reviseSentencesWithFeedback = (originalMarkdown, currentSentences, userFeedback) => {
+  return apiClient.post('/revise-sentences/', {
+    original_markdown: originalMarkdown,
+    current_sentences: currentSentences,
+    validation_feedback: {
+      missing_info: userFeedback || "",
+      extra_info: "",
+      other_feedback: ""
+    }
+  }, {
+    timeout: 90000 // 90 seconds for revision
+  });
+};
+
 export default apiClient; 

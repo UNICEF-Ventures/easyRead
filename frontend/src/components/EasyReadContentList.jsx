@@ -250,22 +250,12 @@ const SortableItem = ({
                           imageUrl = image.url;
                           imageData = image; // Use the full object with metadata
                         } else if (image.url && typeof image.url === 'object' && typeof image.url.url === 'string') {
-                          console.warn('🐛 Found nested URL structure, extracting:', image);
                           imageUrl = image.url.url; // Extract from nested structure
                           imageData = image; // Still use the full object with metadata
                         } else {
                           imageUrl = '';
                           imageData = image;
-                        }
-                        
-                        // Debug what we're actually using for tooltip
-                        if (import.meta.env.DEV) {
-                          console.log('🏷️ Tooltip data for', imageUrl, ':', {
-                            description: imageData.description,
-                            filename: imageData.filename,
-                            tooltip: imageData.description || imageData.filename || 'No description'
-                          });
-                        }
+                        }                        
                       } else {
                         // Invalid format
                         console.warn('🚨 Invalid image format:', image);
