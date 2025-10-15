@@ -45,6 +45,8 @@ system_message: |
 
   # Guidelines for Creating Sentences (Easy Read Principles)
   - Extract all key information from the original content
+    - Ignore document metadata
+    - Ignore noise introduced by the PDF to Markdown conversion
   - Create one sentence per idea or piece of information
   - Avoid having sentences that contain the same information
   - Keep sentences short (under 20 words)

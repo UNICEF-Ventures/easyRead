@@ -52,12 +52,12 @@ import { config } from '../config.js';
 // Base URL for serving media files from Django dev server
 const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
 
-// Sortable Item Component
-const SortableItem = ({ 
-  item, 
-  index, 
-  readOnly, 
-  onImageSelectionChange, 
+// Sortable Item Component - Memoized to prevent unnecessary re-renders
+const SortableItem = React.memo(({
+  item,
+  index,
+  readOnly,
+  onImageSelectionChange,
   onGenerateImage,
   onSentenceClick,
   onSentenceKeyDown,
@@ -390,7 +390,10 @@ const SortableItem = ({
       {index < item.totalLength - 1 && <Divider component="li" />}
     </React.Fragment>
   );
-};
+});
+
+// Add display name for debugging
+SortableItem.displayName = 'SortableItem';
 
 // Helper function to normalize image URLs
 const normalizeImageUrl = (url) => {
@@ -568,30 +571,18 @@ function EasyReadContentList({
     }
   }, [easyReadContent, onReorderSentences]);
   
-  // Memoize the content list to prevent unnecessary re-renders when imageState changes
-  const memoizedContentList = useMemo(() => {
+  // Process content list - React.memo on SortableItem prevents unnecessary re-renders
+  const processedContentList = useMemo(() => {
     if (!easyReadContent || easyReadContent.length === 0) {
       return [];
     }
-    
-    return easyReadContent.map((item, index) => {
-      const currentImageState = imageState[index] || { 
-        images: [], 
-        selectedPath: item.selected_image_path,
-        isLoading: false, 
-        isGenerating: false,
-        error: null 
-      };
-      
-      
-      return {
-        ...item,
-        index,
-        currentImageState,
-        canGenerate: item.image_retrieval && item.image_retrieval !== 'error'
-      };
-    });
-  }, [easyReadContent, imageState]);
+
+    return easyReadContent.map((item, index) => ({
+      ...item,
+      index,
+      canGenerate: item.image_retrieval && item.image_retrieval !== 'error'
+    }));
+  }, [easyReadContent]);
   
   // If parent is loading, show a single spinner
   if (isLoading) {
@@ -625,7 +616,7 @@ function EasyReadContentList({
           }}
         >
           <Typography variant="body2" color="text.secondary">
-            💡 <strong>Tip:</strong> Click on any sentence to edit the text. Drag the grip handle to reorder sentences. Click on the edit icon next to images to search for different images or generate new ones.
+            💡 <strong>Tip:</strong> Click on any sentence to edit the text. Drag the grip handle to reorder sentences. Click on the edit icon next to images to search for different images.
           </Typography>
         </Box>
       )}
@@ -635,17 +626,26 @@ function EasyReadContentList({
         collisionDetection={closestCenter}
         onDragEnd={handleDragEnd}
       >
-        <SortableContext 
-          items={memoizedContentList.map((_, index) => index)}
+        <SortableContext
+          items={processedContentList.map((_, index) => index)}
           strategy={verticalListSortingStrategy}
         >
           <List disablePadding>
-          {memoizedContentList.map((item) => {
+          {processedContentList.map((item) => {
         const { index } = item;
+
+        // Get image state for this item (React.memo will prevent re-render if unchanged)
+        const currentImageState = imageState[index] || {
+          images: [],
+          selectedPath: item.selected_image_path,
+          isLoading: false,
+          isGenerating: false,
+          error: null
+        };
 
         const itemData = {
           ...item,
-          imageData: item.currentImageState,
+          imageData: currentImageState,
           totalLength: easyReadContent.length
         };
 

@@ -25,6 +25,8 @@ system_message: |
 
   # Guidelines for Creating Sentences
   1. Extract all key information from the original content
+    1.1. Ignore document metadata
+    1.2. Ignore noise introduced by the PDF to Markdown conversion
   2. Create one sentence per idea or piece of information
   3. Avoid having sentences that contain the same information
   4. Keep sentences short (under 20 words)

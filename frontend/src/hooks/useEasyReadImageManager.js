@@ -334,8 +334,8 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
             
             const response = await Promise.race([
                 findSimilarImagesBatch(batchQueries, [], signal, selectedSets),
-                new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Batch request timeout')), 60000) // 60 seconds timeout
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Batch request timeout')), 300000) // 5 minutes timeout for large batches
                 )
             ]);
 

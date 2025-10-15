@@ -48,6 +48,9 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION_NAME=${AWS_REGION_NAME}
+      - MAX_CONCURRENT_SIMILARITY_SEARCHES=8
+      - BATCH_CHUNK_SIZE=100
+      - EMBEDDING_CACHE_TIMEOUT=7200
     volumes:
       - ./backend:/app
       - ./media:/app/media

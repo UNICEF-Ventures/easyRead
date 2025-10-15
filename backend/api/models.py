@@ -186,8 +186,10 @@ class SessionEvent(models.Model):
         ('content_validate', 'Content Validation'),
         ('sentence_revise', 'Sentence Revision'),
         ('image_search', 'Image Search'),
+        ('image_search_batch', 'Batch Image Search'),
         ('image_select', 'Image Selection'),
         ('image_change', 'Image Change'),
+        ('image_allocation_applied', 'Image Allocation Applied'),
         ('content_save', 'Content Save'),
         ('content_export', 'Content Export'),
         ('image_upload', 'Image Upload'),
@@ -195,7 +197,7 @@ class SessionEvent(models.Model):
     ]
     
     session = models.ForeignKey(UserSession, on_delete=models.CASCADE, related_name='events')
-    event_type = models.CharField(max_length=20, choices=EVENT_TYPES)
+    event_type = models.CharField(max_length=50, choices=EVENT_TYPES)
     timestamp = models.DateTimeField(auto_now_add=True)
     
     # Flexible data field for event-specific information

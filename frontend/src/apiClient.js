@@ -197,7 +197,7 @@ export const findSimilarImages = (query, n_results = 3, excludeIds = [], signal 
 export const findSimilarImagesBatch = (queries, excludeIds = [], signal = null, imageSets = null) => {
   const config = {
     signal: signal, // Add AbortController signal support
-    timeout: 60000 // 60 seconds timeout for batch processing
+    timeout: 300000 // 5 minutes timeout for batch processing (handles large batches)
   };
   
   const requestData = {

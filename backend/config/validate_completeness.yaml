@@ -25,7 +25,7 @@ system_message: |
   - Without it, the reader would have an incomplete or misleading understanding
   
   ## Easy Read Quality Assessment
-  Also evaluate whether the sentences follow Easy Read principles:
+  Evaluate whether the sentences follow Easy Read principles:
   - Are sentences appropriately short and simple?
   - Do they use everyday language and avoid unnecessary jargon?
   - Are complex concepts broken down adequately?
@@ -36,6 +36,7 @@ system_message: |
   - Be specific when identifying gaps or issues - provide exact phrases or sentences and context
   - Prioritize accuracy over completeness when they conflict
   - Consider the logical flow and organization of information
+  - Ignore document metadata and noise introduced by the PDF to Markdown conversion
 
   # Output Format
   Output only a valid JSON object following the template below. 
