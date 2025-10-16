@@ -18,7 +18,9 @@ import {
   Chip,
   Stack,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import {
   DndContext,
@@ -47,6 +49,8 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import SearchIcon from '@mui/icons-material/Search';
 import EditIcon from '@mui/icons-material/Edit';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import AddIcon from '@mui/icons-material/Add';
 import { config } from '../config.js';
 
 // Base URL for serving media files from Django dev server
@@ -64,6 +68,7 @@ const SortableItem = React.memo(({
   onSentenceChange,
   onSentenceBlur,
   onHighlightChange,
+  onSentenceDelete,
   editingSentences,
   editedSentenceTexts,
   userKeywords,
@@ -105,14 +110,14 @@ const SortableItem = React.memo(({
 
   return (
     <React.Fragment>
-      <ListItem 
+      <ListItem
         ref={setNodeRef}
         style={style}
-        sx={{ 
-          py: 3, 
-          display: 'flex', 
+        sx={{
+          py: 3,
+          display: 'flex',
           flexDirection: 'row',
-          alignItems: 'center',
+          alignItems: editingSentences[index] ? 'flex-start' : 'center',
           gap: 2
         }}
       >
@@ -164,8 +169,11 @@ const SortableItem = React.memo(({
         )}
 
         {/* Image Column */}
-        <Box sx={{ flexShrink: 0, width: 120 }}>
-          {itemIsLoading ? (
+        <Box sx={{ flexShrink: 0, width: 120, minWidth: 120 }}>
+          {editingSentences[index] ? (
+            // Show placeholder or empty space when editing
+            <Box sx={{ width: 120, height: 60 }} />
+          ) : itemIsLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 100 }}>
               <CircularProgress size={30} />
             </Box>
@@ -197,7 +205,26 @@ const SortableItem = React.memo(({
                     displayEmpty
                     disabled={readOnly}
                     renderValue={(selected) => {
-                      if (!selected) return <em>No image selected</em>;
+                      if (!selected) {
+                        return (
+                          <Box sx={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            height: 60,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.75rem',
+                            color: 'text.secondary',
+                            fontStyle: 'italic',
+                            overflow: 'hidden',
+                            textAlign: 'center',
+                            px: 0.5
+                          }}>
+                            No image
+                          </Box>
+                        );
+                      }
                       return (
                         <Box component="img"
                           src={normalizeImageUrl(selected)}
@@ -305,7 +332,7 @@ const SortableItem = React.memo(({
             </Grid>
           )}
         </Box>
-        
+
         {/* Sentence Column */}
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           {editingSentences[index] ? (
@@ -336,25 +363,48 @@ const SortableItem = React.memo(({
                   }
                 }}
               />
-              <Box 
-                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+              <Box
+                sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'space-between' }}
                 onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking
               >
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={item.highlighted || false}
-                      onChange={(e) => onHighlightChange && onHighlightChange(index, e.target.checked)}
-                      size="small"
-                      color="primary"
-                    />
-                  }
-                  label="Highlight this sentence"
-                  sx={{ fontSize: '0.875rem' }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Press Enter to save, Escape to cancel
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={item.highlighted || false}
+                        onChange={(e) => onHighlightChange && onHighlightChange(index, e.target.checked)}
+                        size="small"
+                        color="primary"
+                      />
+                    }
+                    label="Highlight this sentence"
+                    sx={{ fontSize: '0.875rem' }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    Press Enter to save, Escape to cancel
+                  </Typography>
+                </Box>
+                <Tooltip title="Delete this sentence" arrow>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => {
+                      console.log('🔴 Delete button clicked for index:', index);
+                      if (onSentenceDelete) {
+                        onSentenceDelete(index);
+                      } else {
+                        console.warn('⚠️ onSentenceDelete is not defined');
+                      }
+                    }}
+                    sx={{
+                      '&:hover': {
+                        backgroundColor: 'rgba(211, 47, 47, 0.08)'
+                      }
+                    }}
+                  >
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               </Box>
             </Box>
           ) : (
@@ -407,15 +457,17 @@ const normalizeImageUrl = (url) => {
 };
 
 // Reusable component to display the list of Easy Read sentences and image selectors
-function EasyReadContentList({ 
-  easyReadContent = [], 
-  imageState = {}, 
-  onImageSelectionChange, 
+function EasyReadContentList({
+  easyReadContent = [],
+  imageState = {},
+  onImageSelectionChange,
   onGenerateImage,
   onSearchWithCustomKeywords, // New prop for searching with custom keywords
   onSentenceChange, // New prop for handling sentence text changes
   onHighlightChange, // New prop for handling highlight changes
   onReorderSentences, // New prop for handling sentence reordering
+  onSentenceDelete, // New prop for handling sentence deletion
+  onSentenceAdd, // New prop for handling sentence addition
   userKeywords = {}, // Receive userKeywords from hook
   isLoading = false, // Prop to indicate parent loading state
   readOnly = false // Prop to disable editing capabilities
@@ -427,6 +479,16 @@ function EasyReadContentList({
   const [editingSentences, setEditingSentences] = useState({}); // Track which sentences are being edited
   const [editedSentenceTexts, setEditedSentenceTexts] = useState({}); // Store edited sentence content
   const generatorButtonRefs = useRef({});
+
+  // Undo state for deleted sentences
+  const [deletedSentence, setDeletedSentence] = useState(null);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const deletedSentenceRef = useRef(null);
+
+  // Debug snackbar state
+  if (import.meta.env.DEV) {
+    console.log('📊 Snackbar state:', { snackbarOpen, deletedSentence, deletedSentenceRef: deletedSentenceRef.current });
+  }
 
   // Image generation styles with descriptions
   const imageStyles = [
@@ -531,31 +593,124 @@ function EasyReadContentList({
       event.preventDefault();
       // Save the edited sentence
       const newText = editedSentenceTexts[index]?.trim();
+
+      // If empty and original was also empty, delete the sentence
+      if (!newText && !easyReadContent[index]?.sentence) {
+        if (onSentenceDelete) {
+          onSentenceDelete(index);
+        }
+        setEditingSentences(prev => ({ ...prev, [index]: false }));
+        setEditedSentenceTexts(prev => ({ ...prev, [index]: undefined }));
+        return;
+      }
+
+      // Only save if text is not empty and different from original
       if (newText && newText !== easyReadContent[index]?.sentence) {
         if (onSentenceChange) {
           onSentenceChange(index, newText);
         }
+        // For new sentences without image_retrieval, set it to the sentence text
+        // so the edit icon appears for finding images
+        if (!easyReadContent[index]?.image_retrieval) {
+          // We need to update image_retrieval through content update
+          // This will be handled in the parent by detecting empty image_retrieval
+        }
       }
-      
+
       // Exit editing mode
       setEditingSentences(prev => ({ ...prev, [index]: false }));
       setEditedSentenceTexts(prev => ({ ...prev, [index]: undefined }));
     } else if (event.key === 'Escape') {
       event.preventDefault();
+      // If escaping from an empty new sentence, delete it
+      const originalSentence = easyReadContent[index]?.sentence;
+      if (!originalSentence) {
+        if (onSentenceDelete) {
+          onSentenceDelete(index);
+        }
+      }
       // Cancel editing
       setEditingSentences(prev => ({ ...prev, [index]: false }));
       setEditedSentenceTexts(prev => ({ ...prev, [index]: undefined }));
     }
-  }, [editedSentenceTexts, easyReadContent, onSentenceChange]);
+  }, [editedSentenceTexts, easyReadContent, onSentenceChange, onSentenceDelete]);
   
   const handleSentenceChange = useCallback((index, value) => {
     setEditedSentenceTexts(prev => ({ ...prev, [index]: value }));
   }, []);
   
   const handleSentenceBlur = useCallback((index) => {
+    // If blurring from an empty new sentence, delete it
+    const originalSentence = easyReadContent[index]?.sentence;
+    const editedText = editedSentenceTexts[index]?.trim();
+
+    if (!originalSentence && !editedText) {
+      if (onSentenceDelete) {
+        onSentenceDelete(index);
+      }
+    }
+
     // Cancel editing on blur without saving
     setEditingSentences(prev => ({ ...prev, [index]: false }));
     setEditedSentenceTexts(prev => ({ ...prev, [index]: undefined }));
+  }, [easyReadContent, editedSentenceTexts, onSentenceDelete]);
+
+  // Handle sentence deletion with undo capability
+  const handleSentenceDelete = useCallback((index) => {
+    if (!onSentenceDelete) return;
+
+    console.log('🗑️ Deleting sentence at index:', index);
+
+    // Store the deleted sentence info for undo in both state and ref
+    const deletedData = {
+      index,
+      sentence: easyReadContent[index]
+    };
+
+    deletedSentenceRef.current = deletedData;
+    setDeletedSentence(deletedData);
+
+    // Close editing mode
+    setEditingSentences(prev => ({ ...prev, [index]: false }));
+    setEditedSentenceTexts(prev => ({ ...prev, [index]: undefined }));
+
+    // Show snackbar BEFORE performing deletion
+    console.log('📢 Opening snackbar');
+    setSnackbarOpen(true);
+
+    // Perform the deletion after a small delay to ensure state is updated
+    setTimeout(() => {
+      onSentenceDelete(index);
+    }, 0);
+  }, [easyReadContent, onSentenceDelete]);
+
+  // Handle undo deletion
+  const handleUndoDelete = useCallback(() => {
+    const deleted = deletedSentenceRef.current || deletedSentence;
+
+    if (deleted && onReorderSentences) {
+      console.log('↩️ Undoing deletion of sentence at index:', deleted.index);
+
+      // Create a new array with the deleted sentence inserted back
+      const newContent = [...easyReadContent];
+      newContent.splice(deleted.index, 0, deleted.sentence);
+      onReorderSentences(newContent);
+
+      // Clear deleted sentence state
+      deletedSentenceRef.current = null;
+      setDeletedSentence(null);
+      setSnackbarOpen(false);
+    }
+  }, [deletedSentence, easyReadContent, onReorderSentences]);
+
+  // Close snackbar
+  const handleCloseSnackbar = useCallback((event, reason) => {
+    if (reason === 'clickaway') {
+      return;
+    }
+    setSnackbarOpen(false);
+    // Clear deleted sentence after snackbar closes
+    setTimeout(() => setDeletedSentence(null), 300);
   }, []);
 
   // Handle drag end for sentence reordering
@@ -565,11 +720,33 @@ function EasyReadContentList({
     if (active.id !== over?.id && onReorderSentences) {
       const oldIndex = easyReadContent.findIndex((_, index) => index === active.id);
       const newIndex = easyReadContent.findIndex((_, index) => index === over.id);
-      
+
       const newOrder = arrayMove(easyReadContent, oldIndex, newIndex);
       onReorderSentences(newOrder);
     }
   }, [easyReadContent, onReorderSentences]);
+
+  // Handle adding a new sentence
+  const handleAddSentence = useCallback((insertAfterIndex = null) => {
+    if (!onSentenceAdd) return;
+
+    const newSentence = {
+      sentence: '',
+      image_retrieval: '',
+      selected_image_path: null,
+      alternative_images: [],
+      highlighted: false
+    };
+
+    onSentenceAdd(newSentence, insertAfterIndex);
+
+    // Auto-edit the new sentence
+    const newIndex = insertAfterIndex !== null ? insertAfterIndex + 1 : easyReadContent.length;
+    setTimeout(() => {
+      setEditingSentences(prev => ({ ...prev, [newIndex]: true }));
+      setEditedSentenceTexts(prev => ({ ...prev, [newIndex]: '' }));
+    }, 100);
+  }, [easyReadContent.length, onSentenceAdd]);
   
   // Process content list - React.memo on SortableItem prevents unnecessary re-renders
   const processedContentList = useMemo(() => {
@@ -662,6 +839,7 @@ function EasyReadContentList({
             onSentenceChange={handleSentenceChange}
             onSentenceBlur={handleSentenceBlur}
             onHighlightChange={onHighlightChange}
+            onSentenceDelete={handleSentenceDelete}
             editingSentences={editingSentences}
             editedSentenceTexts={editedSentenceTexts}
             userKeywords={userKeywords}
@@ -674,7 +852,66 @@ function EasyReadContentList({
           </List>
         </SortableContext>
       </DndContext>
-    
+
+      {/* Add Sentence Button */}
+      {!readOnly && (
+        <Box sx={{ mt: 2, textAlign: 'center' }}>
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            onClick={() => handleAddSentence(null)}
+            sx={{
+              borderStyle: 'dashed',
+              borderWidth: 2,
+              '&:hover': {
+                borderStyle: 'dashed',
+                borderWidth: 2,
+                backgroundColor: 'rgba(25, 118, 210, 0.04)'
+              }
+            }}
+          >
+            Add Custom Sentence
+          </Button>
+        </Box>
+      )}
+
+    {/* Undo Delete Snackbar */}
+    <Snackbar
+      open={snackbarOpen}
+      autoHideDuration={5000}
+      onClose={handleCloseSnackbar}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      sx={{ zIndex: 9999 }}
+    >
+      <Alert
+        onClose={handleCloseSnackbar}
+        severity="success"
+        variant="filled"
+        sx={{
+          width: '100%',
+          alignItems: 'center',
+          boxShadow: 3
+        }}
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={handleUndoDelete}
+            sx={{
+              fontWeight: 'bold',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 255, 255, 0.2)'
+              }
+            }}
+          >
+            UNDO
+          </Button>
+        }
+      >
+        Sentence deleted
+      </Alert>
+    </Snackbar>
+
     {/* Prompt Edit Modal */}
     <Dialog open={promptModalOpen} onClose={closeModal} fullWidth maxWidth="sm" aria-labelledby="edit-prompt-title">
       <DialogTitle id="edit-prompt-title">
@@ -817,6 +1054,8 @@ EasyReadContentList.propTypes = {
   onSentenceChange: PropTypes.func,
   onHighlightChange: PropTypes.func,
   onReorderSentences: PropTypes.func,
+  onSentenceDelete: PropTypes.func,
+  onSentenceAdd: PropTypes.func,
   isLoading: PropTypes.bool,
   readOnly: PropTypes.bool
 };
@@ -832,6 +1071,8 @@ EasyReadContentList.defaultProps = {
   onSentenceChange: null,
   onHighlightChange: null,
   onReorderSentences: null,
+  onSentenceDelete: null,
+  onSentenceAdd: null,
   isLoading: false,
   readOnly: false
 };

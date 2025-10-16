@@ -51,6 +51,8 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
     handleSentenceChange,
     handleHighlightChange,
     handleReorderSentences,
+    handleSentenceDelete,
+    handleSentenceAdd,
     // Image management from the hook
     imageState,
     userKeywords,
@@ -343,7 +345,7 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
           </Box>
           
 
-            <EasyReadContentList 
+            <EasyReadContentList
               easyReadContent={currentEasyReadContent}
               imageState={imageState} // From hook
               userKeywords={userKeywords} // From hook
@@ -354,6 +356,8 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
               onSentenceChange={handleSentenceChange} // From unified content manager
               onHighlightChange={handleHighlightChange} // From unified content manager
               onReorderSentences={handleReorderSentences} // From unified content manager
+              onSentenceDelete={handleSentenceDelete} // From unified content manager
+              onSentenceAdd={handleSentenceAdd} // From unified content manager
             />
 
             {/* Try Again Button */}

@@ -161,19 +161,26 @@ const SavedContentDetailPage = () => {
     // Update the content state directly
     setContent(prevContent => {
       if (!prevContent?.easy_read_content) return prevContent;
-      
+
       const updatedEasyReadContent = [...prevContent.easy_read_content];
+      const currentItem = updatedEasyReadContent[index];
+
+      // If this is a new sentence without image_retrieval, set it to the sentence text
+      // This enables the edit icon for finding images
+      const shouldSetImageRetrieval = !currentItem.image_retrieval || currentItem.image_retrieval === '';
+
       updatedEasyReadContent[index] = {
-        ...updatedEasyReadContent[index],
-        sentence: newSentence
+        ...currentItem,
+        sentence: newSentence,
+        ...(shouldSetImageRetrieval && { image_retrieval: newSentence })
       };
-      
+
       return {
         ...prevContent,
         easy_read_content: updatedEasyReadContent
       };
     });
-    
+
     console.log(`Sentence at index ${index} changed to: "${newSentence}"`);
   };
 
@@ -236,6 +243,48 @@ const SavedContentDetailPage = () => {
     });
     
     console.log(`Sentence at index ${index} highlight changed to: ${highlighted}`);
+  };
+
+  // Handle sentence deletion
+  const handleSentenceDelete = (index) => {
+    if (!canEdit) return; // Prevent deletion if user doesn't have permission
+
+    // Remove the sentence from the content
+    setContent(prevContent => {
+      if (!prevContent?.easy_read_content) return prevContent;
+
+      const newEasyReadContent = prevContent.easy_read_content.filter((_, i) => i !== index);
+
+      return {
+        ...prevContent,
+        easy_read_content: newEasyReadContent
+      };
+    });
+
+    // Notify image manager about deletion
+    handleDeleteContent?.(index);
+
+    console.log(`Sentence at index ${index} deleted`);
+  };
+
+  // Handle sentence addition
+  const handleSentenceAdd = (newSentence, insertAfterIndex = null) => {
+    if (!canEdit) return; // Prevent addition if user doesn't have permission
+
+    const currentContent = content?.easy_read_content || [];
+    const newContent = [...currentContent];
+
+    // Insert after the specified index, or at the end if null
+    const insertIndex = insertAfterIndex !== null ? insertAfterIndex + 1 : newContent.length;
+    newContent.splice(insertIndex, 0, newSentence);
+
+    // Update content state
+    setContent(prevContent => ({
+      ...prevContent,
+      easy_read_content: newContent
+    }));
+
+    console.log(`Sentence added at index ${insertIndex}`);
   };
 
   // Revision handlers - using shared RevisionModal
@@ -444,8 +493,8 @@ const SavedContentDetailPage = () => {
                 You are viewing shared content. Only the creator can make changes.
               </Alert>
             )}
-            <EasyReadContentList 
-              easyReadContent={content?.easy_read_content || []} 
+            <EasyReadContentList
+              easyReadContent={content?.easy_read_content || []}
               imageState={imageState} // From hook
               userKeywords={userKeywords} // From hook
               imageSearchSource={imageSearchSource} // From hook
@@ -455,6 +504,8 @@ const SavedContentDetailPage = () => {
               onSentenceChange={handleSentenceChange} // For inline editing
               onHighlightChange={handleHighlightChange} // For highlight toggle
               onReorderSentences={handleReorderSentences} // For drag and drop reordering
+              onSentenceDelete={handleSentenceDelete} // For sentence deletion
+              onSentenceAdd={handleSentenceAdd} // For sentence addition
               readOnly={!canEdit} // Disable editing if user doesn't have access
               // isLoading prop might not be needed if hook handles initial loading state internally
             />
