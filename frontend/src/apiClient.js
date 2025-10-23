@@ -44,17 +44,163 @@ apiClient.interceptors.request.use(request => {
   return request;
 });
 
-// Function to extract markdown from PDF
-export const extractMarkdown = (file) => {
-  const formData = new FormData();
-  formData.append('file', file);
+// External PDF Converter Service Configuration
+const PDF_CONVERTER_CONFIG = {
+  BASE_URL: import.meta.env.VITE_PDF_CONVERTER_URL || 'https://p2uitcdqoe.execute-api.eu-north-1.amazonaws.com/prod/file-convertor-backend',
+  POLL_INTERVAL: 5000, // Poll every 5 seconds
+  MAX_POLL_ATTEMPTS: 60, // Max 5 minutes (60 * 5 seconds)
+};
 
-  return apiClient.post('/pdf-to-markdown/', formData, {
+// Helper function to make requests to external PDF converter service
+const pdfConverterRequest = async (action, payload, token, apiKey) => {
+  if (!token) {
+    throw new Error('PDF converter authentication token is required.');
+  }
+
+  const headers = {
+    'x-api-key': apiKey,
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+
+  const response = await axios.post(
+    `${PDF_CONVERTER_CONFIG.BASE_URL}?action=${action}`,
+    payload,
+    { headers }
+  );
+
+  return response.data;
+};
+
+// Get presigned URL for S3 upload/download
+const getPresignedUrl = async (filename, action, token, apiKey) => {
+  return pdfConverterRequest('get-presigned-url', {
+    name: filename,
+    client_action: action,
+  }, token, apiKey);
+};
+
+// Upload PDF to S3
+const uploadToS3 = async (presignedUrl, file) => {
+  await axios.put(presignedUrl, file, {
     headers: {
-      'Content-Type': undefined, // Let browser set Content-Type with boundary
+      'Content-Type': file.type,
     },
-    timeout: 60000, // Add timeout: 60 seconds (in milliseconds)
   });
+};
+
+// Submit conversion request
+const submitConversionRequest = async (filename, sourceUrl, email, token, apiKey) => {
+  return pdfConverterRequest('upload-config', {
+    username: email,
+    object_key: filename,
+    source_format: 'pdf',
+    target_format: 'markdown',
+    source_url: sourceUrl,
+  }, token, apiKey);
+};
+
+// Check conversion status
+const checkConversionStatus = async (filename, email, token, apiKey) => {
+  return pdfConverterRequest('load-config', {
+    username: email,
+    object_key: filename,
+  }, token, apiKey);
+};
+
+// Get download URLs
+const getDownloadUrls = async (filename, token, apiKey) => {
+  return pdfConverterRequest('get-download-urls', {
+    object_key: filename,
+  }, token, apiKey);
+};
+
+// Download markdown from URL
+const downloadMarkdown = async (url) => {
+  const response = await axios.get(url);
+  return response.data;
+};
+
+// Main function to extract markdown from PDF using external service
+// Accepts credentials as parameters (following new-ui pattern)
+export const extractMarkdown = async (file, token, apiKey, email, onProgress = null) => {
+  try {
+    const filename = file.name;
+
+    // Step 1: Get presigned URLs
+    onProgress?.('Preparing file upload...');
+    const getUrlData = await getPresignedUrl(filename, 'get_object', token, apiKey);
+    const putUrlData = await getPresignedUrl(filename, 'put_object', token, apiKey);
+
+    const getUrl = typeof getUrlData === 'string' ? getUrlData : getUrlData.url;
+    const putUrl = typeof putUrlData === 'string' ? putUrlData : putUrlData.url;
+
+    if (!putUrl || !getUrl) {
+      throw new Error('Failed to get upload URLs');
+    }
+
+    // Step 2: Upload PDF to S3
+    onProgress?.('Uploading PDF...');
+    await uploadToS3(putUrl, file);
+
+    // Step 3: Submit conversion request
+    onProgress?.('Submitting conversion request...');
+    await submitConversionRequest(filename, getUrl, email, token, apiKey);
+
+    // Step 4: Poll for conversion status
+    let attempts = 0;
+    let status = 'unknown';
+
+    while (attempts < PDF_CONVERTER_CONFIG.MAX_POLL_ATTEMPTS) {
+      onProgress?.(`Converting PDF to markdown... (${attempts * PDF_CONVERTER_CONFIG.POLL_INTERVAL / 1000}s)`);
+
+      await new Promise(resolve => setTimeout(resolve, PDF_CONVERTER_CONFIG.POLL_INTERVAL));
+
+      const statusResponse = await checkConversionStatus(filename, email, token, apiKey);
+      status = statusResponse.file_status || 'unknown';
+
+      if (status === 'done' || status === 'completed' || status === 'success') {
+        break;
+      } else if (status === 'failed' || status === 'error') {
+        throw new Error('PDF conversion failed on the server');
+      }
+
+      attempts++;
+    }
+
+    if (status !== 'done' && status !== 'completed' && status !== 'success') {
+      throw new Error('PDF conversion timed out');
+    }
+
+    // Step 5: Get download URL and fetch markdown
+    onProgress?.('Downloading converted markdown...');
+    const downloadData = await getDownloadUrls(filename, token, apiKey);
+    const downloadUrl = downloadData.target_url || downloadData.url || downloadData.download_url;
+
+    if (!downloadUrl) {
+      throw new Error('Failed to get download URL');
+    }
+
+    const markdownContent = await downloadMarkdown(downloadUrl);
+
+    // Split markdown into pages (assuming the converter uses page breaks)
+    let pages = [];
+    if (markdownContent.includes('-----')) {
+      pages = markdownContent.split('-----');
+    } else if (markdownContent.includes('\n\n\n\n')) {
+      pages = markdownContent.split('\n\n\n\n');
+    } else {
+      // Try to split on headers or just return as single page
+      pages = [markdownContent];
+    }
+
+    pages = pages.map(p => p.trim()).filter(p => p.length > 0);
+
+    return { data: { pages } };
+  } catch (error) {
+    console.error('Error in external PDF converter:', error);
+    throw error;
+  }
 };
 
 // Internal validation function (not exported)

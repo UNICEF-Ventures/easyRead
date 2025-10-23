@@ -19,6 +19,7 @@ import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { extractMarkdown, generateEasyRead, getImageSets, listImages } from '../apiClient';
 import { config } from '../config.js';
+import LoadingOverlay from './LoadingOverlay';
 
 // Base URL for serving media files from Django dev server
 const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
@@ -40,22 +41,36 @@ const DropZone = styled(Box)(({ theme }) => ({
   marginBottom: theme.spacing(3),
 }));
 
-function HomePage({ 
-  setMarkdownContent, 
-  setIsLoading, 
+function HomePage({
+  setMarkdownContent,
+  setIsLoading,
   setIsProcessingPages,
   setTotalPages,
   setPagesProcessed,
   setCurrentProcessingStep,
-  setError, 
+  setError,
   currentMarkdown,
-  onProcessingComplete
+  onProcessingComplete,
+  // PDF converter credentials (can be passed from parent/platform or use env vars)
+  // Prop names match new-frontend for consistency
+  token = null,
+  apiKey = null,
+  email = null,
 }) {
   const [fileName, setFileName] = useState('');
   const [imageSets, setImageSets] = useState([]);
   const [selectedSets, setSelectedSets] = useState(new Set());
   const [setsLoading, setSetsLoading] = useState(false);
   const [preventDuplicateImages, setPreventDuplicateImages] = useState(true);
+  const [conversionProgress, setConversionProgress] = useState('');
+  const [showConversionOverlay, setShowConversionOverlay] = useState(false);
+
+  // Get PDF converter credentials (props take precedence over env vars)
+  const getCredentials = useCallback(() => ({
+    token: token || import.meta.env.VITE_PDF_CONVERTER_TOKEN,
+    apiKey: apiKey || import.meta.env.VITE_PDF_CONVERTER_API_KEY || 'not-used',
+    email: email || import.meta.env.VITE_PDF_CONVERTER_EMAIL,
+  }), [token, apiKey, email]);
 
   // Load image sets and sample images on component mount
   useEffect(() => {
@@ -124,44 +139,63 @@ function HomePage({
 
   const handlePdfUpload = useCallback(async (file) => {
     setIsLoading(true);
+    setShowConversionOverlay(true);
     setError(null);
     setTotalPages(0); // Reset progress
     setPagesProcessed(0); // Reset progress
+    setConversionProgress('Starting PDF conversion...');
+
     try {
-      const response = await extractMarkdown(file);
-      // Assuming backend returns { pages: ["page1", "page2", ...] }
-      console.log("Received response from /pdf-to-markdown/:", response); // Log successful response
+      // Get credentials (from props or env vars)
+      const credentials = getCredentials();
+
+      // Validate credentials
+      if (!credentials.token || !credentials.email) {
+        throw new Error('PDF converter credentials not configured. Please check your environment variables or provide credentials via props.');
+      }
+
+      // Progress callback for external PDF converter
+      const onProgress = (message) => {
+        setConversionProgress(message);
+      };
+
+      const response = await extractMarkdown(
+        file,
+        credentials.token,
+        credentials.apiKey,
+        credentials.email,
+        onProgress
+      );
+      console.log("Received response from PDF converter:", response);
+
       const pageBreak = "\n\n---PAGE_BREAK---\n\n";
       const fullMarkdown = response.data.pages.join(pageBreak);
       setMarkdownContent(fullMarkdown);
+      setConversionProgress('Conversion complete!');
     } catch (err) {
-      // --- DETAILED LOGGING --- 
+      // --- DETAILED LOGGING ---
       console.error("Detailed error in handlePdfUpload:", err);
       if (err.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
         console.error("Error Response Data:", err.response.data);
         console.error("Error Response Status:", err.response.status);
         console.error("Error Response Headers:", err.response.headers);
         setError(err.response?.data?.error || `Server responded with status ${err.response.status}`);
       } else if (err.request) {
-        // The request was made but no response was received
-        // `err.request` is an instance of XMLHttpRequest in the browser and an instance of
-        // http.ClientRequest in node.js
         console.error("Error Request:", err.request);
-        setError('No response received from server. Check network or server status.');
+        setError('No response received from PDF converter. Check network or service status.');
       } else {
-        // Something happened in setting up the request that triggered an Error
         console.error('Error Message:', err.message);
         setError(err.message || 'An unexpected error occurred during PDF processing.');
       }
-      console.error("Error Config:", err.config); // Log Axios config used
+      console.error("Error Config:", err.config);
       // --- END DETAILED LOGGING ---
       setMarkdownContent(''); // Clear on error
     } finally {
       setIsLoading(false);
+      setShowConversionOverlay(false);
+      setConversionProgress('');
     }
-  }, [setIsLoading, setError, setTotalPages, setPagesProcessed, setMarkdownContent]);
+  }, [setIsLoading, setError, setTotalPages, setPagesProcessed, setMarkdownContent, getCredentials]);
 
   const handleDrop = useCallback((event) => {
     event.preventDefault();
@@ -309,7 +343,9 @@ function HomePage({
   };
 
   return (
-    <Container maxWidth="md" sx={{ mt: 5, mb: 8 }}>
+    <>
+      <LoadingOverlay open={showConversionOverlay} message={conversionProgress} />
+      <Container maxWidth="md" sx={{ mt: 5, mb: 8 }}>
       <Paper elevation={3} sx={{ 
         p: 4, 
         mb: 4, 
@@ -692,6 +728,7 @@ function HomePage({
         </Box>
       </Paper>
     </Container>
+    </>
   );
 }
 
