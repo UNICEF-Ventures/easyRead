@@ -18,3 +18,10 @@ globalsymbols_images_test.csv
 deployment_env/
 experiments/
 experiments/.env
+
+# Backup files
+*.backup
+*.bak
+*~
+*.swp
+*.swo
