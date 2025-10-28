@@ -1,4 +1,4 @@
-# EasyRead
+# EasyRead Prototype
 
 A UNICEF Office of Innovation prototype application that converts complex documents into accessible "easy read" format with simplified text and relevant images.
 
