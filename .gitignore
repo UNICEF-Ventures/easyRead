@@ -27,3 +27,4 @@ experiments/.env
 *~
 *.swp
 *.swo
+.claude

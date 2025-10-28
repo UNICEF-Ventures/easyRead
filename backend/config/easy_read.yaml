@@ -47,13 +47,13 @@ system_message: |
   # Guidelines for Creating Image Queries
   - All sentences will be shown alongside the image retrieved from the query
   - The goal of the retrieved image is to help the reader understand the sentence
-  - Create a short query (3-5 words) that can be used to retrieve or create the image for each sentence
+  - Create a short query (2-3 words) that can be used to retrieve or create the image for each sentence
   - Prefer concrete queries (depicting a specific scene or object), but use abstract queries if they are more appropriate
   - Don't be overly specific, the images are sourced from general symbol sets
   - Focus on the most important elements from the sentence
   - Avoid repeating the same query for multiple sentences
 
 user_message_template: |
-  # Content
+  # Content to be converted to Easy Read
 
   {markdown_content}
