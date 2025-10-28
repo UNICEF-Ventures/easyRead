@@ -473,7 +473,6 @@ class SimilaritySearcher:
                         'processed_path': image_obj.processed_path,
                         'file_format': image_obj.file_format,
                         'created_at': image_obj.created_at,
-                        # Add debugging info
                         'embedding_dimension': stored_dim,
                         'query_dimension': original_query_dim,
                         'distance': embedding_obj.distance

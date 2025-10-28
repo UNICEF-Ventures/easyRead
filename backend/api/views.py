@@ -10,7 +10,6 @@ from .analytics import (
     track_content_export, track_image_search
 )
 from rest_framework.parsers import MultiPartParser, FormParser
-# PDF processing with PyMuPDF4LLM (imported in function to avoid startup overhead)
 import tempfile
 import os
 import logging
@@ -21,12 +20,12 @@ import boto3
 import re
 from django.conf import settings
 from dotenv import load_dotenv
-import time # Added for health check
-import threading # For background processing
-from .models import ProcessedContent, ImageSet, Image # Import the new models
+import time
+import threading
+from .models import ProcessedContent, ImageSet, Image
 from .config import get_retry_config, load_prompt_template, VALIDATE_COMPLETENESS_PROMPT_FILE, REVISE_SENTENCES_PROMPT_FILE
 from django.core.files.base import ContentFile
-from gradio_client import Client, handle_file # Added Gradio client import
+from gradio_client import Client, handle_file
 from django.http import HttpResponse
 from .docx_export import create_docx_export, get_safe_filename
 from django.utils import timezone
@@ -775,19 +774,11 @@ def validate_completeness(request):
             if not isinstance(llm_parsed_object.get("other_feedback"), str):
                  raise ValueError("Type error: 'other_feedback' should be a string.")
 
-            # Track analytics for validation
-            from api.analytics import track_content_validation
-            track_content_validation(
-                request,
-                missing_info=llm_parsed_object.get("missing_info", ""),
-                extra_info=llm_parsed_object.get("extra_info", ""),
-                other_feedback=llm_parsed_object.get("other_feedback", "")
-            )
-            
             # Track validation analytics
             try:
+                from api.analytics import track_content_validation
                 track_content_validation(
-                    request, 
+                    request,
                     missing_info=llm_parsed_object.get("missing_info", ""),
                     extra_info=llm_parsed_object.get("extra_info", ""),
                     other_feedback=llm_parsed_object.get("other_feedback", "")
@@ -1423,8 +1414,7 @@ def update_saved_content_image(request, content_id):
     Returns the updated content.
     """
     logger = logging.getLogger(__name__)
-    
-    # Debug logging
+
     logger.info(f"Update saved content image called - Content ID: {content_id}")
     logger.info(f"Request data: {request.data}")
     
@@ -1504,8 +1494,7 @@ def update_saved_content_image_by_token(request, public_id):
     Returns the updated content.
     """
     logger = logging.getLogger(__name__)
-    
-    # Debug logging
+
     logger.info(f"Update saved content image by token called - Public ID: {public_id}")
     logger.info(f"Request data: {request.data}")
     
@@ -1609,8 +1598,6 @@ def generate_image_view(request):
 
     try:
         # --- Call Gradio Client for Image Generation ---
-        # Parameters based on the example: config/temp/gradio.py
-        # client.predict("Mulberry", "A red bus with a yellow stripe", None, "No", 50, 3, 0.75, 7.5, None, api_name="/process_symbol_generation")
         prediction_result = gradio_client.predict(
             style,       # First argument (style/category) - now dynamic
             prompt,      # Second argument (the actual prompt)

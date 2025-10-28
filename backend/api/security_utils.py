@@ -166,13 +166,13 @@ class FileSecurityValidator:
                         file_obj.seek(0)
                         text_header = file_obj.read(1024).decode('utf-8', errors='ignore').lower()
                         file_obj.seek(0)
-                        
+
                         for pattern in signature.get('magic_patterns', []):
                             if pattern.decode('utf-8').lower() in text_header:
                                 detected_type = file_type
                                 break
-                    except Exception:
-                        # Ignore errors reading file signatures
+                    except Exception as e:
+                        logger.debug(f"Could not read file signature for {file_type}: {e}")
                         pass
                 
                 # Handle WebP (dual magic bytes)
@@ -387,8 +387,8 @@ class AtomicFileHandler:
             if temp_file and Path(temp_file.name).exists():
                 try:
                     Path(temp_file.name).unlink()
-                except Exception:
-                    # Ignore errors during temporary file cleanup
+                except Exception as e:
+                    logger.debug(f"Failed to clean up temporary file: {e}")
                     pass
         
         return result
