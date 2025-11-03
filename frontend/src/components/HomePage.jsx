@@ -149,12 +149,16 @@ function HomePage({
       // Get credentials (from props or env vars)
       const credentials = getCredentials();
 
-      // Validate credentials
-      if (!credentials.token || !credentials.email) {
-        throw new Error('PDF converter credentials not configured. Please check your environment variables or provide credentials via props.');
+      // Check if using external converter (normalize to handle different values)
+      const envValue = import.meta.env.USE_EXTERNAL_PDF_CONVERTER;
+      const useExternal = envValue && ['true', '1', 'yes'].includes(String(envValue).toLowerCase().trim());
+
+      // Validate credentials only if using external service
+      if (useExternal && (!credentials.token || !credentials.email)) {
+        throw new Error('External PDF converter credentials not configured. Please check your environment variables or provide credentials via props.');
       }
 
-      // Progress callback for external PDF converter
+      // Progress callback for PDF converter
       const onProgress = (message) => {
         setConversionProgress(message);
       };

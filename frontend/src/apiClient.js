@@ -121,9 +121,37 @@ const downloadMarkdown = async (url) => {
   return response.data;
 };
 
-// Main function to extract markdown from PDF using external service
-// Accepts credentials as parameters (following new-ui pattern)
-export const extractMarkdown = async (file, token, apiKey, email, onProgress = null) => {
+// Local PDF to Markdown conversion using backend endpoint
+const extractMarkdownLocal = async (file, onProgress = null) => {
+  try {
+    onProgress?.('Uploading PDF to local converter...');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await apiClient.post('/pdf-to-markdown/', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      timeout: 120000 // 2 minutes timeout
+    });
+
+    onProgress?.('PDF conversion complete!');
+
+    // Validate response format
+    if (!response.data?.pages || !Array.isArray(response.data.pages)) {
+      throw new Error('Invalid response format from PDF converter');
+    }
+
+    return { data: { pages: response.data.pages } };
+  } catch (error) {
+    console.error('Error in local PDF converter:', error);
+    throw error;
+  }
+};
+
+// External PDF to Markdown conversion using external service
+const extractMarkdownExternal = async (file, token, apiKey, email, onProgress = null) => {
   try {
     const filename = file.name;
 
@@ -200,6 +228,46 @@ export const extractMarkdown = async (file, token, apiKey, email, onProgress = n
   } catch (error) {
     console.error('Error in external PDF converter:', error);
     throw error;
+  }
+};
+
+// Main function to extract markdown from PDF
+// Routes to local or external service based on environment variable
+// Default: local (if VITE_USE_EXTERNAL_PDF_CONVERTER is not set or is false)
+export const extractMarkdown = async (file, token, apiKey, email, onProgress = null) => {
+  // Validate file before processing
+  if (!file || !(file instanceof File)) {
+    throw new Error('Invalid file object provided');
+  }
+
+  // Check file type
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    throw new Error('Please upload a PDF file');
+  }
+
+  // Check file size (50MB limit per backend configuration)
+  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error('File size exceeds 50MB limit');
+  }
+
+  // Normalize environment variable to handle 'true', 'True', 'TRUE', '1', 'yes', etc.
+  const envValue = import.meta.env.USE_EXTERNAL_PDF_CONVERTER;
+  const useExternal = envValue && ['true', '1', 'yes'].includes(String(envValue).toLowerCase().trim());
+
+  if (import.meta.env.DEV) {
+    console.log(`📄 PDF Conversion Mode: ${useExternal ? 'EXTERNAL' : 'LOCAL'} (env: "${envValue}")`);
+  }
+
+  if (useExternal) {
+    // Validate credentials for external service
+    if (!token || !email) {
+      throw new Error('External PDF converter credentials not configured. Please check your environment variables or provide credentials via props.');
+    }
+    return extractMarkdownExternal(file, token, apiKey, email, onProgress);
+  } else {
+    // Use local converter
+    return extractMarkdownLocal(file, onProgress);
   }
 };
 
