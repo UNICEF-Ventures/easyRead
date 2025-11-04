@@ -9,7 +9,7 @@ import SavedContentDetailPage from './components/SavedContentDetailPage';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
 
 // Core App component that requires router context
-function AppCore() {
+function AppCore({ token, apiKey, email }) {
   const [markdownContent, setMarkdownContent] = useState('');
   const [easyReadContent, setEasyReadContent] = useState([]);
   const [contentTitle, setContentTitle] = useState('');
@@ -65,14 +65,14 @@ function AppCore() {
       newSelectedSets = finalEasyRead.selected_sets || [];
       newPreventDuplicates = finalEasyRead.prevent_duplicate_images ?? true;
     } else {
-      newTitle = 'Processing Error'; 
-      newContent = []; 
+      newTitle = 'Processing Error';
+      newContent = [];
       newSelectedSets = [];
       newPreventDuplicates = true;
       errorMsg = 'Received invalid format from easy read generation.';
       console.error('Invalid easy read content format:', finalEasyRead);
     }
-    
+
     // Update all state at once before navigating
     setMarkdownContent(finalMarkdown);
     setContentTitle(newTitle);
@@ -84,7 +84,7 @@ function AppCore() {
     setTotalPages(0);
     setPagesProcessed(0);
     setError(errorMsg);
-    
+
     // Navigate after state updates
     navigate('/results', { state: { fromProcessing: true } });
   };
@@ -94,45 +94,45 @@ function AppCore() {
     <Box>
       <CssBaseline />
       {shouldShowHeader && <AppHeader />}
-      
+
       {isLoading && !isProcessingPages && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-             <CircularProgress />
-          </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+          <CircularProgress />
+        </Box>
       )}
       {isProcessingPages && (
-          <Box sx={{ width: '80%', mx: 'auto', my: 3, maxWidth: 'md', p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-            <Typography variant="body1" sx={{ mb: 1, textAlign: 'center', fontWeight: 'bold' }}>
-              Processing page {Math.ceil(pagesProcessed)} of {totalPages}...
+        <Box sx={{ width: '80%', mx: 'auto', my: 3, maxWidth: 'md', p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+          <Typography variant="body1" sx={{ mb: 1, textAlign: 'center', fontWeight: 'bold' }}>
+            Processing page {Math.ceil(pagesProcessed)} of {totalPages}...
+          </Typography>
+          {currentProcessingStep && (
+            <Typography variant="body2" sx={{ mb: 2, textAlign: 'center', color: 'primary.main', fontStyle: 'italic' }}>
+              {currentProcessingStep}
             </Typography>
-            {currentProcessingStep && (
-              <Typography variant="body2" sx={{ mb: 2, textAlign: 'center', color: 'primary.main', fontStyle: 'italic' }}>
-                {currentProcessingStep}
-              </Typography>
-            )}
-            <LinearProgress 
-              variant="determinate" 
-              value={progressPercent}
-              sx={{ height: 10, borderRadius: 5 }}
-            />
-            <Typography variant="body2" sx={{ mt: 1, textAlign: 'center', color: 'text.secondary' }}>
-              {Math.round(progressPercent)}% complete
-            </Typography>
-          </Box>
+          )}
+          <LinearProgress
+            variant="determinate"
+            value={progressPercent}
+            sx={{ height: 10, borderRadius: 5 }}
+          />
+          <Typography variant="body2" sx={{ mt: 1, textAlign: 'center', color: 'text.secondary' }}>
+            {Math.round(progressPercent)}% complete
+          </Typography>
+        </Box>
       )}
       {error && (
-          <Alert severity="error" sx={{ mx: 'auto', maxWidth: 'md', my: 2 }}>{error}</Alert>
+        <Alert severity="error" sx={{ mx: 'auto', maxWidth: 'md', my: 2 }}>{error}</Alert>
       )}
 
       <Routes>
-        <Route 
-          path="/" 
+        <Route
+          path="/"
           element={<IntroPage />}
         />
-        <Route 
-          path="/easyread" 
+        <Route
+          path="/easyread"
           element={
-            <HomePage 
+            <HomePage
               setMarkdownContent={setMarkdownContent}
               setIsLoading={setIsLoading}
               setIsProcessingPages={setIsProcessingPages}
@@ -142,32 +142,35 @@ function AppCore() {
               setError={setError}
               currentMarkdown={markdownContent}
               onProcessingComplete={handleProcessingComplete}
+              token={token}
+              apiKey={apiKey}
+              email={email}
             />
           }
         />
-        <Route 
-          path="/results" 
+        <Route
+          path="/results"
           element={
-             <ResultPage 
-                title={contentTitle}
-                markdownContent={markdownContent}
-                easyReadContent={easyReadContent}
-                selectedSets={selectedSets}
-                preventDuplicateImages={preventDuplicateImages}
-             />
-            }
+            <ResultPage
+              title={contentTitle}
+              markdownContent={markdownContent}
+              easyReadContent={easyReadContent}
+              selectedSets={selectedSets}
+              preventDuplicateImages={preventDuplicateImages}
+            />
+          }
         />
         <Route
           path="/admin"
           element={<AdminRoute />}
         />
-        <Route 
-          path="/saved" 
-          element={<SavedContentPage />} 
+        <Route
+          path="/saved"
+          element={<SavedContentPage />}
         />
-        <Route 
-          path="/saved/:id" 
-          element={<SavedContentDetailPage />} 
+        <Route
+          path="/saved/:id"
+          element={<SavedContentDetailPage />}
         />
       </Routes>
     </Box>
@@ -175,10 +178,10 @@ function AppCore() {
 }
 
 // Main App wrapper that provides router context for both standalone and federated use
-function App() {
+function App({ token, apiKey, email }) {
   return (
     <BrowserRouter>
-      <AppCore />
+      <AppCore token={token} apiKey={apiKey} email={email} />
     </BrowserRouter>
   );
 }

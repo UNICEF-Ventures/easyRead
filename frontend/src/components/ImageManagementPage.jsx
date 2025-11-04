@@ -50,7 +50,6 @@ import ImageGallery from './ImageGallery';
 
 // Maximum file size in bytes (5MB)
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
 // Styled component for file input
 const VisuallyHiddenInput = styled('input')({
   clip: 'rect(0 0 0 0)',
