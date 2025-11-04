@@ -30,7 +30,11 @@ jobs:
         env:
           VITE_BASE_URL_PROD: ${{ secrets.VITE_BASE_URL_PROD }}
           VITE_SERVER_URL: ${{ secrets.VITE_SERVER_URL }}
-
+          VITE_PDF_CONVERTER_URL: ${{ secrets.VITE_PDF_CONVERTER_URL }}
+          VITE_PDF_CONVERTER_API_KEY: ${{ secrets.VITE_PDF_CONVERTER_API_KEY }}
+          VITE_PDF_CONVERTER_TOKEN: ${{ secrets.VITE_PDF_CONVERTER_TOKEN }}
+          VITE_PDF_CONVERTER_EMAIL: ${{ secrets.VITE_PDF_CONVERTER_EMAIL }}
+          VITE_USE_EXTERNAL_PDF_CONVERTER: ${{ secrets.VITE_USE_EXTERNAL_PDF_CONVERTER }}
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
