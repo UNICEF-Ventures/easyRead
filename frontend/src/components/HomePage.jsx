@@ -150,7 +150,7 @@ function HomePage({
       const credentials = getCredentials();
 
       // Check if using external converter (normalize to handle different values)
-      const envValue = import.meta.env.USE_EXTERNAL_PDF_CONVERTER;
+      const envValue = import.meta.env.VITE_USE_EXTERNAL_PDF_CONVERTER;
       const useExternal = envValue && ['true', '1', 'yes'].includes(String(envValue).toLowerCase().trim());
 
       // Validate credentials only if using external service

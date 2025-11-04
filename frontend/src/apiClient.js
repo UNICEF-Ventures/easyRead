@@ -252,7 +252,7 @@ export const extractMarkdown = async (file, token, apiKey, email, onProgress = n
   }
 
   // Normalize environment variable to handle 'true', 'True', 'TRUE', '1', 'yes', etc.
-  const envValue = import.meta.env.USE_EXTERNAL_PDF_CONVERTER;
+  const envValue = import.meta.env.VITE_USE_EXTERNAL_PDF_CONVERTER;
   const useExternal = envValue && ['true', '1', 'yes'].includes(String(envValue).toLowerCase().trim());
 
   if (import.meta.env.DEV) {
