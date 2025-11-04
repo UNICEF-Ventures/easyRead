@@ -1,0 +1,28 @@
+version: '3.7'
+services:
+  postgres:
+    image: ankane/pgvector:v0.5.1
+    container_name: easyread-postgres
+    environment:
+      POSTGRES_DB: easyread
+      POSTGRES_USER: easyread_user
+      POSTGRES_PASSWORD: easyread_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - '5435:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ./postgres.conf:/etc/postgresql/postgresql.conf:ro
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U easyread_user -d easyread"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres_data:
+    driver: local
