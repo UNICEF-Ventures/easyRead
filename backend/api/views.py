@@ -25,7 +25,6 @@ import threading
 from .models import ProcessedContent, ImageSet, Image
 from .config import get_retry_config, load_prompt_template, VALIDATE_COMPLETENESS_PROMPT_FILE, REVISE_SENTENCES_PROMPT_FILE
 from django.core.files.base import ContentFile
-from gradio_client import Client, handle_file
 from django.http import HttpResponse
 from .docx_export import create_docx_export, get_safe_filename
 from django.utils import timezone
@@ -420,14 +419,6 @@ IMAGE_UPLOAD_DIR = settings.MEDIA_ROOT / "uploaded_images"
 
 # --- OpenAI Client Removed ---
 # Using only AWS Bedrock for LLM completions
-
-# --- Gradio Client Initialization ---
-gradio_client = None
-try:
-    gradio_client = Client("https://scai.globalsymbols.com/")
-    logger.info("Gradio client initialized successfully.")
-except Exception as e:
-    logger.error(f"Failed to initialize Gradio client: {e}")
 
 # Settings and prompt loading functions moved to config.py
 
@@ -1569,163 +1560,6 @@ def update_saved_content_image_by_token(request, public_id):
     except Exception as e:
         logger.exception(f"Error updating saved content image by token: {e}")
         return Response({"error": "Failed to update content image"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-@csrf_exempt
-def generate_image_view(request):
-    """
-    Generates image(s) using a Gradio client based on a prompt.
-    Saves the image(s) and returns their URLs and IDs.
-    Expects JSON: {"prompt": "description for the image"}
-    Returns JSON: {"generated_images": [{"id": 1, "url": "path/to/image1.png"}, ...]}
-    """
-    if not gradio_client:
-        return Response({"error": "Image generation service (Gradio) is not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-    prompt = request.data.get('prompt')
-    style = request.data.get('style', 'Mulberry')  # Default to Mulberry if not provided
-    
-    if not prompt:
-        return Response({"error": "'prompt' is required."}, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Validate style parameter
-    valid_styles = ['Mulberry', 'Jellow', 'Tawasol', 'ARASAAC', 'DYVOGRA']
-    if style not in valid_styles:
-        return Response({"error": f"Invalid style. Must be one of: {', '.join(valid_styles)}"}, status=status.HTTP_400_BAD_REQUEST)
-
-    logger.info(f"Generating images for prompt: '{prompt}' using style: '{style}' with Gradio client.")
-
-    try:
-        # --- Call Gradio Client for Image Generation ---
-        prediction_result = gradio_client.predict(
-            style,       # First argument (style/category) - now dynamic
-            prompt,      # Second argument (the actual prompt)
-            None,        # Third argument (reference image, not used)
-            "No",        # Fourth argument
-            50,          # Fifth argument
-            3,           # Sixth argument
-            0.75,        # Seventh argument
-            7.5,         # Eighth argument
-            None,        # Ninth argument
-            api_name="/process_symbol_generation"
-        )
-
-        if not prediction_result or not isinstance(prediction_result, tuple) or len(prediction_result) == 0:
-            logger.error(f"Gradio client returned an unexpected result: {prediction_result}")
-            return Response({"error": "Image generation failed: Unexpected response from service."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        image_data_list = prediction_result[0] # First element of the tuple is the list of image dicts
-
-        if not isinstance(image_data_list, list):
-            logger.error(f"Gradio client did not return a list of images. Got: {image_data_list}")
-            return Response({"error": "Image generation failed: Unexpected image data format from service."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        generated_images_details = []
-
-        for item in image_data_list:
-            if not isinstance(item, dict) or 'image' not in item or not item['image']:
-                logger.warning(f"Skipping invalid image item from Gradio: {item}")
-                continue
-
-            temp_image_path = item['image']
-
-            try:
-                # --- Read the temporary image file ---
-                with open(temp_image_path, 'rb') as f_temp_image:
-                    image_bytes = f_temp_image.read()
-                
-                if not image_bytes:
-                    logger.warning(f"Skipping empty image file from Gradio: {temp_image_path}")
-                    continue
-
-                # --- Save the generated image ---
-                # Ensure upload directory exists before using it
-                IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-                
-                image_name = f"generated_{uuid.uuid4().hex[:10]}.png"
-                image_save_path = IMAGE_UPLOAD_DIR / image_name
-                relative_image_path = os.path.relpath(image_save_path, settings.MEDIA_ROOT)
-
-                with open(image_save_path, "wb") as f_save:
-                    f_save.write(image_bytes)
-                logger.info(f"Generated image saved to: {image_save_path}")
-
-                # Save the generated image using the new upload handler
-                from api.upload_handlers import handle_image_upload
-                from django.core.files.uploadedfile import SimpleUploadedFile
-                
-                # Create a Django file object from the saved image
-                with open(image_save_path, 'rb') as f:
-                    image_content = f.read()
-                
-                django_file = SimpleUploadedFile(
-                    name=image_name,
-                    content=image_content,
-                    content_type='image/png'
-                )
-                
-                # Use the upload handler to process the generated image
-                upload_result = handle_image_upload(
-                    image_file=django_file,
-                    description=prompt,
-                    set_name='Generated',
-                    is_generated=True
-                )
-                
-                if upload_result.get("success"):
-                    generated_images_details.append({
-                        "id": upload_result["image_id"],
-                        "url": request.build_absolute_uri(settings.MEDIA_URL + upload_result["image_path"]),
-                        "embeddings_created": upload_result["embeddings_created"],
-                        "filename": upload_result["filename"],
-                        "set_name": upload_result["set_name"]
-                    })
-                    logger.info(f"Generated image processed successfully: {upload_result['filename']}")
-                else:
-                    logger.error(f"Failed to process generated image: {upload_result.get('error')}")
-                
-                # Clean up the temporary file
-                try:
-                    os.remove(image_save_path)
-                except Exception as e_cleanup:
-                    logger.warning(f"Failed to clean up temporary file {image_save_path}: {e_cleanup}")
-
-            except FileNotFoundError:
-                logger.error(f"Temporary image file from Gradio not found: {temp_image_path}")
-                # Continue to next image if one is not found
-            except Exception as e_single_image:
-                logger.error(f"Error processing generated image {temp_image_path}: {e_single_image}")
-                # Continue to next image if one fails
-
-        if not generated_images_details:
-             return Response({"error": "Image generation completed, but no valid images were processed or saved."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        # --- Return the results in the updated format ---
-        if len(generated_images_details) == 1:
-            # Single image response (backward compatibility)
-            first_image = generated_images_details[0]
-            return Response({
-                "message": "Image generated successfully.",
-                "new_image_id": first_image["id"],
-                "new_image_url": first_image["url"],
-                "embeddings_created": first_image["embeddings_created"],
-                "filename": first_image["filename"],
-                "set_name": first_image["set_name"],
-                "all_generated_images": generated_images_details
-            }, status=status.HTTP_201_CREATED)
-        else:
-            # Multiple images response
-            return Response({
-                "message": f"Generated {len(generated_images_details)} images successfully.",
-                "all_generated_images": generated_images_details,
-                "total_generated": len(generated_images_details)
-            }, status=status.HTTP_201_CREATED)
-
-    except Exception as e:
-        logger.exception(f"Error during Gradio image generation for prompt '{prompt}': {e}")
-        return Response({"error": f"Image generation failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 # --- New Image Sets Endpoints ---
 @api_view(['GET'])

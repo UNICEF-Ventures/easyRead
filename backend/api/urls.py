@@ -20,7 +20,6 @@ urlpatterns = [
     path('optimized-batch-upload/', views.optimized_batch_upload, name='optimized_batch_upload'),
     path('upload-folder/', views.upload_folder, name='upload_folder'),
     path('upload-progress/<str:session_id>/', views.get_upload_progress, name='get_upload_progress'),
-    path('generate-image/', views.generate_image_view, name='generate_image'),
     path('list-images/', views.list_images, name='list_images'),
     
     # Image similarity search endpoints

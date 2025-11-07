@@ -7,7 +7,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Optional, Tuple, Union
-from PIL import Image, ImageDraw
+from PIL import Image
 import io
 # Import SVG conversion libraries
 # Note: SVG conversion is temporarily disabled due to Cairo dependency issues

@@ -16,4 +16,3 @@ python-docx
 Pillow
 numpy
 boto3
-gradio_client
