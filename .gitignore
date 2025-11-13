@@ -28,3 +28,4 @@ experiments/.env
 *.swp
 *.swo
 .claude
+*.zip

@@ -1,0 +1,13 @@
+# Core Django & Web Framework
+django
+djangorestframework
+django-cors-headers
+python-dotenv
+psycopg2-binary
+pgvector
+dj-database-url
+PyYAML
+
+# PDF Processing & Document Export  
+# pymupdf4llm
+python-docx

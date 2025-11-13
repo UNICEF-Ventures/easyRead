@@ -1,0 +1,4 @@
+# Image Processing & AI
+Pillow
+numpy
+mangum
