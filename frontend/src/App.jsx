@@ -8,6 +8,7 @@ import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
 import { getApiKey } from 'playground_commons';
+import axios from 'axios';
 
 // Core App component that requires router context
 function AppCore({ token, apiKey, email }) {
