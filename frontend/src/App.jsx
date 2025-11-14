@@ -183,6 +183,7 @@ function AppCore({ token, apiKey, email }) {
 function App({ user, accessToken }) {
   const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -196,11 +197,11 @@ function App({ user, accessToken }) {
         if (axios.isAxiosError(error)) {
           if (error.response && error.response.status === 429) {
             console.error('❌ Rate limit hit (429):', error.response.data);
-            toast.error('Too many requests. Please try again later.');
+            setError('Too many requests. Please try again later.');
             return;
           }
         }
-        toast.error("Something went wrong. Try refreshing!");
+        setError("Something went wrong. Try refreshing!");
       } finally {
         setLoading(false);
       }
@@ -211,6 +212,9 @@ function App({ user, accessToken }) {
   }, []);
   return (
     <BrowserRouter>
+      {error && (
+        <Alert severity="error" sx={{ mx: 'auto', maxWidth: 'md', my: 2 }}>{error}</Alert>
+      )}
       {loading ? <div className='w-full items-center align-center flex justify-center'><CircularProgress classNames={{
         label: "text-primary text-sm"
       }} color='primary' /></div>
