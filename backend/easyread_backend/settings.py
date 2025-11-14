@@ -232,7 +232,6 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # Optional: Allow all origins for quick testing (less secure)
-CORS_ALLOW_ALL_ORIGINS = True
 from corsheaders.defaults import default_headers
 CORS_ALLOW_HEADERS = list(default_headers) + ["x-csrftoken"]
 

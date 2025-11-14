@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Routes, Route, useNavigate, Link, BrowserRouter, useLocation } from 'react-router-dom';
 import IntroPage from './components/IntroPage';
 import HomePage from './components/HomePage';
@@ -7,6 +7,7 @@ import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
+import { getApiKey } from 'playground_commons';
 
 // Core App component that requires router context
 function AppCore({ token, apiKey, email }) {
@@ -178,10 +179,41 @@ function AppCore({ token, apiKey, email }) {
 }
 
 // Main App wrapper that provides router context for both standalone and federated use
-function App({ token, apiKey, email }) {
+function App({ user, accessToken }) {
+  const [apiKey, setApiKey] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        console.log("Loading metadata");
+        setLoading(true);
+        const key = await getApiKey(import.meta.env.VITE_API_STAGE ?? "dev", accessToken, import.meta.env.VITE_PROJECT_KEY);
+        setApiKey(key);
+      } catch (error) {
+        console.log("Error", error);
+        if (axios.isAxiosError(error)) {
+          if (error.response && error.response.status === 429) {
+            console.error('❌ Rate limit hit (429):', error.response.data);
+            toast.error('Too many requests. Please try again later.');
+            return;
+          }
+        }
+        toast.error("Something went wrong. Try refreshing!");
+      } finally {
+        setLoading(false);
+      }
+
+    }
+    load();
+
+  }, []);
   return (
     <BrowserRouter>
-      <AppCore token={token} apiKey={apiKey} email={email} />
+      {loading ? <div className='w-full items-center align-center flex justify-center'><CircularProgress classNames={{
+        label: "text-primary text-sm"
+      }} color='primary' /></div>
+        : <AppCore token={accessToken} apiKey={apiKey} email={user.email} />}
     </BrowserRouter>
   );
 }
