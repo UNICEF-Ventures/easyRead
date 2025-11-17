@@ -418,7 +418,7 @@ const SavedContentDetailPage = () => {
       <Paper elevation={2} sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
           <IconButton
-            onClick={() => navigate('/saved')}
+            onClick={() => navigate('/easyread//saved')}
             sx={{ mr: 2 }}
             aria-label="back"
           >

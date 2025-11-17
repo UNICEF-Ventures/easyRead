@@ -79,7 +79,7 @@ const SavedContentPage = () => {
   };
 
   const handleViewContent = (publicId) => {
-    navigate(`/saved/${publicId}`);
+    navigate(`/easyread/saved/${publicId}`);
   };
 
   const handleDeleteContent = async (id, publicId, event) => {

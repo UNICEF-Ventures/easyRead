@@ -153,7 +153,7 @@ const ResultPageComponent = ({ title, markdownContent, easyReadContent, selected
 
       setSaveSuccess(true);
       // Redirect to the saved content page after successful save
-      navigate(`/saved/${token}`);
+      navigate(`/easyread/saved/${token}`);
     } catch (err) {
       console.error("Error saving content:", err);
       setSaveError(err.response?.data?.error || 'Failed to save content.');

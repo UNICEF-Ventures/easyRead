@@ -7,7 +7,7 @@ function IntroPage() {
   const navigate = useNavigate();
 
   const handleContinue = () => {
-    navigate('/easyread');
+    navigate('/easyread/convert');
   };
 
   return (

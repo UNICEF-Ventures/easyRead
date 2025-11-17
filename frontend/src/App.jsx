@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Routes, Route, useNavigate, Link, BrowserRouter, useLocation } from 'react-router-dom';
+import { Routes, Route, useNavigate, Link, BrowserRouter, useLocation, Navigate } from 'react-router-dom';
 import IntroPage from './components/IntroPage';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
@@ -39,7 +39,7 @@ function AppCore({ token, apiKey, email }) {
         <Button color="inherit" component={Link} to="/easyread">
           Home
         </Button>
-        <Button color="inherit" component={Link} to="/saved">
+        <Button color="inherit" component={Link} to="/easyread/saved">
           Saved Content
         </Button>
       </Toolbar>
@@ -88,7 +88,7 @@ function AppCore({ token, apiKey, email }) {
     setError(errorMsg);
 
     // Navigate after state updates
-    navigate('/results', { state: { fromProcessing: true } });
+    navigate('/easyread/results', { state: { fromProcessing: true } });
   };
 
 
@@ -128,51 +128,60 @@ function AppCore({ token, apiKey, email }) {
 
       <Routes>
         <Route
-          path="/"
-          element={<IntroPage />}
-        />
-        <Route
           path="/easyread"
-          element={
-            <HomePage
-              setMarkdownContent={setMarkdownContent}
-              setIsLoading={setIsLoading}
-              setIsProcessingPages={setIsProcessingPages}
-              setTotalPages={setTotalPages}
-              setPagesProcessed={setPagesProcessed}
-              setCurrentProcessingStep={setCurrentProcessingStep}
-              setError={setError}
-              currentMarkdown={markdownContent}
-              onProcessingComplete={handleProcessingComplete}
-              token={token}
-              apiKey={apiKey}
-              email={email}
-            />
-          }
-        />
+        >
+          <Route
+            index
+            element={<IntroPage />}
+          />
+          <Route
+            path="convert"
+            element={
+              <HomePage
+                setMarkdownContent={setMarkdownContent}
+                setIsLoading={setIsLoading}
+                setIsProcessingPages={setIsProcessingPages}
+                setTotalPages={setTotalPages}
+                setPagesProcessed={setPagesProcessed}
+                setCurrentProcessingStep={setCurrentProcessingStep}
+                setError={setError}
+                currentMarkdown={markdownContent}
+                onProcessingComplete={handleProcessingComplete}
+                token={token}
+                apiKey={apiKey}
+                email={email}
+              />
+            }
+          />
+          <Route
+            path="results"
+            element={
+              <ResultPage
+                title={contentTitle}
+                markdownContent={markdownContent}
+                easyReadContent={easyReadContent}
+                selectedSets={selectedSets}
+                preventDuplicateImages={preventDuplicateImages}
+              />
+            }
+          />
+          <Route
+            path="admin"
+            element={<AdminRoute />}
+          />
+          <Route
+            path="saved"
+            element={<SavedContentPage />}
+          />
+          <Route
+            path="saved/:id"
+            element={<SavedContentDetailPage />}
+          />
+
+        </Route>
         <Route
-          path="/results"
-          element={
-            <ResultPage
-              title={contentTitle}
-              markdownContent={markdownContent}
-              easyReadContent={easyReadContent}
-              selectedSets={selectedSets}
-              preventDuplicateImages={preventDuplicateImages}
-            />
-          }
-        />
-        <Route
-          path="/admin"
-          element={<AdminRoute />}
-        />
-        <Route
-          path="/saved"
-          element={<SavedContentPage />}
-        />
-        <Route
-          path="/saved/:id"
-          element={<SavedContentDetailPage />}
+          path="*"
+          element={<Navigate to="/easyread" replace />}
         />
       </Routes>
     </Box>
