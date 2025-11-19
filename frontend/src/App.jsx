@@ -1,12 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { Routes, Route, useNavigate, Link, BrowserRouter, useLocation } from 'react-router-dom';
-import IntroPage from './components/IntroPage';
+import { Routes, Route, useNavigate, BrowserRouter, useLocation } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
 import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
-import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
+import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress } from '@mui/material';
 
 // Core App component that requires router context
 function AppCore({ token, apiKey, email }) {
@@ -24,25 +23,6 @@ function AppCore({ token, apiKey, email }) {
 
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Only show header on pages that need it (not on intro page)
-  const shouldShowHeader = location.pathname !== '/';
-
-  const AppHeader = () => (
-    <AppBar position="static" sx={{ mb: 3 }}>
-      <Toolbar>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          EasyRead Generator
-        </Typography>
-        <Button color="inherit" component={Link} to="/easyread">
-          Home
-        </Button>
-        <Button color="inherit" component={Link} to="/saved">
-          Saved Content
-        </Button>
-      </Toolbar>
-    </AppBar>
-  );
 
   const progressPercent = useMemo(() => {
     return totalPages > 0 ? (pagesProcessed / totalPages) * 100 : 0;
@@ -93,7 +73,6 @@ function AppCore({ token, apiKey, email }) {
   return (
     <Box>
       <CssBaseline />
-      {shouldShowHeader && <AppHeader />}
 
       {isLoading && !isProcessingPages && (
         <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
@@ -127,10 +106,6 @@ function AppCore({ token, apiKey, email }) {
       <Routes>
         <Route
           path="/"
-          element={<IntroPage />}
-        />
-        <Route
-          path="/easyread"
           element={
             <HomePage
               setMarkdownContent={setMarkdownContent}

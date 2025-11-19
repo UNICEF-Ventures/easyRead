@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { GLOBALSYMBOLS_URL } from '../constants';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -17,6 +18,7 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import BookmarkIcon from '@mui/icons-material/Bookmark';
 import { extractMarkdown, generateEasyRead, getImageSets, listImages } from '../apiClient';
 import { config } from '../config.js';
 import LoadingOverlay from './LoadingOverlay';
@@ -64,6 +66,8 @@ function HomePage({
   const [preventDuplicateImages, setPreventDuplicateImages] = useState(true);
   const [conversionProgress, setConversionProgress] = useState('');
   const [showConversionOverlay, setShowConversionOverlay] = useState(false);
+
+  const navigate = useNavigate();
 
   // Get PDF converter credentials (props take precedence over env vars)
   const getCredentials = useCallback(() => ({
@@ -356,13 +360,46 @@ function HomePage({
           borderRadius: 'var(--border-radius-md)',
           boxShadow: '0 6px 18px rgba(0, 0, 0, 0.06)',
         }}>
-          <Typography variant="h4" gutterBottom sx={{
-            color: 'var(--color-primary)',
-            fontWeight: 600,
-            mb: 3
+          <Box sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 3,
+            flexWrap: 'wrap',
+            gap: 2
           }}>
-            Create Easy Read Content
-          </Typography>
+            <Typography variant="h4" sx={{
+              color: 'var(--color-primary)',
+              fontWeight: 600,
+              m: 0
+            }}>
+              Create Easy Read Content
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<BookmarkIcon />}
+              onClick={() => navigate('/saved')}
+              sx={{
+                backgroundColor: '#1976d2',
+                color: 'white',
+                px: 3,
+                py: 1.5,
+                borderRadius: 2,
+                fontWeight: 600,
+                fontSize: '0.95rem',
+                textTransform: 'none',
+                boxShadow: '0 2px 8px rgba(25, 118, 210, 0.25)',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  backgroundColor: '#1565c0',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(25, 118, 210, 0.35)'
+                }
+              }}
+            >
+              View Saved Content
+            </Button>
+          </Box>
 
           <Box sx={{ mb: 4 }}>
             <Typography variant="body1" sx={{
@@ -729,6 +766,27 @@ function HomePage({
                 ⏱️ Processing typically takes 1-3 minutes depending on content length
               </Typography>
             )}
+
+            {/* Disclaimer */}
+            <Box sx={{
+              mt: 4,
+              p: 3,
+              backgroundColor: '#fff3cd',
+              borderLeft: '4px solid #ffc107',
+              borderRadius: 2,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+              textAlign: 'left',
+              maxWidth: 700,
+              mx: 'auto'
+            }}>
+              <Typography variant="body2" sx={{
+                color: '#856404',
+                lineHeight: 1.6,
+                fontSize: '0.9rem'
+              }}>
+                <strong>Please note:</strong> This prototype is provided for exploration and testing purposes only and is not intended for use in UNICEF programs or by program partners. It uses artificial intelligence to simplify text and suggest images. While we strive for accuracy, all content should be carefully reviewed before use. The generated output must be verified for appropriateness and accuracy in your specific context.
+              </Typography>
+            </Box>
           </Box>
         </Paper>
       </Container>
