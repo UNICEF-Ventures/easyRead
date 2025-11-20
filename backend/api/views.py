@@ -1,5 +1,6 @@
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
+from .payload_util import get_json_payload
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -491,7 +492,7 @@ def pdf_to_markdown(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@csrf_exempt
+# @csrf_exempt
 def process_page(request):
     """
     API endpoint that receives a single markdown page string and returns 
@@ -500,28 +501,14 @@ def process_page(request):
     Returns JSON: {"easy_read_sentences": [{"sentence": "s1", "kw": "k1"}, ...]}
     """
     logger = logging.getLogger(__name__)
-    for attr in dir(request):
-        if not attr.startswith('_'):  # Skip private attributes
-            try:
-                value = getattr(request, attr)
-                if not callable(value):  # Skip methods
-                    logger.info(f"requess {attr}: {value}")
-            except Exception as e:
-                logger.info(f"{attr}: <Error accessing: {e}>")
+    data = get_json_payload(request)
     
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
-
     # --- Input Validation ---
     if not isinstance(data, dict) or 'markdown_page' not in data:
         return Response({"error": "Invalid request format. Expected JSON object with 'markdown_page' key."}, status=status.HTTP_400_BAD_REQUEST)
 
     markdown_page_content = data['markdown_page']
-    selected_sets = data.get('selec)ted_sets', [])
+    selected_sets = data.get('selected_sets', [])
 
     if not isinstance(markdown_page_content, str):
         return Response({"error": "'markdown_page' must be a string."}, status=status.HTTP_400_BAD_REQUEST)
@@ -668,12 +655,7 @@ def process_page(request):
 
     # Track page processing analytics
     try:
-        data = request.data
-        if request.body:
-            try:
-                data = json.loads(request.body.decode("utf-8"))
-            except json.JSONDecodeError:
-                pass
+        data = get_json_payload(request)
         page_number = data.get('page_number', 1)  # Default to page 1 if not provided
         track_page_processing(request, page_number, len(easy_read_sentences))
     except Exception as analytics_error:
@@ -705,13 +687,7 @@ def validate_completeness(request):
     logger = logging.getLogger(__name__)
 
     # --- Input Validation --- 
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
-
+    data = get_json_payload(request)
     if not isinstance(data, dict): 
         return Response({"error": "Invalid request format. Expected JSON object."}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -838,12 +814,7 @@ def revise_sentences(request):
     logger = logging.getLogger(__name__)
 
     # --- Input Validation ---
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
+    data = get_json_payload(request)
     if not isinstance(data, dict):
         return Response({"error": "Invalid request format. Expected JSON object."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1086,12 +1057,7 @@ def find_similar_images(request):
     logger.info("--- find_similar_images view entered (NEW VERSION) ---") 
     
     # --- Input Validation ---
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
+    data = get_json_payload(request)
     if not isinstance(data, dict): 
         return Response({"error": "Invalid request format. Expected JSON object."}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -1200,12 +1166,7 @@ def save_processed_content(request):
     logger = logging.getLogger(__name__)
 
     # --- Input Validation ---
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
+    data = get_json_payload(request)
     if not isinstance(data, dict): 
         return Response({"error": "Invalid request format. Expected JSON object."}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -1450,13 +1411,7 @@ def update_saved_content_image(request, content_id):
     }
     Returns the updated content.
     """
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
-
+    data = get_json_payload(request)
     logger = logging.getLogger(__name__)
 
     logger.info(f"Update saved content image called - Content ID: {content_id}")
@@ -1537,12 +1492,7 @@ def update_saved_content_image_by_token(request, public_id):
     }
     Returns the updated content.
     """
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
+    data = get_json_payload(request)
     logger = logging.getLogger(__name__)
 
     logger.info(f"Update saved content image by token called - Public ID: {public_id}")
@@ -1756,12 +1706,7 @@ def bulk_update_saved_content_images(request, content_id):
     }
     Returns JSON: {"message": "Content updated successfully."}
     """
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
+    data = get_json_payload(request)
     try:
         # Validate input
         if not isinstance(data, dict):
@@ -1877,12 +1822,7 @@ def export_current_content_docx(request):
         "original_markdown": "..."
     }
     """
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
+    data = get_json_payload(request)
     try:
         title = data.get('title', 'EasyRead Document')
         easy_read_content = data.get('easy_read_content', [])
@@ -1955,12 +1895,7 @@ def find_similar_images_batch(request):
     
     logger = logging.getLogger(__name__)
     logger.info("--- find_similar_images_batch view entered ---")
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
+    data = get_json_payload(request)
     # Track analytics for batch image search
     try:
         session = get_or_create_session(request)
@@ -2284,9 +2219,11 @@ def list_images(request):
                 images_by_set[set_name] = []
             # Use model helper to get a URL path under MEDIA_URL
             path_under_media = img.get_url()  # e.g., /media/images/...
+
             # Normalize to ensure it begins with /media
-            if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
-                path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
+            # if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
+            #     path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
+            
             # Check if image has embeddings
             has_embeddings = img.embeddings.exists()
             
@@ -2370,13 +2307,7 @@ def batch_upload_images(request):
             'error': 'No images provided'
         }, status=status.HTTP_400_BAD_REQUEST)
     
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
-
+    data = get_json_payload(request)
     images = request.FILES.getlist('images')
     description = data.get('description', '')
     set_name = data.get('set_name', 'Default')
@@ -2432,13 +2363,7 @@ def optimized_batch_upload(request):
             'error': 'No images provided'
         }, status=status.HTTP_400_BAD_REQUEST)
     
-    data = request.data
-    if request.body:
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return Response({"error": f"Invalid request body"}, status=status.HTTP_400_BAD_REQUEST)
-
+    data = get_json_payload(request)
     images = request.FILES.getlist('images')
     description = data.get('description', '')
     set_name = data.get('set_name', 'Default')
@@ -2534,7 +2459,7 @@ def upload_folder(request):
     Expects form-data where keys are relative paths and values are files.
     """
     try:
-        data = request.data
+        data = get_json_payload(request)
         results = {
             'folders': {},
             'total_successful': 0,

@@ -110,7 +110,7 @@ function HomePage({
     };
 
     loadImageSets();
-  }, [setError]);
+  }, []);
 
   const handleSetSelection = (setName) => {
     const newSelectedSets = new Set(selectedSets);
@@ -216,7 +216,7 @@ function HomePage({
       setError('Please drop a valid PDF file.');
       setFileName('');
     }
-  }, [setError, handlePdfUpload]);
+  }, []);
 
   const handleDragOver = useCallback((event) => {
     event.preventDefault();

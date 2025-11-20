@@ -1,3 +1,4 @@
+from urllib.parse import urlparse
 from django.db import models
 from django.utils import timezone
 import uuid
@@ -70,6 +71,10 @@ class Image(models.Model):
         from django.conf import settings
         import os
         
+        parsed = urlparse(self.original_path)
+        if parsed.scheme in ("http", "https"):
+            return self.original_path  # return URL unchanged
+
         # If original_path is relative, it's already correct for URLs
         if not os.path.isabs(self.original_path):
             return f"{settings.MEDIA_URL.rstrip('/')}/{self.original_path}"

@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { Routes, Route, useNavigate, BrowserRouter, useLocation } from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Routes, Route, useNavigate, BrowserRouter, useLocation, Navigate } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
 import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress } from '@mui/material';
+import axios from 'axios';
+import { getApiKey } from "playground_commons";
 
 // Core App component that requires router context
 function AppCore({ token, apiKey, email }) {
@@ -102,27 +104,54 @@ function AppCore({ token, apiKey, email }) {
       {error && (
         <Alert severity="error" sx={{ mx: 'auto', maxWidth: 'md', my: 2 }}>{error}</Alert>
       )}
-
       <Routes>
         <Route
-          path="/"
-          element={
-            <HomePage
-              setMarkdownContent={setMarkdownContent}
-              setIsLoading={setIsLoading}
-              setIsProcessingPages={setIsProcessingPages}
-              setTotalPages={setTotalPages}
-              setPagesProcessed={setPagesProcessed}
-              setCurrentProcessingStep={setCurrentProcessingStep}
-              setError={setError}
-              currentMarkdown={markdownContent}
-              onProcessingComplete={handleProcessingComplete}
-              token={token}
-              apiKey={apiKey}
-              email={email}
-            />
-          }
-        />
+          path="/easyread"
+        >
+          <Route
+            index
+            element={
+              <HomePage
+                setMarkdownContent={setMarkdownContent}
+                setIsLoading={setIsLoading}
+                setIsProcessingPages={setIsProcessingPages}
+                setTotalPages={setTotalPages}
+                setPagesProcessed={setPagesProcessed}
+                setCurrentProcessingStep={setCurrentProcessingStep}
+                setError={setError}
+                currentMarkdown={markdownContent}
+                onProcessingComplete={handleProcessingComplete}
+                token={token}
+                apiKey={apiKey}
+                email={email}
+              />
+            }
+          />
+          <Route
+            path="results"
+            element={
+              <ResultPage
+                title={contentTitle}
+                markdownContent={markdownContent}
+                easyReadContent={easyReadContent}
+                selectedSets={selectedSets}
+                preventDuplicateImages={preventDuplicateImages}
+              />
+            }
+          />
+          <Route
+            path="admin"
+            element={<AdminRoute />}
+          />
+          <Route
+            path="saved"
+            element={<SavedContentPage />}
+          />
+          <Route
+            path="saved/:id"
+            element={<SavedContentDetailPage />}
+          />
+        </Route>
         <Route
           path="*"
           element={<Navigate to="/easyread" replace />}
