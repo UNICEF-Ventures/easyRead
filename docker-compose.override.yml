@@ -32,3 +32,7 @@ services:
       - frontend_node_modules:/app/node_modules  # Named volume for node_modules
     environment:
       - NODE_ENV=development
+      - VITE_API_STAGE=${VITE_API_STAGE:-dev}
+      - VITE_PROJECT_KEY=${VITE_PROJECT_KEY:-easyread}
+      - VITE_PDF_CONVERTER_TOKEN=${VITE_PDF_CONVERTER_TOKEN:-}
+      - VITE_PDF_CONVERTER_EMAIL=${VITE_PDF_CONVERTER_EMAIL:-}

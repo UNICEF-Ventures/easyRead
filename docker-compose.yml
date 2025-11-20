@@ -88,6 +88,8 @@ services:
         - VITE_PDF_CONVERTER_API_KEY=${VITE_PDF_CONVERTER_API_KEY}
         - VITE_PDF_CONVERTER_TOKEN=${VITE_PDF_CONVERTER_TOKEN}
         - VITE_PDF_CONVERTER_EMAIL=${VITE_PDF_CONVERTER_EMAIL}
+        - VITE_API_STAGE=${VITE_API_STAGE:-dev}
+        - VITE_PROJECT_KEY=${VITE_PROJECT_KEY:-easyread}
     container_name: easyread_frontend
     ports:
       - "3001:80"

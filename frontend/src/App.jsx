@@ -169,13 +169,24 @@ function App({ user, accessToken }) {
 
   useEffect(() => {
     const load = async () => {
+      console.log("App useEffect - accessToken:", accessToken, "type:", typeof accessToken);
+      console.log("App useEffect - user:", user);
+      
+      // Only try to get API key if running in federated/platform mode (with accessToken)
+      if (!accessToken) {
+        console.log("Running in standalone mode - skipping API key fetch");
+        setLoading(false);
+        return;
+      }
+
       try {
-        console.log("Loading metadata");
+        console.log("Loading metadata for federated mode");
         setLoading(true);
         const key = await getApiKey(import.meta.env.VITE_API_STAGE ?? "dev", accessToken, import.meta.env.VITE_PROJECT_KEY);
         setApiKey(key);
+        console.log("API key loaded successfully");
       } catch (error) {
-        console.log("Error", error);
+        console.error("Error loading API key:", error);
         if (axios.isAxiosError(error)) {
           if (error.response && error.response.status === 429) {
             console.error('❌ Rate limit hit (429):', error.response.data);
@@ -191,7 +202,7 @@ function App({ user, accessToken }) {
     }
     load();
 
-  }, []);
+  }, [accessToken, user]);
   return (
     <BrowserRouter>
       {error && (
