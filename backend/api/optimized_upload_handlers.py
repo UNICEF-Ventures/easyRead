@@ -24,6 +24,7 @@ from api.security_utils import (
     get_safe_upload_path,
     validate_upload_request
 )
+from .image_utils import parse_s3_url
 
 logger = logging.getLogger(__name__)
 MEDIA_STORE = os.getenv('MEDIA_STORE', 'server')
@@ -440,21 +441,7 @@ def _get_image_metadata(image_path: Path, filename: str) -> Dict[str, Any]:
                     'file_size': image_path.stat().st_size
                 }
         elif MEDIA_STORE == "S3":    
-            from urllib.parse import urlparse
-            def parse_s3_url(s3_url: str):
-                # Works with virtual-hosted and path-style URLs
-                u = urlparse(s3_url)
-
-                if "amazonaws.com" not in u.netloc:
-                    raise ValueError("Not an S3 URL")
-
-                # Virtual hosted-style: https://bucket.s3.region.amazonaws.com/key
-                parts = u.netloc.split(".")
-                bucket = parts[0]
-
-                key = u.path.lstrip("/")  # remove leading slash
-
-                return bucket, key
+            
             
             def get_svg_size_from_s3(bucket: str, key: str):
                 """

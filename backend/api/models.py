@@ -55,7 +55,11 @@ class Image(models.Model):
         """
         from django.conf import settings
         import os
-        
+
+        parsed = urlparse(self.original_path)
+        if parsed.scheme in ("http", "https"):
+            return self.original_path  # return URL unchanged
+
         # If path is already absolute, use it
         if os.path.isabs(self.original_path):
             return self.original_path

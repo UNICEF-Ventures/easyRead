@@ -430,3 +430,19 @@ def generate_description_from_filename(filename: str) -> str:
     cleaned_name = ' '.join(word.capitalize() for word in cleaned_name.split())
     
     return cleaned_name or 'Untitled'
+
+from urllib.parse import urlparse
+def parse_s3_url(s3_url: str):
+    # Works with virtual-hosted and path-style URLs
+    u = urlparse(s3_url)
+
+    if "amazonaws.com" not in u.netloc:
+        raise ValueError("Not an S3 URL")
+
+    # Virtual hosted-style: https://bucket.s3.region.amazonaws.com/key
+    parts = u.netloc.split(".")
+    bucket = parts[0]
+
+    key = u.path.lstrip("/")  # remove leading slash
+
+    return bucket, key
