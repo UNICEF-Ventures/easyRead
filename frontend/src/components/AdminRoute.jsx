@@ -4,9 +4,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminLogin from './AdminLogin';
 import ImageManagementPage from './ImageManagementPage';
 import AdminDashboard from './AdminDashboard';
+import ImageSetManager from './ImageSetManager';
 import LogoutIcon from '@mui/icons-material/Logout';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import ImageIcon from '@mui/icons-material/Image';
+import FolderIcon from '@mui/icons-material/Folder';
 import apiClient from '../apiClient';
 
 const AdminRoute = () => {
@@ -26,6 +28,8 @@ const AdminRoute = () => {
       setCurrentTab(0);
     } else if (tab === 'images') {
       setCurrentTab(1);
+    } else if (tab === 'sets') {
+      setCurrentTab(2);
     }
   }, [searchParams]);
 
@@ -76,7 +80,7 @@ const AdminRoute = () => {
 
   const handleTabChange = (event, newValue) => {
     setCurrentTab(newValue);
-    const tabNames = ['dashboard', 'images'];
+    const tabNames = ['dashboard', 'images', 'sets'];
     setSearchParams({ tab: tabNames[newValue] });
   };
 
@@ -145,6 +149,12 @@ const AdminRoute = () => {
             id="tab-1" 
             aria-controls="tabpanel-1"
           />
+          <Tab 
+            icon={<FolderIcon />} 
+            label="Image Sets" 
+            id="tab-2" 
+            aria-controls="tabpanel-2"
+          />
         </Tabs>
       </Box>
 
@@ -157,6 +167,15 @@ const AdminRoute = () => {
         {currentTab === 1 && (
           <Box role="tabpanel" id="tabpanel-1" aria-labelledby="tab-1">
             <ImageManagementPage />
+          </Box>
+        )}
+        {currentTab === 2 && (
+          <Box role="tabpanel" id="tabpanel-2" aria-labelledby="tab-2" sx={{ px: 2 }}>
+            <ImageSetManager 
+              onSetDeleted={(setId, setName) => {
+                console.log(`Image set "${setName}" (ID: ${setId}) was deleted`);
+              }}
+            />
           </Box>
         )}
       </Box>

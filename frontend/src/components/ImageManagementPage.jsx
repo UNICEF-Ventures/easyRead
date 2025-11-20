@@ -44,7 +44,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import SearchOffIcon from '@mui/icons-material/SearchOff';
 import WarningIcon from '@mui/icons-material/Warning';
-import { listImages, uploadImage, batchUploadImages, optimizedBatchUpload, uploadFolder, getImageSets } from '../apiClient';
+import { listImages, uploadImage, batchUploadImages, optimizedBatchUpload, uploadFolder, getImageSets, deleteImage, deleteImagesBatch, deleteImageSet } from '../apiClient';
 import UploadProgressDialog from './UploadProgressDialog';
 import ImageGallery from './ImageGallery';
 
@@ -112,6 +112,10 @@ const ImageManagementPage = () => {
   // Progress dialog state
   const [showProgressDialog, setShowProgressDialog] = useState(false);
   const [uploadSessionId, setUploadSessionId] = useState(null);
+  
+  // Selection and deletion state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedImages, setSelectedImages] = useState(new Set());
 
   // Clean up object URLs when component unmounts
   useEffect(() => {
@@ -895,6 +899,48 @@ const ImageManagementPage = () => {
     }
   };
 
+  const handleDeleteImages = async (imageIds) => {
+    try {
+      setLoading(true);
+      const response = await deleteImagesBatch(imageIds);
+      
+      if (response.data.success) {
+        showAlert(response.data.message, 'success');
+        // Refresh the images list
+        await fetchImages();
+        setSelectedImages(new Set());
+      } else {
+        showAlert(response.data.error || 'Failed to delete images', 'error');
+      }
+    } catch (error) {
+      console.error('Error deleting images:', error);
+      showAlert(error.response?.data?.error || 'Error deleting images', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteSet = async (setId, setName) => {
+    try {
+      setLoading(true);
+      const response = await deleteImageSet(setId);
+      
+      if (response.data.success) {
+        showAlert(response.data.message, 'success');
+        // Refresh the images list
+        await fetchImages();
+        setSelectedImages(new Set());
+      } else {
+        showAlert(response.data.error || 'Failed to delete image set', 'error');
+      }
+    } catch (error) {
+      console.error('Error deleting image set:', error);
+      showAlert(error.response?.data?.error || 'Error deleting image set', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const showAlert = (message, severity) => {
     setAlert({
       open: true,
@@ -1437,9 +1483,24 @@ const ImageManagementPage = () => {
         
         {/* Enhanced Image Gallery Section */}
         <Paper sx={{ p: 3 }}>
-          <Typography variant="h4" component="h1" sx={{ mb: 3 }}>
-            Image Gallery
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Typography variant="h4" component="h1">
+              Image Gallery
+            </Typography>
+            <Button
+              variant={selectionMode ? 'contained' : 'outlined'}
+              color={selectionMode ? 'secondary' : 'primary'}
+              startIcon={selectionMode ? <CheckIcon /> : <DeleteIcon />}
+              onClick={() => {
+                setSelectionMode(!selectionMode);
+                if (selectionMode) {
+                  setSelectedImages(new Set());
+                }
+              }}
+            >
+              {selectionMode ? 'Exit Selection Mode' : 'Delete Images'}
+            </Button>
+          </Box>
           
           {/* Show warning if there are images without embeddings */}
           {embeddingStats && embeddingStats.without_embeddings > 0 && (
@@ -1455,6 +1516,12 @@ const ImageManagementPage = () => {
             imagesBySet={uploadedImages}
             loading={loading}
             embeddingStats={embeddingStats}
+            selectionMode={selectionMode}
+            selectedImages={selectedImages}
+            onSelectionChange={setSelectedImages}
+            onDeleteImages={handleDeleteImages}
+            onDeleteSet={handleDeleteSet}
+            onRefresh={fetchImages}
             onImageSelect={(image) => {
               console.log('Image selected:', image);
               // Optional: Add image selection handling here if needed

@@ -2303,6 +2303,7 @@ def list_images(request):
             
             images_by_set[set_name].append({
                 'id': img.id,
+                'set_id': img.set.id if img.set else None,
                 'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
                 'relative_path': img.original_path,
                 'description': img.description,

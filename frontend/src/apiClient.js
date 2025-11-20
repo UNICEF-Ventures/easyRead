@@ -898,4 +898,23 @@ export const reviseSentencesWithFeedback = (originalMarkdown, currentSentences, 
   });
 };
 
+// Admin functions for image deletion
+export const deleteImage = (imageId) => {
+  return apiClient.delete(`/admin/api/images/${imageId}/`);
+};
+
+export const deleteImagesBatch = (imageIds) => {
+  return apiClient.delete('/admin/api/images/batch-delete/', {
+    data: { image_ids: imageIds }
+  });
+};
+
+export const deleteImageSet = (setId) => {
+  return apiClient.delete(`/admin/api/image-sets/${setId}/`);
+};
+
+export const listImageSets = () => {
+  return apiClient.get('/admin/api/image-sets/');
+};
+
 export default apiClient; 

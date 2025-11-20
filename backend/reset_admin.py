@@ -5,7 +5,7 @@ import django
 
 # Setup Django
 if __name__ == "__main__":
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "easyread.settings")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "easyread_backend.settings")
     django.setup()
     
     from django.contrib.auth.models import User

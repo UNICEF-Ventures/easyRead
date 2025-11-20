@@ -55,4 +55,10 @@ urlpatterns = [
     path('admin/api/login/', admin_views.admin_api_login, name='admin_api_login'),
     path('admin/api/logout/', admin_views.admin_api_logout, name='admin_api_logout'),
     path('admin/api/analytics/', admin_views.analytics_api, name='admin_analytics_api'),
+    
+    # Admin image management endpoints
+    path('admin/api/images/<int:image_id>/', admin_views.delete_image, name='admin_delete_image'),
+    path('admin/api/images/batch-delete/', admin_views.delete_images_batch, name='admin_delete_images_batch'),
+    path('admin/api/image-sets/', admin_views.list_image_sets, name='admin_list_image_sets'),
+    path('admin/api/image-sets/<int:set_id>/', admin_views.delete_image_set, name='admin_delete_image_set'),
 ]

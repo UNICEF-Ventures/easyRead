@@ -31,6 +31,7 @@ import {
   Checkbox,
   Fab,
   Dialog,
+  DialogTitle,
   DialogContent,
   DialogActions,
   Skeleton,
@@ -175,7 +176,10 @@ const ImageGallery = ({
   onImageSelect,
   selectionMode = false,
   selectedImages = new Set(),
-  onSelectionChange
+  onSelectionChange,
+  onDeleteImages,
+  onDeleteSet,
+  onRefresh
 }) => {
   // View and layout state
   const [viewMode, setViewMode] = useState('grid'); // 'grid', 'list', 'thumbnails', 'sets'
@@ -194,6 +198,9 @@ const ImageGallery = ({
   const [previewImage, setPreviewImage] = useState(null);
   const [filterMenuAnchor, setFilterMenuAnchor] = useState(null);
   const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteSetConfirmOpen, setDeleteSetConfirmOpen] = useState(false);
+  const [setToDelete, setSetToDelete] = useState(null);
 
   // Debounced search term
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -313,6 +320,31 @@ const ImageGallery = ({
   const clearSelection = useCallback(() => {
     onSelectionChange?.(new Set());
   }, [onSelectionChange]);
+
+  const handleDeleteSelected = useCallback(() => {
+    setDeleteConfirmOpen(true);
+  }, []);
+
+  const confirmDeleteImages = useCallback(async () => {
+    setDeleteConfirmOpen(false);
+    if (onDeleteImages && selectedImages.size > 0) {
+      await onDeleteImages(Array.from(selectedImages));
+      clearSelection();
+    }
+  }, [onDeleteImages, selectedImages, clearSelection]);
+
+  const handleDeleteSet = useCallback((setName, setId) => {
+    setSetToDelete({ name: setName, id: setId });
+    setDeleteSetConfirmOpen(true);
+  }, []);
+
+  const confirmDeleteSet = useCallback(async () => {
+    setDeleteSetConfirmOpen(false);
+    if (onDeleteSet && setToDelete) {
+      await onDeleteSet(setToDelete.id, setToDelete.name);
+      setSetToDelete(null);
+    }
+  }, [onDeleteSet, setToDelete]);
 
   // Render methods
   const renderGridView = () => (
@@ -547,25 +579,51 @@ const ImageGallery = ({
       imagesBySetFiltered[image.setName].push(image);
     });
 
-    return Object.entries(imagesBySetFiltered).map(([setName, images]) => (
-      <Box key={setName} sx={{ mb: 4 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            mb: 2,
-            cursor: 'pointer'
-          }}
-          onClick={() => toggleSetCollapse(setName)}
-        >
-          <Typography variant="h6" color="primary" sx={{ fontWeight: 'bold' }}>
-            📁 {setName} ({images.length} images)
-          </Typography>
-          <IconButton>
-            {collapsedSets.has(setName) ? <ExpandMoreIcon /> : <ExpandLessIcon />}
-          </IconButton>
-        </Box>
+    return Object.entries(imagesBySetFiltered).map(([setName, images]) => {
+      // Get the set ID from the first image
+      const setId = images[0]?.set_id;
+      
+      return (
+        <Box key={setName} sx={{ mb: 4 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              mb: 2
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                flexGrow: 1,
+                cursor: 'pointer'
+              }}
+              onClick={() => toggleSetCollapse(setName)}
+            >
+              <Typography variant="h6" color="primary" sx={{ fontWeight: 'bold' }}>
+                📁 {setName} ({images.length} images)
+              </Typography>
+              <IconButton>
+                {collapsedSets.has(setName) ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+              </IconButton>
+            </Box>
+            {onDeleteSet && setId && (
+              <Tooltip title={`Delete entire "${setName}" set`}>
+                <IconButton
+                  color="error"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteSet(setName, setId);
+                  }}
+                  size="small"
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Box>
         
         {!collapsedSets.has(setName) && (
           <Grid container spacing={2}>
@@ -629,7 +687,8 @@ const ImageGallery = ({
           </Grid>
         )}
       </Box>
-    ));
+    );
+    });
   };
 
   if (loading) {
@@ -724,15 +783,24 @@ const ImageGallery = ({
                 Select All
               </Button>
               {selectedImages.size > 0 && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  color="error"
-                  startIcon={<DeleteIcon />}
-                  onClick={clearSelection}
-                >
-                  Clear ({selectedImages.size})
-                </Button>
+                <>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={clearSelection}
+                  >
+                    Clear ({selectedImages.size})
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    onClick={handleDeleteSelected}
+                  >
+                    Delete ({selectedImages.size})
+                  </Button>
+                </>
               )}
             </Stack>
           )}
@@ -911,7 +979,7 @@ const ImageGallery = ({
           {previewImage && (
             <Box sx={{ position: 'relative' }}>
               <img
-                src={previewImage.image_url}
+                src={buildImageUrl(previewImage.image_url)}
                 alt={previewImage.description || 'Image'}
                 style={{
                   width: '100%',
@@ -959,6 +1027,60 @@ const ImageGallery = ({
             )}
           </DialogActions>
         )}
+      </Dialog>
+
+      {/* Delete Images Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon color="error" />
+          Confirm Delete Images
+        </DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete <strong>{selectedImages.size}</strong> selected image{selectedImages.size !== 1 ? 's' : ''}? 
+            This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={confirmDeleteImages} color="error" variant="contained" startIcon={<DeleteIcon />}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Image Set Confirmation Dialog */}
+      <Dialog
+        open={deleteSetConfirmOpen}
+        onClose={() => setDeleteSetConfirmOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon color="error" />
+          Confirm Delete Image Set
+        </DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete the entire image set <strong>"{setToDelete?.name}"</strong>? 
+            This will delete all images in this set. This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteSetConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={confirmDeleteSet} color="error" variant="contained" startIcon={<DeleteIcon />}>
+            Delete Set
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

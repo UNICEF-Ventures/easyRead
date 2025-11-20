@@ -288,3 +288,230 @@ def analytics_api(request):
             'error': 'Failed to fetch analytics data',
             'details': str(e)
         }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@login_required
+def delete_image(request, image_id):
+    """
+    API endpoint to delete a single image.
+    Removes the image record and optionally deletes the file from disk.
+    """
+    try:
+        from .models import Image
+        
+        # Get the image
+        image = Image.objects.get(id=image_id)
+        image_filename = image.filename
+        image_set_name = image.set.name
+        
+        # Get file path before deleting the record
+        file_path = image.get_absolute_path()
+        
+        # Delete the database record (this will cascade to embeddings)
+        image.delete()
+        
+        # Optionally delete the physical file
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as file_error:
+            # Log but don't fail if file deletion fails
+            print(f"Warning: Could not delete file {file_path}: {file_error}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Image "{image_filename}" deleted successfully',
+            'deleted_image_id': image_id,
+            'set_name': image_set_name
+        })
+        
+    except Image.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Image not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to delete image: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@login_required
+def delete_images_batch(request):
+    """
+    API endpoint to delete multiple images by ID.
+    Accepts a JSON payload with an array of image IDs.
+    """
+    try:
+        from .models import Image
+        
+        data = json.loads(request.body)
+        image_ids = data.get('image_ids', [])
+        
+        if not image_ids:
+            return JsonResponse({
+                'success': False,
+                'error': 'No image IDs provided'
+            }, status=400)
+        
+        # Get all images
+        images = Image.objects.filter(id__in=image_ids)
+        found_count = images.count()
+        
+        if found_count == 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'No images found with provided IDs'
+            }, status=404)
+        
+        # Collect file paths before deletion
+        file_paths = [img.get_absolute_path() for img in images]
+        
+        # Delete the database records
+        images.delete()
+        
+        # Optionally delete the physical files
+        deleted_files = 0
+        failed_files = 0
+        for file_path in file_paths:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    deleted_files += 1
+            except Exception as file_error:
+                failed_files += 1
+                print(f"Warning: Could not delete file {file_path}: {file_error}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Successfully deleted {found_count} images',
+            'deleted_count': found_count,
+            'deleted_files': deleted_files,
+            'failed_files': failed_files
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON payload'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to delete images: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@login_required
+def delete_image_set(request, set_id):
+    """
+    API endpoint to delete an entire image set and all its images.
+    """
+    try:
+        from .models import ImageSet, Image
+        
+        # Get the image set
+        image_set = ImageSet.objects.get(id=set_id)
+        set_name = image_set.name
+        
+        # Get all images in the set
+        images = Image.objects.filter(set=image_set)
+        image_count = images.count()
+        
+        # Collect file paths before deletion
+        file_paths = [img.get_absolute_path() for img in images]
+        
+        # Delete the image set (this will cascade to images and embeddings)
+        image_set.delete()
+        
+        # Optionally delete the physical files
+        deleted_files = 0
+        failed_files = 0
+        for file_path in file_paths:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    deleted_files += 1
+            except Exception as file_error:
+                failed_files += 1
+                print(f"Warning: Could not delete file {file_path}: {file_error}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Image set "{set_name}" and {image_count} images deleted successfully',
+            'deleted_set_name': set_name,
+            'deleted_image_count': image_count,
+            'deleted_files': deleted_files,
+            'failed_files': failed_files
+        })
+        
+    except ImageSet.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Image set not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to delete image set: {str(e)}'
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+@login_required
+def list_image_sets(request):
+    """
+    API endpoint to list all image sets with their metadata and image counts.
+    """
+    try:
+        from .models import ImageSet, Image
+        
+        sets = ImageSet.objects.all().order_by('name')
+        
+        sets_data = []
+        for image_set in sets:
+            # Get image count and stats
+            images = Image.objects.filter(set=image_set)
+            image_count = images.count()
+            
+            # Count images with embeddings
+            images_with_embeddings = images.filter(embeddings__isnull=False).distinct().count()
+            
+            # Get a sample of image URLs for preview (first 3 images)
+            sample_images = []
+            for img in images[:3]:
+                sample_images.append({
+                    'id': img.id,
+                    'url': img.get_url(),
+                    'description': img.description
+                })
+            
+            sets_data.append({
+                'id': image_set.id,
+                'name': image_set.name,
+                'description': image_set.description,
+                'image_count': image_count,
+                'images_with_embeddings': images_with_embeddings,
+                'embedding_coverage_percent': round((images_with_embeddings / image_count * 100) if image_count > 0 else 0, 1),
+                'created_at': image_set.created_at.isoformat(),
+                'sample_images': sample_images
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'sets': sets_data,
+            'total_sets': len(sets_data)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to fetch image sets: {str(e)}'
+        }, status=500)
