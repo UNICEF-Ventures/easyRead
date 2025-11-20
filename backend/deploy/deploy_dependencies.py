@@ -102,8 +102,8 @@ def upload(layer_name, layer_region, folder_path, compatible_runtimes = ["python
 if __name__=="__main__":
     # dividing file into 2 parts to overcome 50MB limit
     folder_path = os.getcwd()
-    requirments_file_path = os.path.join(os.getcwd(),"dependencies","requirements_1.txt")
+    requirments_file_path = os.path.join(os.getcwd(),"deploy", "dependencies","requirements_1.txt")
     upload("easyread-layer-1", "eu-north-1", requirements_file=requirments_file_path, folder_path=folder_path)
     
-    requirments_file_path = os.path.join(os.getcwd(),"dependencies","requirements_2.txt")
+    requirments_file_path = os.path.join(os.getcwd(),"deploy", "dependencies","requirements_2.txt")
     upload("easyread-layer-2", "eu-north-1", requirements_file=requirments_file_path, folder_path=folder_path)

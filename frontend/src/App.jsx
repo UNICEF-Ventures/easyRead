@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { Routes, Route, useNavigate, BrowserRouter, useLocation } from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Routes, Route, useNavigate, BrowserRouter, useLocation, Navigate } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
 import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress } from '@mui/material';
+import axios from 'axios';
+import { getApiKey } from "playground_commons";
 
 // Core App component that requires router context
 function AppCore({ token, apiKey, email }) {
@@ -66,7 +68,7 @@ function AppCore({ token, apiKey, email }) {
     setError(errorMsg);
 
     // Navigate after state updates
-    navigate('/results', { state: { fromProcessing: true } });
+    navigate('/easyread/results', { state: { fromProcessing: true } });
   };
 
 
@@ -102,50 +104,57 @@ function AppCore({ token, apiKey, email }) {
       {error && (
         <Alert severity="error" sx={{ mx: 'auto', maxWidth: 'md', my: 2 }}>{error}</Alert>
       )}
-
       <Routes>
         <Route
-          path="/"
-          element={
-            <HomePage
-              setMarkdownContent={setMarkdownContent}
-              setIsLoading={setIsLoading}
-              setIsProcessingPages={setIsProcessingPages}
-              setTotalPages={setTotalPages}
-              setPagesProcessed={setPagesProcessed}
-              setCurrentProcessingStep={setCurrentProcessingStep}
-              setError={setError}
-              currentMarkdown={markdownContent}
-              onProcessingComplete={handleProcessingComplete}
-              token={token}
-              apiKey={apiKey}
-              email={email}
-            />
-          }
-        />
+          path="/easyread"
+        >
+          <Route
+            index
+            element={
+              <HomePage
+                setMarkdownContent={setMarkdownContent}
+                setIsLoading={setIsLoading}
+                setIsProcessingPages={setIsProcessingPages}
+                setTotalPages={setTotalPages}
+                setPagesProcessed={setPagesProcessed}
+                setCurrentProcessingStep={setCurrentProcessingStep}
+                setError={setError}
+                currentMarkdown={markdownContent}
+                onProcessingComplete={handleProcessingComplete}
+                token={token}
+                apiKey={apiKey}
+                email={email}
+              />
+            }
+          />
+          <Route
+            path="results"
+            element={
+              <ResultPage
+                title={contentTitle}
+                markdownContent={markdownContent}
+                easyReadContent={easyReadContent}
+                selectedSets={selectedSets}
+                preventDuplicateImages={preventDuplicateImages}
+              />
+            }
+          />
+          <Route
+            path="admin"
+            element={<AdminRoute />}
+          />
+          <Route
+            path="saved"
+            element={<SavedContentPage />}
+          />
+          <Route
+            path="saved/:id"
+            element={<SavedContentDetailPage />}
+          />
+        </Route>
         <Route
-          path="/results"
-          element={
-            <ResultPage
-              title={contentTitle}
-              markdownContent={markdownContent}
-              easyReadContent={easyReadContent}
-              selectedSets={selectedSets}
-              preventDuplicateImages={preventDuplicateImages}
-            />
-          }
-        />
-        <Route
-          path="/admin"
-          element={<AdminRoute />}
-        />
-        <Route
-          path="/saved"
-          element={<SavedContentPage />}
-        />
-        <Route
-          path="/saved/:id"
-          element={<SavedContentDetailPage />}
+          path="*"
+          element={<Navigate to="/easyread" replace />}
         />
       </Routes>
     </Box>
@@ -153,10 +162,45 @@ function AppCore({ token, apiKey, email }) {
 }
 
 // Main App wrapper that provides router context for both standalone and federated use
-function App({ token, apiKey, email }) {
+function App({ user, accessToken }) {
+  const [apiKey, setApiKey] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        console.log("Loading metadata");
+        setLoading(true);
+        const key = await getApiKey(import.meta.env.VITE_API_STAGE ?? "dev", accessToken, import.meta.env.VITE_PROJECT_KEY);
+        setApiKey(key);
+      } catch (error) {
+        console.log("Error", error);
+        if (axios.isAxiosError(error)) {
+          if (error.response && error.response.status === 429) {
+            console.error('❌ Rate limit hit (429):', error.response.data);
+            setError('Too many requests. Please try again later.');
+            return;
+          }
+        }
+        setError("Something went wrong. Try refreshing!");
+      } finally {
+        setLoading(false);
+      }
+
+    }
+    load();
+
+  }, []);
   return (
     <BrowserRouter>
-      <AppCore token={token} apiKey={apiKey} email={email} />
+      {error && (
+        <Alert severity="error" sx={{ mx: 'auto', maxWidth: 'md', my: 2 }}>{error}</Alert>
+      )}
+      {loading ? <div className='w-full items-center align-center flex justify-center'><CircularProgress classNames={{
+        label: "text-primary text-sm"
+      }} color='primary' /></div>
+        : <AppCore token={accessToken} apiKey={apiKey} email={user.email} />}
     </BrowserRouter>
   );
 }

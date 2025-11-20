@@ -214,6 +214,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:5001", # Frontend dev server port (alternative)
     "http://127.0.0.1:5001",
+    "https://ooiplayground.com",
+    "https://dev.ooiplayground.com"
 ]
 
 # Allow credentials for admin authentication
@@ -229,10 +231,11 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:5001",
     "http://127.0.0.1:5001",
+     "https://ooiplayground.com",
+    "https://dev.ooiplayground.com"
 ]
 
 # Optional: Allow all origins for quick testing (less secure)
-CORS_ALLOW_ALL_ORIGINS = True
 from corsheaders.defaults import default_headers
 CORS_ALLOW_HEADERS = list(default_headers) + ["x-csrftoken"]
 
