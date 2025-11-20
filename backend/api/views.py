@@ -2533,12 +2533,8 @@ def upload_folder(request):
     Upload a folder structure with automatic set creation based on folder names.
     Expects form-data where keys are relative paths and values are files.
     """
-    if not request.FILES:
-        return Response({
-            'error': 'No files provided'
-        }, status=status.HTTP_400_BAD_REQUEST)
-    
     try:
+        data = request.data
         results = {
             'folders': {},
             'total_successful': 0,
@@ -2549,7 +2545,7 @@ def upload_folder(request):
         
         # Group files by folder
         folders = {}
-        for file_path, file_obj in request.FILES.items():
+        for file_path, file_obj in data.items():
             # Extract folder name from path
             path_parts = file_path.split('/')
             folder_name = path_parts[0] if len(path_parts) > 1 else 'Default'

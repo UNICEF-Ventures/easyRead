@@ -11,13 +11,17 @@ import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
+from urllib.parse import quote_plus
+import boto3
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 import logging
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
+MEDIA_STORE = os.getenv('MEDIA_STORE', 'server')
 
 class FileSecurityValidator:
     """
@@ -313,14 +317,57 @@ class RateLimiter:
             'remaining': max_requests - (current_count + 1)
         }
 
+from pathlib import Path
+
+def get_image_mime_type(ext: str) -> str | None:
+    """
+    Return the MIME type for a given image filename based on its extension.
+    Supports popular image formats. Returns None if unknown.
+    """
+    
+    mapping = {
+        # Raster formats
+        "jpg":  "image/jpeg",
+        "jpeg": "image/jpeg",
+        "jpe":  "image/jpeg",
+        "png":  "image/png",
+        "gif":  "image/gif",
+        "bmp":  "image/bmp",
+        "dib":  "image/bmp",
+        "webp": "image/webp",
+        "tif":  "image/tiff",
+        "tiff": "image/tiff",
+        "ico":  "image/x-icon",
+        "cur":  "image/x-icon",
+
+        # Vector / other common image-ish formats
+        "svg":  "image/svg+xml",
+        "svgz": "image/svg+xml",
+
+        # Modern / mobile photo formats
+        "avif": "image/avif",
+        "heic": "image/heic",
+        "heif": "image/heif",
+
+        # Some camera RAW formats (not strictly "web images" but often used)
+        "cr2":  "image/x-canon-cr2",
+        "cr3":  "image/x-canon-cr3",
+        "nef":  "image/x-nikon-nef",
+        "arw":  "image/x-sony-arw",
+        "raf":  "image/x-fuji-raf",
+        "dng":  "image/x-adobe-dng",
+    }
+
+    return mapping.get(ext)
+
 
 class AtomicFileHandler:
     """
     Handle file operations atomically to prevent race conditions.
     """
-    
+
     @staticmethod
-    def save_file_atomically(file_obj, target_path: Path, validate: bool = True) -> Dict[str, Any]:
+    def save_file_to_server(file_obj, safe_filename:str, foldername:str, validate: bool = True) -> Dict[str, Any]:
         """
         Save file atomically using temporary file and rename.
         
@@ -332,6 +379,9 @@ class AtomicFileHandler:
         Returns:
             Operation result
         """
+        # Get safe upload path
+        target_path = get_safe_upload_path(safe_filename, 'images', foldername)
+        
         result = {
             'success': False,
             'path': None,
@@ -380,6 +430,8 @@ class AtomicFileHandler:
             
             result['success'] = True
             result['path'] = target_path
+            result['path'] = target_path.name
+
             
         except Exception as e:
             result['errors'].append(f"Failed to save file atomically: {str(e)}")
@@ -392,7 +444,111 @@ class AtomicFileHandler:
                     pass
         
         return result
+    
+    @staticmethod
+    def save_file_to_s3(file_obj, safe_filename:str, foldername:str, validate: bool = True) -> Dict[str, Any]:
+        """
+        Save file atomically using temporary file and rename.
+        
+        Args:
+            file_obj: File object to save
+            target_path: Target path for the file
+            validate: Whether to validate file before saving
+            
+        Returns:
+            Operation result
+        """
+        result = {
+            'success': False,
+            'path': None,
+            'errors': []
+        }
+        
+        try:
+            region_name = os.getenv("S3_BUCKET_REGION")
+            bucket = os.getenv("S3_BUCKET_NAME")
 
+            ext = safe_filename.lower().split(".")[1]  # e.g. "jpg"
+            filename_only = safe_filename.lower().split(".")[0]
+            contentType = get_image_mime_type(ext)
+            counter = 0
+            key_escaped = quote_plus(safe_filename)
+            full_name = foldername + "/" + key_escaped
+
+            client = boto3.client(service_name='s3', region_name="eu-north-1")
+                        
+            # check if file with same name already exists
+            def s3_key_exists(bucket: str, key: str) -> bool:
+                """
+                Return True if an object with this key exists in the given bucket, else False.
+                """
+                try:
+                    client.head_object(Bucket=bucket, Key=key)
+                    return True
+                except ClientError as e:
+                    # Not found
+                    if e.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+                        return False
+                    # Some other error (permissions, etc.) – re-raise
+                    print("exception", str(e))
+                    raise
+            while(s3_key_exists(bucket, full_name)):
+                counter += 1
+                tmp_filename = f"{filename_only}_{counter}.{ext}"
+                key_escaped = quote_plus(tmp_filename)
+                full_name = foldername + "/" + key_escaped
+
+            filename = safe_filename
+            if counter > 0:
+                filename = f"{filename_only}_{counter}.{ext}"
+
+            filename = quote_plus(filename)
+            filename = foldername + "/" + filename
+
+            client.upload_fileobj(file_obj, bucket, filename, ExtraArgs={"ContentType": contentType})
+
+            # Region-aware HTTPS URL (virtual-hosted–style)
+
+            if region_name == "us-east-1":
+                base_url = f"https://{bucket}.s3.amazonaws.com"
+            else:
+                base_url = f"https://{bucket}.s3.{region_name}.amazonaws.com"
+
+            # URL-encode the key for safety (spaces, etc.)
+            url = f"{base_url}/{filename}"    
+            result['success'] = True
+            result['path'] = url
+            result['name'] = key_escaped
+            
+        except Exception as e:
+            result['errors'].append(f"Failed to save file atomically: {str(e)}")            
+        
+        return result
+    
+    @staticmethod
+    def save_file_atomically(file_obj, safe_filename:str, foldername: str, validate: bool = True) -> Dict[str, Any]:
+        """
+        Save file atomically using temporary file and rename.
+        
+        Args:
+            file_obj: File object to save
+            target_path: Target path for the file
+            validate: Whether to validate file before saving
+            
+        Returns:
+            Operation result
+        """
+        try:
+            if MEDIA_STORE == 'server':
+                return AtomicFileHandler.save_file_to_server(file_obj, safe_filename, foldername, validate)
+            elif MEDIA_STORE == 'S3':
+                return AtomicFileHandler.save_file_to_s3(file_obj, safe_filename, foldername, validate)
+            else:
+                raise Exception('Invalid media storage selected.')
+        except Exception as e:
+            logger.debug(f"Failed to upload file: {e}")
+            raise e
+            
 
 class SecurityLogger:
     """

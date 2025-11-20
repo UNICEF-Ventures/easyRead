@@ -1,25 +1,11 @@
-# import os
-# from mangum import Mangum
-# from django.core.asgi import get_asgi_application
-
-# os.environ.setdefault("DJANGO_SETTINGS_MODULE", "easyread_backend.settings")  # <-- replace with your project name
-
-# application = get_asgi_application()
-# lambda_handler = Mangum(application, lifespan="off")   # <-- this is your Lambda handler
-
 import os
 from mangum import Mangum
+import json
+import base64
 from django.core.asgi import get_asgi_application
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "easyread_backend.settings")  # <-- replace with your project name
-
 application = get_asgi_application()
-# lambda_handler = Mangum(application, lifespan="off")   # <-- this is your Lambda handler
-
-# lambda_function.py
-# import os
-import json
-import base64
 
 import django
 django.setup()
@@ -38,9 +24,12 @@ def lambda_handler(event, context):
         event['headers'] = normalized_headers
         
         # Ensure Content-Type is set for JSON
-        if event.get('body') and 'content-type' not in normalized_headers:
-            event['headers']['content-type'] = 'application/json'
+        # if event.get('body') and 'content-type' not in normalized_headers:
+        #     event['headers']['content-type'] = 'application/json'
     
+        if 'content-type' in event['headers'] and event['headers']['content-type'].startswith('multipart/form-data') and  'content-length' not in event['headers']:
+            event['headers']['content-length'] = str(len(event['body']))
+
     
     # Handle base64 encoded body (if binary)
     if event.get('isBase64Encoded', False) and event.get('body'):
@@ -54,9 +43,6 @@ def lambda_handler(event, context):
         application,
         lifespan="off",
     )
-    print(" EVENT:")
-    print(json.dumps(event, indent=2))
-    print("="*80)
     
     response = asgi_handler(event, context)
     

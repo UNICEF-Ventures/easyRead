@@ -3,11 +3,13 @@ Optimized image upload handlers for large batch uploads (1000+ images).
 Implements chunked processing, bulk database operations, and memory cleanup.
 """
 
+from io import BytesIO
 import os
 import gc
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
+import boto3
 from django.conf import settings
 from django.db import transaction, connection
 from api.models import ImageSet, Image, Embedding
@@ -24,6 +26,7 @@ from api.security_utils import (
 )
 
 logger = logging.getLogger(__name__)
+MEDIA_STORE = os.getenv('MEDIA_STORE', 'server')
 
 class BatchUploadProgress:
     """Class to track and report batch upload progress"""
@@ -149,7 +152,7 @@ def handle_optimized_batch_upload(
             
             # Process batch with bulk operations
             batch_results = _process_image_batch(
-                batch_files, image_set, embedding_model, model_metadata,
+                batch_files, set_name, image_set, embedding_model, model_metadata,
                 description, batch_num, request
             )
             
@@ -205,6 +208,7 @@ def handle_optimized_batch_upload(
 
 def _process_image_batch(
     batch_files: List,
+    image_set_name: str,
     image_set: ImageSet,
     embedding_model,
     model_metadata: Dict[str, str],
@@ -240,7 +244,7 @@ def _process_image_batch(
                     continue
             
             # Process file (save and validate)
-            file_result = _process_single_file(image_file, image_set, description)
+            file_result = _process_single_file(image_file, image_set_name, image_set, description)
             if not file_result['success']:
                 batch_results.append(file_result)
                 failed_count += 1
@@ -326,18 +330,15 @@ def _process_image_batch(
         "failed": failed_count
     }
 
-def _process_single_file(image_file, image_set: ImageSet, description: str) -> Dict[str, Any]:
+def _process_single_file(image_file, image_set_name:str, image_set: ImageSet, description: str) -> Dict[str, Any]:
     """Process a single file (save and validate)"""
     try:
         # Sanitize filename
         safe_filename = FileSecurityValidator.sanitize_filename(image_file.name)
         
-        # Get safe upload path
-        image_save_path = get_safe_upload_path(safe_filename, 'images')
-        
         # Save file atomically
         save_result = AtomicFileHandler.save_file_atomically(
-            image_file, image_save_path, validate=True
+            image_file, safe_filename, image_set_name, validate=True
         )
         
         if not save_result['success']:
@@ -348,7 +349,7 @@ def _process_single_file(image_file, image_set: ImageSet, description: str) -> D
             }
         
         image_save_path = save_result['path']
-        safe_filename = image_save_path.name
+        safe_filename = save_result['name']
         
         # Get image metadata
         image_info = _get_image_metadata(image_save_path, safe_filename)
@@ -371,18 +372,167 @@ def _process_single_file(image_file, image_set: ImageSet, description: str) -> D
             "error": str(e)
         }
 
+
+import boto3
+import xml.etree.ElementTree as ET
+from io import BytesIO
+
+s3 = boto3.client("s3", region_name="eu-north-1")
+
+def _parse_svg_length(value: str):
+    """
+    Parse an SVG length like '100', '100px', '10cm', '25.4mm', '1in', '12pt'.
+    Returns a float in *pixels* (assuming 96 dpi, per CSS/SVG spec).
+    """
+    if value is None:
+        return None
+
+    value = value.strip()
+    if not value:
+        return None
+
+    # Split number and unit
+    num = ""
+    unit = ""
+    for ch in value:
+        if ch.isdigit() or ch in ".+-":
+            num += ch
+        else:
+            unit += ch
+
+    if not num:
+        return None
+
+    num = float(num)
+    unit = unit.strip().lower() or "px"
+
+    # CSS/SVG 96 dpi unit conversions
+    if unit == "px":
+        return num
+    elif unit == "in":
+        return num * 96.0
+    elif unit == "cm":
+        return num * (96.0 / 2.54)
+    elif unit == "mm":
+        return num * (96.0 / 25.4)
+    elif unit == "pt":  # 1pt = 1/72 in
+        return num * (96.0 / 72.0)
+    elif unit == "pc":  # 1pc = 12pt
+        return num * (96.0 / 6.0)
+    else:
+        # Unknown unit – just return the raw number
+        return num
+
+
+
+
 def _get_image_metadata(image_path: Path, filename: str) -> Dict[str, Any]:
     """Get image metadata using PIL"""
     try:
         from PIL import Image as PILImage
-        with PILImage.open(image_path) as img:
-            return {
-                'filename': filename,
-                'file_format': img.format,
-                'width': img.width,
-                'height': img.height,
-                'file_size': image_path.stat().st_size
-            }
+        if MEDIA_STORE == "server":
+            with PILImage.open(image_path) as img:
+                return {
+                    'filename': filename,
+                    'file_format': img.format,
+                    'width': img.width,
+                    'height': img.height,
+                    'file_size': image_path.stat().st_size
+                }
+        elif MEDIA_STORE == "S3":    
+            from urllib.parse import urlparse
+            def parse_s3_url(s3_url: str):
+                # Works with virtual-hosted and path-style URLs
+                u = urlparse(s3_url)
+
+                if "amazonaws.com" not in u.netloc:
+                    raise ValueError("Not an S3 URL")
+
+                # Virtual hosted-style: https://bucket.s3.region.amazonaws.com/key
+                parts = u.netloc.split(".")
+                bucket = parts[0]
+
+                key = u.path.lstrip("/")  # remove leading slash
+
+                return bucket, key
+            
+            def get_svg_size_from_s3(bucket: str, key: str):
+                """
+                Read an SVG file from S3 and return its (width, height) in pixels
+                (best-effort using width/height attributes or viewBox).
+                """
+                region_name = os.getenv('S3_BUCKET_REGION')
+                s3 = boto3.client("s3", region_name=region_name)
+                obj = s3.get_object(Bucket=bucket, Key=key)
+                data = obj["Body"].read()
+
+                # Parse XML
+                root = ET.fromstring(data)
+
+                # SVG namespace handling
+                tag = root.tag
+                if tag.endswith("svg"):
+                    svg_el = root
+                else:
+                    # Just assume root is <svg>
+                    svg_el = root
+
+                width_attr = svg_el.get("width")
+                height_attr = svg_el.get("height")
+                viewbox_attr = svg_el.get("viewBox") or svg_el.get("viewbox")
+
+                width = _parse_svg_length(width_attr) if width_attr else None
+                height = _parse_svg_length(height_attr) if height_attr else None
+
+                # If width/height missing, fall back to viewBox
+                if (width is None or height is None) and viewbox_attr:
+                    parts = viewbox_attr.replace(",", " ").split()
+                    if len(parts) == 4:
+                        _, _, vb_w, vb_h = parts
+                        try:
+                            vb_w = float(vb_w)
+                            vb_h = float(vb_h)
+                            if width is None:
+                                width = vb_w
+                            if height is None:
+                                height = vb_h
+                        except ValueError:
+                            pass
+
+                return {
+                    "width": width,
+                    "height": height,
+                    "raw_width": width_attr,
+                    "raw_height": height_attr,
+                    "viewBox": viewbox_attr,
+                }
+            
+            bucket, key = parse_s3_url(image_path)
+            if key.endswith(".svg"):
+                return get_svg_size_from_s3(bucket, key)
+            else:
+                region_name = os.getenv('S3_BUCKET_REGION')
+                s3 = boto3.client("s3", region_name=region_name)
+                obj = s3.get_object(Bucket=bucket, Key=key)
+
+                # File size (in bytes)
+                file_size = obj["ContentLength"]
+
+                # Read image into memory
+                bytes_data = obj["Body"].read()
+
+                # Load with PIL
+                image = PILImage.open(BytesIO(bytes_data))
+
+                width, height = image.size
+
+                return {
+                    'filename': filename,
+                    "width": width,
+                    "height": height,
+                    "file_size": file_size,
+                    "file_format": image.format,     # e.g. PNG / JPEG
+                }
     except Exception as e:
         logger.warning(f"Failed to get image info: {image_path}, error: {e}")
         return {
