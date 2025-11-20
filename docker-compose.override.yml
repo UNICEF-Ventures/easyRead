@@ -23,7 +23,9 @@ services:
       - ./frontend/public:/app/public:ro  # Bind mount public assets
       - ./frontend/package.json:/app/package.json:ro
       - ./frontend/package-lock.json:/app/package-lock.json:ro
-      - ./frontend/vite.config.js:/app/vite.config.js:ro
+      - ./frontend/vite.config.mjs:/app/vite.config.mjs:ro
+      - ./frontend/tailwind.config.js:/app/tailwind.config.js:ro
+      - ./frontend/postcss.config.js:/app/postcss.config.js:ro
       - ./frontend/index.html:/app/index.html:ro
       - ./frontend/eslint.config.js:/app/eslint.config.js:ro
       - ./constants.json:/app/constants.json:ro  # Shared constants file

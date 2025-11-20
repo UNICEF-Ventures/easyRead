@@ -1,14 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Routes, Route, useNavigate, Link, BrowserRouter, useLocation, Navigate } from 'react-router-dom';
-import IntroPage from './components/IntroPage';
+import React, { useState, useMemo } from 'react';
+import { Routes, Route, useNavigate, BrowserRouter, useLocation } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
 import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
-import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
-import { getApiKey } from 'playground_commons';
-import axios from 'axios';
+import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress } from '@mui/material';
 
 // Core App component that requires router context
 function AppCore({ token, apiKey, email }) {
@@ -26,25 +23,6 @@ function AppCore({ token, apiKey, email }) {
 
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Only show header on pages that need it (not on intro page)
-  const shouldShowHeader = location.pathname !== '/';
-
-  const AppHeader = () => (
-    <AppBar position="static" sx={{ mb: 3 }}>
-      <Toolbar>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          EasyRead Generator
-        </Typography>
-        <Button color="inherit" component={Link} to="/easyread">
-          Home
-        </Button>
-        <Button color="inherit" component={Link} to="/easyread/saved">
-          Saved Content
-        </Button>
-      </Toolbar>
-    </AppBar>
-  );
 
   const progressPercent = useMemo(() => {
     return totalPages > 0 ? (pagesProcessed / totalPages) * 100 : 0;
@@ -95,7 +73,6 @@ function AppCore({ token, apiKey, email }) {
   return (
     <Box>
       <CssBaseline />
-      {shouldShowHeader && <AppHeader />}
 
       {isLoading && !isProcessingPages && (
         <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
@@ -128,57 +105,24 @@ function AppCore({ token, apiKey, email }) {
 
       <Routes>
         <Route
-          path="/easyread"
-        >
-          <Route
-            index
-            element={<IntroPage />}
-          />
-          <Route
-            path="convert"
-            element={
-              <HomePage
-                setMarkdownContent={setMarkdownContent}
-                setIsLoading={setIsLoading}
-                setIsProcessingPages={setIsProcessingPages}
-                setTotalPages={setTotalPages}
-                setPagesProcessed={setPagesProcessed}
-                setCurrentProcessingStep={setCurrentProcessingStep}
-                setError={setError}
-                currentMarkdown={markdownContent}
-                onProcessingComplete={handleProcessingComplete}
-                token={token}
-                apiKey={apiKey}
-                email={email}
-              />
-            }
-          />
-          <Route
-            path="results"
-            element={
-              <ResultPage
-                title={contentTitle}
-                markdownContent={markdownContent}
-                easyReadContent={easyReadContent}
-                selectedSets={selectedSets}
-                preventDuplicateImages={preventDuplicateImages}
-              />
-            }
-          />
-          <Route
-            path="admin"
-            element={<AdminRoute />}
-          />
-          <Route
-            path="saved"
-            element={<SavedContentPage />}
-          />
-          <Route
-            path="saved/:id"
-            element={<SavedContentDetailPage />}
-          />
-
-        </Route>
+          path="/"
+          element={
+            <HomePage
+              setMarkdownContent={setMarkdownContent}
+              setIsLoading={setIsLoading}
+              setIsProcessingPages={setIsProcessingPages}
+              setTotalPages={setTotalPages}
+              setPagesProcessed={setPagesProcessed}
+              setCurrentProcessingStep={setCurrentProcessingStep}
+              setError={setError}
+              currentMarkdown={markdownContent}
+              onProcessingComplete={handleProcessingComplete}
+              token={token}
+              apiKey={apiKey}
+              email={email}
+            />
+          }
+        />
         <Route
           path="*"
           element={<Navigate to="/easyread" replace />}
