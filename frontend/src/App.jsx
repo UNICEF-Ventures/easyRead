@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Routes, Route, useNavigate, BrowserRouter, useLocation, Navigate } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
-import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress } from '@mui/material';
@@ -138,10 +137,6 @@ function AppCore({ token, apiKey, email }) {
                 preventDuplicateImages={preventDuplicateImages}
               />
             }
-          />
-          <Route
-            path="admin"
-            element={<AdminRoute />}
           />
           <Route
             path="saved"
