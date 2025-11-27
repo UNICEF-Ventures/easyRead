@@ -36,6 +36,7 @@ jobs:
           "export APP_DIR='${{ secrets.EC2_APP_DIR }}' && \
           cat $APP_DIR
 
+          cd \$APP_DIR
           echo "Writing .env file..."
           cat > .env << EENV
           # Django Security Configuration
@@ -59,8 +60,6 @@ jobs:
           EENV
 
           echo ".env file updated."
-
-          cd \$APP_DIR && \
           python3 -m venv venv && \
           source venv/bin/activate && \
           pip install -r requirements.txt && \
