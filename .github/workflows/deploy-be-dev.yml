@@ -35,10 +35,9 @@ jobs:
           ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
           "export APP_DIR='${{ secrets.EC2_APP_DIR }}' && \
           cat $APP_DIR
-
           cd \$APP_DIR
-          echo "Writing .env file..."
-          cat > .env << EENV
+
+          cat > .env <<EOF
           # Django Security Configuration
           ALLOWED_HOSTS="${{ secrets.ALLOWED_HOSTS }}"
           
@@ -57,9 +56,12 @@ jobs:
           S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
 
           IS_PROD=true
-          EENV
+          EOF
 
+          
+          echo "Writing .env file..."
           echo ".env file updated."
+
           python3 -m venv venv && \
           source venv/bin/activate && \
           pip install -r requirements.txt && \
