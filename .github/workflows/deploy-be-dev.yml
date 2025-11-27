@@ -3,11 +3,12 @@ name: Deploy Django to EC2
 on:
   push:
     branches: [ playground_dev ]  # or your deploy branch
+    workflow_dispatch: 
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: playground-dev
+    environment: admin
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
