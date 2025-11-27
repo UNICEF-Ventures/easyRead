@@ -118,7 +118,8 @@ jobs:
 
             IS_PROD=true
             EENV
-
+            REMOTE
+            
             # Create / update venv
             python3 -m venv venv
             source venv/bin/activate
@@ -129,4 +130,4 @@ jobs:
 
             # Start Django dev server on port 8000 (simple, not production)
             nohup python manage.py runserver 0.0.0.0:8000 >/dev/null 2>&1 &
-            REMOTE
+            
