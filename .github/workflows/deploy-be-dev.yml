@@ -35,6 +35,31 @@ jobs:
           ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
           "export APP_DIR='${{ secrets.EC2_APP_DIR }}' && \
           cat $APP_DIR
+
+          echo "Writing .env file..."
+          cat > .env << EENV
+          # Django Security Configuration
+          ALLOWED_HOSTS="${{ secrets.ALLOWED_HOSTS }}"
+          
+          # Database Configuration - PostgreSQL with pgvector
+          DB_ENGINE=postgresql
+          DB_NAME="${{ secrets.DB_NAME }}"
+          DB_USER="${{ secrets.DB_USER }}"
+          DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+          DB_HOST="${{ secrets.DB_HOST }}"
+          DB_PORT="${{ secrets.DB_PORT }}"
+         
+          # MEDIA_STORE=server
+
+          MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
+          S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
+          S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
+
+          IS_PROD=true
+          EENV
+
+          echo ".env file updated."
+
           cd \$APP_DIR && \
           python3 -m venv venv && \
           source venv/bin/activate && \
