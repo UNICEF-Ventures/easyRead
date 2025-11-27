@@ -19,12 +19,8 @@ import {
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
-import { extractMarkdown, generateEasyRead, getImageSets, listImages } from '../apiClient';
-import { config } from '../config.js';
+import { extractMarkdown, generateEasyRead, getImageSets } from '../apiClient';
 import LoadingOverlay from './LoadingOverlay';
-
-// Base URL for serving media files from Django dev server
-const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
 
 // Styled component for the drop zone
 const DropZone = styled(Box)(({ theme }) => ({
@@ -81,20 +77,16 @@ function HomePage({
     const loadImageSets = async () => {
       setSetsLoading(true);
       try {
-        const response = await listImages();
+        const response = await getImageSets();
         const imagesBySet = response.data.images_by_set || {};
 
-        // Convert to array with random sample images
+        // // Convert to array with random sample images
         const setsArray = Object.keys(imagesBySet).map(setName => {
-          const images = imagesBySet[setName];
-          // Get 3 random images from the set
-          const shuffled = [...images].sort(() => 0.5 - Math.random());
-          const sampleImages = shuffled.slice(0, 3);
-
+         
           return {
             name: setName,
-            imageCount: images.length,
-            sampleImages
+            imageCount: imagesBySet[setName].no_of_images
+            // sampleImages
           };
         });
 
@@ -619,7 +611,7 @@ function HomePage({
                       onClick={() => handleSetSelection(set.name)}
                     >
                       {/* Sample Images in a 3-image grid */}
-                      <Box sx={{
+                      {/* <Box sx={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(3, 1fr)',
                         gap: 1,
@@ -660,7 +652,7 @@ function HomePage({
                             />
                           </Box>
                         ))}
-                      </Box>
+                      </Box> */}
 
                       {/* Set Name and Count */}
                       <Typography

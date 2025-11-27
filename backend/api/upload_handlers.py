@@ -95,6 +95,17 @@ def handle_image_upload(image_file, description: str = '', set_name: str = 'Gene
         if validation_result.get('warnings'):
             logger.info(f"Image validation warnings for {safe_filename}: {validation_result['warnings']}")
         
+        try:
+            image_set.no_of_images = image_set.no_of_images + 1
+            image_set.save()
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to save image to set: {str(e)}",
+                "filename": safe_filename,
+                "message": "Image upload failed - could not save to set"
+            }
+        
         # Skip SVG processing for now to avoid cairo dependency
         processed_image_path = image_save_path
         

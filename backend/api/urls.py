@@ -21,6 +21,7 @@ urlpatterns = [
     path('upload-folder/', views.upload_folder, name='upload_folder'),
     path('upload-progress/<str:session_id>/', views.get_upload_progress, name='get_upload_progress'),
     path('list-images/', views.list_images, name='list_images'),
+    path('list-image-sets/', views.list_image_sets, name='list_image_sets'),
     
     # Image similarity search endpoints
     path('find-similar-images/', views.find_similar_images, name='find_similar_images'),

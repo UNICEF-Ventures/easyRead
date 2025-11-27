@@ -433,15 +433,7 @@ export const listImages = () => {
 
 // Function to get image sets
 export const getImageSets = () => {
-  return apiClient.get('/list-images/').then(response => {
-    // Extract set names from the images_by_set structure
-    const imagesBySet = response.data.images_by_set || {};
-    const sets = Object.keys(imagesBySet).map(setName => ({
-      name: setName,
-      imageCount: imagesBySet[setName].length
-    }));
-    return { data: { sets } };
-  });
+  return apiClient.get('/list-image-sets/');
 };
 
 // Function to upload a new image
