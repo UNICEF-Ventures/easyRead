@@ -33,29 +33,55 @@ jobs:
       - name: Setup .env
         run: |
           ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'REMOTE'
-            APP_DIR="${{ secrets.EC2_APP_DIR }}"
+            # Inject env vars safely – secrets are substituted before this is sent to EC2
+            
+            export DB_ENGINE=postgresql
+            export DB_NAME="${{ secrets.DB_NAME }}"
+            export DB_USER="${{ secrets.DB_USER }}"
+            export DB_HOST="${{ secrets.DB_HOST }}"
+            export DB_PORT="${{ secrets.DB_PORT }}"
+            export MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
+            export S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
+            export S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
+            export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
-            cd "$APP_DIR"
+            export IS_PROD=true
 
-            # Create .env on the EC2 instance
-            cat > .env << 'EENV'
-            # Django Security Configuration
-            ALLOWED_HOSTS="${{ secrets.ALLOWED_HOSTS }}"
+            cd "${{ secrets.EC2_APP_DIR }}"
+            source venv/bin/activate
 
-            # Database Configuration - PostgreSQL with pgvector
-            DB_ENGINE=postgresql
-            DB_NAME=${{ secrets.DB_NAME }}
-            DB_USER=${{ secrets.DB_USER }}
-            DB_HOST=${{ secrets.DB_HOST }}
-            DB_PORT=${{ secrets.DB_PORT }}
-            MEDIA_STORE=${{ secrets.MEDIA_STORE }}
-            S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
-            S3_BUCKET_REGION=${{ secrets.S3_BUCKET_REGION }}
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-
-            IS_PROD=true
-            EENV
+            # Now Django sees these vars via os.getenv / load_dotenv(override=False)
+            python manage.py migrate --noinput
+            python manage.py collectstatic --noinput
+            python manage.py runserver 0.0.0.0:8000
             REMOTE
+
+      # - name: Setup .env
+      #   run: |
+      #     ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'REMOTE'
+      #       APP_DIR="${{ secrets.EC2_APP_DIR }}"
+
+      #       cd "$APP_DIR"
+
+      #       # Create .env on the EC2 instance
+      #       cat > .env << 'EENV'
+      #       # Django Security Configuration
+      #       ALLOWED_HOSTS="${{ secrets.ALLOWED_HOSTS }}"
+
+      #       # Database Configuration - PostgreSQL with pgvector
+      #       DB_ENGINE=postgresql
+      #       DB_NAME=${{ secrets.DB_NAME }}
+      #       DB_USER=${{ secrets.DB_USER }}
+      #       DB_HOST=${{ secrets.DB_HOST }}
+      #       DB_PORT=${{ secrets.DB_PORT }}
+      #       MEDIA_STORE=${{ secrets.MEDIA_STORE }}
+      #       S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
+      #       S3_BUCKET_REGION=${{ secrets.S3_BUCKET_REGION }}
+      #       DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+      #       IS_PROD=true
+      #       EENV
+      #       REMOTE
 
       - name: Install dependencies
         run: |
