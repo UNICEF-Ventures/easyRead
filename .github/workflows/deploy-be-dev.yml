@@ -46,13 +46,12 @@ jobs:
             DB_ENGINE=postgresql
             DB_NAME=${{ secrets.DB_NAME }}
             DB_USER=${{ secrets.DB_USER }}
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             DB_HOST=${{ secrets.DB_HOST }}
             DB_PORT=${{ secrets.DB_PORT }}
-
             MEDIA_STORE=${{ secrets.MEDIA_STORE }}
             S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
             S3_BUCKET_REGION=${{ secrets.S3_BUCKET_REGION }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
 
             IS_PROD=true
             EENV
