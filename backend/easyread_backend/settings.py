@@ -108,6 +108,8 @@ DATABASES = {
 }
 
 # PostgreSQL specific configuration
+print("creds", "DB_NAME", os.getenv("DB_NAME", "easyread"),  "USER", os.getenv("DB_USER", "easyread_user"), "PASSWORD", os.getenv("DB_PASSWORD", "easyread_password"), "HOST", os.getenv("DB_HOST", "localhost"), "PORT", os.getenv("DB_PORT", "5432") )
+
 if os.getenv("DB_ENGINE") == "postgresql" or os.getenv("DATABASE_URL"):
     # Support both individual env vars and DATABASE_URL
     if os.getenv("DATABASE_URL"):
