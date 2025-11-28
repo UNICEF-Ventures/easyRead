@@ -44,15 +44,15 @@ jobs:
 
             # Database Configuration - PostgreSQL with pgvector
             DB_ENGINE=postgresql
-            DB_NAME="${{ secrets.DB_NAME }}"
-            DB_USER="${{ secrets.DB_USER }}"
-            DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
-            DB_HOST="${{ secrets.DB_HOST }}"
-            DB_PORT="${{ secrets.DB_PORT }}"
+            DB_NAME=${{ secrets.DB_NAME }}
+            DB_USER=${{ secrets.DB_USER }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_PORT=${{ secrets.DB_PORT }}
 
-            MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
-            S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
-            S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
+            MEDIA_STORE=${{ secrets.MEDIA_STORE }}
+            S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
+            S3_BUCKET_REGION=${{ secrets.S3_BUCKET_REGION }}
 
             IS_PROD=true
             EENV
@@ -68,7 +68,7 @@ jobs:
           python3 -m venv venv && \
           source venv/bin/activate && \
           pip install -r requirements.txt
-          
+
           python manage.py migrate --noinput && \
           python manage.py collectstatic --noinput && \
           nohup python manage.py runserver 0.0.0.0:8000 &"
