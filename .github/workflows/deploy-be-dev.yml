@@ -46,7 +46,6 @@ jobs:
             export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
             export IS_PROD=true
-            export APP_DIR='${{ secrets.EC2_APP_DIR }}' && \
             REMOTE
 
       # - name: Setup .env
