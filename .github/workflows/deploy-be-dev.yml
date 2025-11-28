@@ -47,16 +47,6 @@ jobs:
 
             export IS_PROD=true
             export APP_DIR='${{ secrets.EC2_APP_DIR }}' && \
-            cd \$APP_DIR
-
-            python3 -m venv venv && \
-            source venv/bin/activate && \
-            pip install -r requirements.txt
-
-            # Now Django sees these vars via os.getenv / load_dotenv(override=False)
-            python manage.py migrate --noinput
-            python manage.py collectstatic --noinput
-            python manage.py runserver 0.0.0.0:8000
             REMOTE
 
       # - name: Setup .env
