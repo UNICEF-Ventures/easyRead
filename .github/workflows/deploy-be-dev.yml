@@ -46,9 +46,12 @@ jobs:
             export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
             export IS_PROD=true
+            export APP_DIR='${{ secrets.EC2_APP_DIR }}' && \
+            cd \$APP_DIR
 
-            cd "${{ secrets.EC2_APP_DIR }}"
-            source venv/bin/activate
+            python3 -m venv venv && \
+            source venv/bin/activate && \
+            pip install -r requirements.txt
 
             # Now Django sees these vars via os.getenv / load_dotenv(override=False)
             python manage.py migrate --noinput
