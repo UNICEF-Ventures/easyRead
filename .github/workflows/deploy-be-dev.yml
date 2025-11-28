@@ -30,23 +30,23 @@ jobs:
             ./backend/ \
             "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}"
 
-      - name: Setup .env
-        run: |
-          ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'REMOTE'
-            # Inject env vars safely – secrets are substituted before this is sent to EC2
+      # - name: Setup .env
+      #   run: |
+      #     ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'REMOTE'
+      #       # Inject env vars safely – secrets are substituted before this is sent to EC2
             
-            export DB_ENGINE=postgresql
-            export DB_NAME="${{ secrets.DB_NAME }}"
-            export DB_USER="${{ secrets.DB_USER }}"
-            export DB_HOST="${{ secrets.DB_HOST }}"
-            export DB_PORT="${{ secrets.DB_PORT }}"
-            export MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
-            export S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
-            export S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
-            export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+      #       export DB_ENGINE=postgresql
+      #       export DB_NAME="${{ secrets.DB_NAME }}"
+      #       export DB_USER="${{ secrets.DB_USER }}"
+      #       export DB_HOST="${{ secrets.DB_HOST }}"
+      #       export DB_PORT="${{ secrets.DB_PORT }}"
+      #       export MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
+      #       export S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
+      #       export S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
+      #       export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
-            export IS_PROD=true
-            REMOTE
+      #       export IS_PROD=true
+      #       REMOTE
 
       # - name: Setup .env
       #   run: |
@@ -81,6 +81,16 @@ jobs:
           "export APP_DIR='${{ secrets.EC2_APP_DIR }}' && \
           cat $APP_DIR
           cd \$APP_DIR
+
+          export DB_ENGINE=postgresql
+          export DB_NAME="${{ secrets.DB_NAME }}"
+          export DB_USER="${{ secrets.DB_USER }}"
+          export DB_HOST="${{ secrets.DB_HOST }}"
+          export DB_PORT="${{ secrets.DB_PORT }}"
+          export MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
+          export S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
+          export S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
+          export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
 
           python3 -m venv venv && \
           source venv/bin/activate && \
