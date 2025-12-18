@@ -1,9 +1,112 @@
+# name: Deploy Django to EC2
+
+# on:
+#   push:
+#     branches: [ playground_dev ]  # or your deploy branch
+#     workflow_dispatch: 
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#     environment: admin
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Set up SSH key (.pem)
+#         run: |
+#           mkdir -p ~/.ssh
+#           # Write the PEM secret to a file
+#           echo "${{ secrets.EC2_SSH_KEY_PEM }}" > ~/.ssh/ec2-key.pem
+#           chmod 400 ~/.ssh/ec2-key.pem
+
+#           # Add EC2 host to known_hosts so SSH doesn't prompt
+#           ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+#       - name: Sync project folder to EC2 (rsync)
+#         run: |
+#           rsync -avz --delete \
+#             -e "ssh -i ~/.ssh/ec2-key.pem" \
+#             ./backend/ \
+#             "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}"
+
+#       # - name: Setup .env
+#       #   run: |
+#       #     ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'REMOTE'
+#       #       # Inject env vars safely – secrets are substituted before this is sent to EC2
+            
+#       #       export DB_ENGINE=postgresql
+#       #       export DB_NAME="${{ secrets.DB_NAME }}"
+#       #       export DB_USER="${{ secrets.DB_USER }}"
+#       #       export DB_HOST="${{ secrets.DB_HOST }}"
+#       #       export DB_PORT="${{ secrets.DB_PORT }}"
+#       #       export MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
+#       #       export S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
+#       #       export S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
+#       #       export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+
+#       #       export IS_PROD=true
+#       #       REMOTE
+
+#       # - name: Setup .env
+#       #   run: |
+#       #     ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'REMOTE'
+#       #       APP_DIR="${{ secrets.EC2_APP_DIR }}"
+
+#       #       cd "$APP_DIR"
+
+#       #       # Create .env on the EC2 instance
+#       #       cat > .env << 'EENV'
+#       #       # Django Security Configuration
+#       #       ALLOWED_HOSTS="${{ secrets.ALLOWED_HOSTS }}"
+
+#       #       # Database Configuration - PostgreSQL with pgvector
+#       #       DB_ENGINE=postgresql
+#       #       DB_NAME=${{ secrets.DB_NAME }}
+#       #       DB_USER=${{ secrets.DB_USER }}
+#       #       DB_HOST=${{ secrets.DB_HOST }}
+#       #       DB_PORT=${{ secrets.DB_PORT }}
+#       #       MEDIA_STORE=${{ secrets.MEDIA_STORE }}
+#       #       S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
+#       #       S3_BUCKET_REGION=${{ secrets.S3_BUCKET_REGION }}
+#       #       DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+#       #       IS_PROD=true
+#       #       EENV
+#       #       REMOTE
+
+#       - name: Install dependencies
+#         run: |
+#           ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+#           "export APP_DIR='${{ secrets.EC2_APP_DIR }}' && \
+#           cat $APP_DIR
+#           cd \$APP_DIR
+
+#           export DB_ENGINE=postgresql
+#           export DB_NAME="${{ secrets.DB_NAME }}"
+#           export DB_USER="${{ secrets.DB_USER }}"
+#           export DB_HOST="${{ secrets.DB_HOST }}"
+#           export DB_PORT="${{ secrets.DB_PORT }}"
+#           export MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
+#           export S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
+#           export S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
+#           export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+
+#           python3 -m venv venv && \
+#           source venv/bin/activate && \
+#           pip install -r requirements.txt
+
+#           python manage.py migrate --noinput && \
+#           python manage.py collectstatic --noinput && \
+#           nohup python manage.py runserver 0.0.0.0:8000 &"
+
+
 name: Deploy Django to EC2
 
 on:
   push:
-    branches: [ playground_dev ]  # or your deploy branch
-    workflow_dispatch: 
+    branches: [ playground_dev ]
+  workflow_dispatch: 
 
 jobs:
   deploy:
@@ -16,86 +119,94 @@ jobs:
       - name: Set up SSH key (.pem)
         run: |
           mkdir -p ~/.ssh
-          # Write the PEM secret to a file
           echo "${{ secrets.EC2_SSH_KEY_PEM }}" > ~/.ssh/ec2-key.pem
           chmod 400 ~/.ssh/ec2-key.pem
-
-          # Add EC2 host to known_hosts so SSH doesn't prompt
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Sync project folder to EC2 (rsync)
         run: |
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/ec2-key.pem" \
+            --exclude 'venv/' \
+            --exclude '*.pyc' \
+            --exclude '__pycache__/' \
+            --exclude '.env' \
             ./backend/ \
             "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}"
 
-      # - name: Setup .env
-      #   run: |
-      #     ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'REMOTE'
-      #       # Inject env vars safely – secrets are substituted before this is sent to EC2
-            
-      #       export DB_ENGINE=postgresql
-      #       export DB_NAME="${{ secrets.DB_NAME }}"
-      #       export DB_USER="${{ secrets.DB_USER }}"
-      #       export DB_HOST="${{ secrets.DB_HOST }}"
-      #       export DB_PORT="${{ secrets.DB_PORT }}"
-      #       export MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
-      #       export S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
-      #       export S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
-      #       export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
-
-      #       export IS_PROD=true
-      #       REMOTE
-
-      # - name: Setup .env
-      #   run: |
-      #     ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'REMOTE'
-      #       APP_DIR="${{ secrets.EC2_APP_DIR }}"
-
-      #       cd "$APP_DIR"
-
-      #       # Create .env on the EC2 instance
-      #       cat > .env << 'EENV'
-      #       # Django Security Configuration
-      #       ALLOWED_HOSTS="${{ secrets.ALLOWED_HOSTS }}"
-
-      #       # Database Configuration - PostgreSQL with pgvector
-      #       DB_ENGINE=postgresql
-      #       DB_NAME=${{ secrets.DB_NAME }}
-      #       DB_USER=${{ secrets.DB_USER }}
-      #       DB_HOST=${{ secrets.DB_HOST }}
-      #       DB_PORT=${{ secrets.DB_PORT }}
-      #       MEDIA_STORE=${{ secrets.MEDIA_STORE }}
-      #       S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
-      #       S3_BUCKET_REGION=${{ secrets.S3_BUCKET_REGION }}
-      #       DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-
-      #       IS_PROD=true
-      #       EENV
-      #       REMOTE
-
-      - name: Install dependencies
+      - name: Create .env file on EC2
         run: |
-          ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
-          "export APP_DIR='${{ secrets.EC2_APP_DIR }}' && \
-          cat $APP_DIR
-          cd \$APP_DIR
+          ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'ENDSSH'
+            cd "${{ secrets.EC2_APP_DIR }}"
+            
+            cat > .env << 'EOF'
+          # Django Configuration
+          DEBUG=False
+          SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
+          ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
+          
+          # Database Configuration
+          DB_ENGINE=postgresql
+          DB_NAME=${{ secrets.DB_NAME }}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_PORT=${{ secrets.DB_PORT }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          
+          # Storage Configuration
+          MEDIA_STORE=${{ secrets.MEDIA_STORE }}
+          S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
+          S3_BUCKET_REGION=${{ secrets.S3_BUCKET_REGION }}
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          
+          # Environment
+          IS_PROD=true
+          EOF
+            
+            chmod 600 .env
+          ENDSSH
 
-          export DB_ENGINE=postgresql
-          export DB_NAME="${{ secrets.DB_NAME }}"
-          export DB_USER="${{ secrets.DB_USER }}"
-          export DB_HOST="${{ secrets.DB_HOST }}"
-          export DB_PORT="${{ secrets.DB_PORT }}"
-          export MEDIA_STORE="${{ secrets.MEDIA_STORE }}"
-          export S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
-          export S3_BUCKET_REGION="${{ secrets.S3_BUCKET_REGION }}"
-          export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+      - name: Install dependencies and run migrations
+        run: |
+          ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'ENDSSH'
+            cd "${{ secrets.EC2_APP_DIR }}"
+            
+            # Create venv if it doesn't exist
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+            fi
+            
+            # Activate and install
+            source venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements.txt
+            
+            # Load env vars and run Django commands
+            export $(grep -v '^#' .env | xargs)
+            python manage.py migrate --noinput
+            python manage.py collectstatic --noinput
+          ENDSSH
 
-          python3 -m venv venv && \
-          source venv/bin/activate && \
-          pip install -r requirements.txt
-
-          python manage.py migrate --noinput && \
-          python manage.py collectstatic --noinput && \
-          nohup python manage.py runserver 0.0.0.0:8000 &"
+      - name: Restart application with Gunicorn
+        run: |
+          ssh -i ~/.ssh/ec2-key.pem "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" << 'ENDSSH'
+            cd "${{ secrets.EC2_APP_DIR }}"
+            
+            # Kill existing Gunicorn processes
+            pkill -f gunicorn || true
+            sleep 2
+            
+            # Start Gunicorn with env vars
+            source venv/bin/activate
+            export $(grep -v '^#' .env | xargs)
+            
+            nohup gunicorn --workers 3 \
+              --bind 0.0.0.0:8000 \
+              --timeout 120 \
+              --access-logfile - \
+              --error-logfile - \
+              your_project.wsgi:application > gunicorn.log 2>&1 &
+            
+            echo "Application restarted successfully!"
+          ENDSSH
