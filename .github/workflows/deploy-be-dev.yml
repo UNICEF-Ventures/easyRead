@@ -159,7 +159,8 @@ jobs:
           S3_BUCKET_REGION=${{ secrets.S3_BUCKET_REGION }}
           AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          
+          ALLOWED_HOSTS=localhost,127.0.0.1
+
           # Environment
           IS_PROD=true
           EOF
@@ -185,7 +186,6 @@ jobs:
             # Load env vars and run Django commands
             export $(grep -v '^#' .env | xargs)
             python manage.py migrate --noinput
-            python manage.py collectstatic --noinput
           ENDSSH
 
       - name: Restart application with Gunicorn
