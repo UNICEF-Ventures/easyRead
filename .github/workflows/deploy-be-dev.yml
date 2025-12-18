@@ -142,7 +142,6 @@ jobs:
             cat > .env << 'EOF'
           # Django Configuration
           DEBUG=False
-          SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
           ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
           
           # Database Configuration
@@ -152,14 +151,14 @@ jobs:
           DB_HOST=${{ secrets.DB_HOST }}
           DB_PORT=${{ secrets.DB_PORT }}
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          
+          SECRET_KEY=${{ secrets.SECRET_KEY }}
+
           # Storage Configuration
           MEDIA_STORE=${{ secrets.MEDIA_STORE }}
           S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
           S3_BUCKET_REGION=${{ secrets.S3_BUCKET_REGION }}
           AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          ALLOWED_HOSTS=localhost,127.0.0.1
 
           # Environment
           IS_PROD=true
