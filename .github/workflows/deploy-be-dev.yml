@@ -201,12 +201,14 @@ jobs:
             source venv/bin/activate
             export $(grep -v '^#' .env | xargs)
             
-            nohup gunicorn --workers 3 \
-              --bind 0.0.0.0:8000 \
-              --timeout 120 \
-              --access-logfile - \
-              --error-logfile - \
-              your_project.wsgi:application > gunicorn.log 2>&1 &
-            
+            nohup gunicorn -k uvicorn.workers.UvicornWorker \
+            --workers 3 \
+            --bind 0.0.0.0:8000 \
+            --timeout 120 \
+            --access-logfile - \
+            --error-logfile - \
+            easyread_backend.asgi:application > gunicorn.log 2>&1 &
+
+           
             echo "Application restarted successfully!"
           ENDSSH
