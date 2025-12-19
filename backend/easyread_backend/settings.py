@@ -14,6 +14,14 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+# Source - https://stackoverflow.com/a
+# Posted by Super Kai - Kazuya Ito, modified by community. See post 'Timeline' for change history
+# Retrieved 2025-12-19, License - CC BY-SA 4.0
+
+# "settings.py"
+
+LOGIN_REDIRECT_URL = 'admin:index'
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 

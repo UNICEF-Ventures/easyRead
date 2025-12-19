@@ -18,10 +18,12 @@ const AdminRoute = () => {
   const [currentTab, setCurrentTab] = useState(0);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
 
   // Check authentication status on component mount
   useEffect(() => {
-    checkAuthStatus();
     // Set initial tab from URL params
     const tab = searchParams.get('tab');
     if (tab === 'dashboard') {
@@ -39,9 +41,9 @@ const AdminRoute = () => {
         withCredentials: true,
       });
       const data = response.data;
-      
+
       console.log('Auth check response:', data);
-      
+
       setIsAuthenticated(data.authenticated);
       setUsername(data.username || '');
     } catch (error) {
@@ -62,7 +64,7 @@ const AdminRoute = () => {
       const response = await apiClient.post('/admin/api/logout/', {}, {
         withCredentials: true,
       });
-      
+
       if (response.status === 200) {
         setIsAuthenticated(false);
         setUsername('');
@@ -90,10 +92,10 @@ const AdminRoute = () => {
   if (isLoading) {
     console.log('Rendering loading state');
     return (
-      <Box 
-        display="flex" 
-        justifyContent="center" 
-        alignItems="center" 
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
         minHeight="400px"
         flexDirection="column"
       >
@@ -137,22 +139,22 @@ const AdminRoute = () => {
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
         <Tabs value={currentTab} onChange={handleTabChange} aria-label="admin tabs">
-          <Tab 
-            icon={<DashboardIcon />} 
-            label="Analytics Dashboard" 
-            id="tab-0" 
+          <Tab
+            icon={<DashboardIcon />}
+            label="Analytics Dashboard"
+            id="tab-0"
             aria-controls="tabpanel-0"
           />
-          <Tab 
-            icon={<ImageIcon />} 
-            label="Image Management" 
-            id="tab-1" 
+          <Tab
+            icon={<ImageIcon />}
+            label="Image Management"
+            id="tab-1"
             aria-controls="tabpanel-1"
           />
-          <Tab 
-            icon={<FolderIcon />} 
-            label="Image Sets" 
-            id="tab-2" 
+          <Tab
+            icon={<FolderIcon />}
+            label="Image Sets"
+            id="tab-2"
             aria-controls="tabpanel-2"
           />
         </Tabs>
@@ -171,7 +173,7 @@ const AdminRoute = () => {
         )}
         {currentTab === 2 && (
           <Box role="tabpanel" id="tabpanel-2" aria-labelledby="tab-2" sx={{ px: 2 }}>
-            <ImageSetManager 
+            <ImageSetManager
               onSetDeleted={(setId, setName) => {
                 console.log(`Image set "${setName}" (ID: ${setId}) was deleted`);
               }}
