@@ -232,7 +232,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 # CSRF Configuration for API endpoints
 CSRF_COOKIE_HTTPONLY = False
-CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'None'
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173", 

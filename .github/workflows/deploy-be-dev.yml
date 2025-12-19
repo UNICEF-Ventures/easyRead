@@ -150,7 +150,7 @@ jobs:
           # Session & Cookie Settings
           SESSION_COOKIE_SECURE=False
           CSRF_COOKIE_SECURE=False
-          SESSION_COOKIE_SAMESITE=Lax
+          SESSION_COOKIE_SAMESITE=None
           
           # Database Configuration
           DB_ENGINE=postgresql
