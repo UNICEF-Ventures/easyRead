@@ -27,6 +27,7 @@ def redirect_to_admin_login(request):
 
 urlpatterns = [
     path("admin/", redirect_to_admin_login),
+    path('accounts/', include('django.contrib.auth.urls')),
     path("django-admin/", admin.site.urls),  # Keep Django admin at different URL
     path("api/", include(api_urls)), # Use the imported variable
 ]
