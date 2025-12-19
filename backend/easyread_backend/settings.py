@@ -243,7 +243,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:5001",
     "http://127.0.0.1:5001",
-     "https://ooiplayground.com",
+    "https://ooiplayground.com",
     "https://dev.ooiplayground.com"
 ]
 

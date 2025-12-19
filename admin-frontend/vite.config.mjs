@@ -38,7 +38,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'), // This makes @ point to /src
     },
   },
-  base: process.env.NODE_ENV == 'production' ? process.env.VITE_BASE_URL_PROD : process.env.VITE_BASE_URL,
+  base: process.env.VITE_BASE_URL,
   build: {
     rollupOptions: {
       external:[],

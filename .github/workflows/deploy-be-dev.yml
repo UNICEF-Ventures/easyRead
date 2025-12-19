@@ -143,6 +143,14 @@ jobs:
           # Django Configuration
           DEBUG=False
           ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
+
+          # Add EC2 host dynamically
+          CSRF_TRUSTED_ORIGINS=http://${{ secrets.EC2_HOST }},https://ooiplayground.com,https://dev.ooiplayground.com,http://localhost:5173
+          
+          # Session & Cookie Settings
+          SESSION_COOKIE_SECURE=False
+          CSRF_COOKIE_SECURE=False
+          SESSION_COOKIE_SAMESITE=Lax
           
           # Database Configuration
           DB_ENGINE=postgresql
