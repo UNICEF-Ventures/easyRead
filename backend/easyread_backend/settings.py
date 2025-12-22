@@ -21,6 +21,10 @@ from dotenv import load_dotenv
 # "settings.py"
 
 LOGIN_REDIRECT_URL = 'admin:index'
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -241,7 +245,9 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5001",
     "http://127.0.0.1:5001",
     "https://ooiplayground.com",
-    "https://dev.ooiplayground.com"
+    "https://dev.ooiplayground.com",
+    "http://easyreadadminserver.ooiplayground.com",
+    "https://easyreadadminserver.ooiplayground.com"
 ]
 
 # Optional: Allow all origins for quick testing (less secure)
