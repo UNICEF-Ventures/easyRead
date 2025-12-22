@@ -7,7 +7,7 @@ psycopg2-binary
 pgvector
 dj-database-url
 PyYAML
-
+django-sslserver
 # PDF Processing & Document Export  
 # pymupdf4llm
 python-docx
