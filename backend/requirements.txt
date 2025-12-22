@@ -16,3 +16,7 @@ python-docx
 Pillow
 numpy
 boto3
+
+django-sslserver
+gunicorn
+uvicorn[standard]
