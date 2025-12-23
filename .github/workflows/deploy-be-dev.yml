@@ -210,12 +210,11 @@ jobs:
             
             nohup gunicorn -k uvicorn.workers.UvicornWorker \
             --workers 3 \
-            --bind 0.0.0.0:8000 \
-            --timeout 120 \
+            --bind 127.0.0.1:8000 \
             --access-logfile - \
             --error-logfile - \
             easyread_backend.asgi:application > gunicorn.log 2>&1 &
 
-           
+          
             echo "Application restarted successfully!"
           ENDSSH
