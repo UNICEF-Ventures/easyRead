@@ -2211,69 +2211,73 @@ def list_images(request):
     from django.conf import settings
     logger = logging.getLogger(__name__)
     try:
-        images = Image.objects.select_related('set').prefetch_related('embeddings').all().order_by('set__name', 'filename')
+        print("hereee 1")
+        images = Image.objects.select_related('set').all().order_by('set__name', 'filename')
         images_by_set = {}
-        for img in images:
-            set_name = img.set.name if img.set else 'General'
-            if set_name not in images_by_set:
-                images_by_set[set_name] = []
-            # Use model helper to get a URL path under MEDIA_URL
-            path_under_media = img.get_url()  # e.g., /media/images/...
+        print("hereee 2", len(images), images[0])
+        # for img in images:
+        #     set_name = img.set.name if img.set else 'General'
+        #     if set_name not in images_by_set:
+        #         images_by_set[set_name] = []
+        #     # Use model helper to get a URL path under MEDIA_URL
+        #     path_under_media = img.get_url()  # e.g., /media/images/...
 
-            # Normalize to ensure it begins with /media
-            # if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
-            #     path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
+        #     # Normalize to ensure it begins with /media
+        #     # if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
+        #     #     path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
             
-            # Check if image has embeddings
-            has_embeddings = img.embeddings.exists()
+        #     # Check if image has embeddings
+        #     has_embeddings = img.embeddings.exists()
             
-            # Get latest embedding info if available
-            embedding_info = None
-            if has_embeddings:
-                latest_embedding = img.embeddings.order_by('-created_at').first()
-                if latest_embedding:
-                    embedding_info = {
-                        "provider": latest_embedding.provider_name,
-                        "model": latest_embedding.model_name,
-                        "dimension": latest_embedding.embedding_dimension
-                    }
+        #     # Get latest embedding info if available
+        #     embedding_info = None
+        #     # if has_embeddings:
+        #     #     latest_embedding = img.embeddings.order_by('-created_at').first()
+        #     #     if latest_embedding:
+        #     #         embedding_info = {
+        #     #             "provider": latest_embedding.provider_name,
+        #     #             "model": latest_embedding.model_name,
+        #     #             "dimension": latest_embedding.embedding_dimension
+        #     #         }
             
-            images_by_set[set_name].append({
-                'id': img.id,
-                'set_id': img.set.id if img.set else None,
-                'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
-                'relative_path': img.original_path,
-                'description': img.description,
-                'filename': img.filename,
-                'set_name': set_name,
-                'file_format': img.file_format,
-                'file_size': img.file_size,
-                'width': img.width,
-                'height': img.height,
-                'created_at': img.created_at.isoformat() if img.created_at else None,
-                'has_embeddings': has_embeddings,
-                'embedding_info': embedding_info,
-                'search_ready': has_embeddings  # Indicates if image will work in similarity search
-            })
-        total_images = sum(len(v) for v in images_by_set.values())
+        #     images_by_set[set_name].append({
+        #         'id': img.id,
+        #         'set_id': img.set.id if img.set else None,
+        #         'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
+        #         'relative_path': img.original_path,
+        #         'description': img.description,
+        #         'filename': img.filename,
+        #         'set_name': set_name,
+        #         'file_format': img.file_format,
+        #         'file_size': img.file_size,
+        #         'width': img.width,
+        #         'height': img.height,
+        #         'created_at': img.created_at.isoformat() if img.created_at else None,
+        #         'has_embeddings': has_embeddings,
+        #         'embedding_info': embedding_info,
+        #         'search_ready': has_embeddings  # Indicates if image will work in similarity search
+        #     })
         
+        total_images = sum(len(v) for v in images_by_set.values())
+        print("hereee 3", total_images)
         # Calculate embedding statistics
         total_with_embeddings = 0
         total_without_embeddings = 0
-        for set_images in images_by_set.values():
-            for image_data in set_images:
-                if image_data.get('has_embeddings', False):
-                    total_with_embeddings += 1
-                else:
-                    total_without_embeddings += 1
+        # for set_images in images_by_set.values():
+        #     for image_data in set_images:
+        #         if image_data.get('has_embeddings', False):
+        #             total_with_embeddings += 1
+        #         else:
+        #             total_without_embeddings += 1
         
         embedding_coverage_percent = round((total_with_embeddings / total_images) * 100, 1) if total_images > 0 else 0
-        
+        print("hereee 4", embedding_coverage_percent)
         embedding_stats = {
             'with_embeddings': total_with_embeddings,
             'without_embeddings': total_without_embeddings,
             'embedding_coverage_percent': embedding_coverage_percent
         }
+        print("hereee 5", embedding_stats)
         
         return Response({
             'images_by_set': images_by_set,

@@ -155,20 +155,21 @@ const ImageManagementPage = () => {
     }
   }, []);
 
-  const fetchImageSets = useCallback(async () => {
+  const fetchImageSets = async () => {
     try {
       const response = await getImageSets();
       setImageSets(response.data.sets);
     } catch (error) {
       console.error('Error fetching image sets:', error);
     }
-  }, []);
+  }
 
   // Fetch all images and sets on component mount
   useEffect(() => {
+    console.log("use effect")
     fetchImages();
-    fetchImageSets();
-  }, [fetchImages, fetchImageSets]);
+   fetchImageSets();
+  }, []);
 
   // Generate default label from filename (consistent with backend)
   const generateDefaultLabel = (filename) => {
