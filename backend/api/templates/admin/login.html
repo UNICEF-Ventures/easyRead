@@ -95,9 +95,9 @@
     <div class="login-container">
         <div class="login-header">
             <h1>Admin Access</h1>
-            <p>Enter password to access image management</p>
+            <p>Sign in to manage EasyRead</p>
         </div>
-        
+
         {% if messages %}
             {% for message in messages %}
                 <div class="{% if message.tags == 'error' %}error-message{% else %}success-message{% endif %}">
@@ -105,9 +105,13 @@
                 </div>
             {% endfor %}
         {% endif %}
-        
+
         <form method="post">
             {% csrf_token %}
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" required autofocus>
+            </div>
             <div class="form-group">
                 <label for="password">Password:</label>
                 <input type="password" id="password" name="password" required>

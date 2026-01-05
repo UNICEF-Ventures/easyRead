@@ -14,7 +14,11 @@ import {
   CardMedia,
   Grid,
   Divider,
+  Collapse,
+  IconButton,
 } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { extractMarkdown, generateEasyRead, getImageSets, listImages } from '../apiClient';
@@ -56,26 +60,24 @@ function HomePage({
   const [selectedSets, setSelectedSets] = useState(new Set());
   const [setsLoading, setSetsLoading] = useState(false);
   const [preventDuplicateImages, setPreventDuplicateImages] = useState(true);
+  const [setsExpanded, setSetsExpanded] = useState(false);
 
   // Load image sets and sample images on component mount
   useEffect(() => {
     const loadImageSets = async () => {
       setSetsLoading(true);
       try {
-        const response = await listImages();
+        // Request only 3 sample images per set for lightweight loading
+        const response = await listImages(3);
         const imagesBySet = response.data.images_by_set || {};
-        
-        // Convert to array with random sample images
+
+        // Convert to array - response structure: { setName: { images: [...], image_count: N } }
         const setsArray = Object.keys(imagesBySet).map(setName => {
-          const images = imagesBySet[setName];
-          // Get 3 random images from the set
-          const shuffled = [...images].sort(() => 0.5 - Math.random());
-          const sampleImages = shuffled.slice(0, 3);
-          
+          const setData = imagesBySet[setName];
           return {
             name: setName,
-            imageCount: images.length,
-            sampleImages
+            imageCount: setData.image_count,
+            sampleImages: setData.images
           };
         });
 
@@ -490,130 +492,149 @@ function HomePage({
             </Typography>
           </Box>
           
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
-              Available Symbol Collections
-            </Typography>
-            {!setsLoading && imageSets.length > 0 && (
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button 
-                  variant="outlined" 
-                  size="small" 
-                  onClick={handleSelectAll}
-                  disabled={selectedSets.size === imageSets.length}
-                >
-                  Select All
-                </Button>
-                <Button 
-                  variant="outlined" 
-                  size="small" 
-                  onClick={handleSelectNone}
-                  disabled={selectedSets.size === 0}
-                >
-                  Select None
-                </Button>
-              </Box>
-            )}
-          </Box>
-          
-          {setsLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress />
+          {/* Collapsible Header */}
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              p: 1.5,
+              border: '1px solid #e0e0e0',
+              borderRadius: 1.5,
+              backgroundColor: '#fafafa',
+              cursor: 'pointer',
+              '&:hover': { backgroundColor: '#f0f0f0' }
+            }}
+            onClick={() => setSetsExpanded(!setsExpanded)}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                Available Symbol Collections
+              </Typography>
+              {!setsLoading && imageSets.length > 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  • {selectedSets.size} of {imageSets.length} sets selected • {imageSets.reduce((sum, set) => sum + set.imageCount, 0).toLocaleString()} total images
+                </Typography>
+              )}
             </Box>
-          ) : (
-            <Grid container spacing={2}>
-              {imageSets.map((set) => (
-                <Grid item xs={12} sm={6} md={4} key={set.name}>
-                  <Box
-                    sx={{
-                      p: 2,
-                      border: selectedSets.has(set.name) ? '3px solid #1976d2' : '2px solid #e0e0e0',
-                      borderRadius: 2,
-                      backgroundColor: selectedSets.has(set.name) ? '#f3f7ff' : 'white',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      textAlign: 'center',
-                      '&:hover': {
-                        backgroundColor: selectedSets.has(set.name) ? '#e8f2ff' : '#f9f9f9',
-                        transform: 'translateY(-2px)',
-                        boxShadow: 2
-                      }
-                    }}
-                    onClick={() => handleSetSelection(set.name)}
+            <IconButton size="small" sx={{ ml: 1 }}>
+              {setsExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
+
+          <Collapse in={setsExpanded}>
+            <Box sx={{ mt: 1 }}>
+              {/* Select All / None buttons */}
+              {!setsLoading && imageSets.length > 0 && (
+                <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleSelectAll}
+                    disabled={selectedSets.size === imageSets.length}
                   >
-                    {/* Sample Images in a 3-image grid */}
-                    <Box sx={{ 
-                      display: 'grid', 
-                      gridTemplateColumns: 'repeat(3, 1fr)', 
-                      gap: 1, 
-                      mb: 2,
-                      minHeight: 60
-                    }}>
-                      {set.sampleImages.map((image, index) => (
-                        <Box
-                          key={image.id || index}
+                    Select All
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleSelectNone}
+                    disabled={selectedSets.size === 0}
+                  >
+                    Select None
+                  </Button>
+                </Box>
+              )}
+
+              {setsLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {imageSets.map((set) => (
+                    <Box
+                      key={set.name}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 2,
+                        p: 1.5,
+                        border: selectedSets.has(set.name) ? '2px solid #1976d2' : '1px solid #e0e0e0',
+                        borderRadius: 1.5,
+                        backgroundColor: selectedSets.has(set.name) ? '#f3f7ff' : 'white',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          backgroundColor: selectedSets.has(set.name) ? '#e8f2ff' : '#f5f5f5',
+                          borderColor: selectedSets.has(set.name) ? '#1976d2' : '#bdbdbd'
+                        }
+                      }}
+                      onClick={() => handleSetSelection(set.name)}
+                    >
+                      {/* Set Name and Count */}
+                      <Box sx={{ minWidth: 140, flexShrink: 0 }}>
+                        <Typography
+                          variant="body2"
                           sx={{
-                            width: '100%',
-                            height: 60,
-                            border: '1px solid #e0e0e0',
-                            borderRadius: 1,
-                            overflow: 'hidden',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            backgroundColor: '#fafafa'
+                            fontWeight: selectedSets.has(set.name) ? 600 : 500,
+                            color: selectedSets.has(set.name) ? '#1976d2' : 'text.primary',
+                            lineHeight: 1.3
                           }}
                         >
-                          <CardMedia
-                            component="img"
-                            height="60"
-                            image={(image.image_url && (image.image_url.startsWith('http://') || image.image_url.startsWith('https://')))
-                              ? image.image_url
-                              : (image.image_url ? `${MEDIA_BASE_URL}${image.image_url.startsWith('/') ? '' : '/'}${image.image_url}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60"><rect width="60" height="60" fill="%23f0f0f0"/><text x="30" y="35" text-anchor="middle" fill="%23666" font-family="Arial" font-size="10">No Image</text></svg>')}
-                            alt={image.description || 'Sample image'}
-                            sx={{ 
-                              objectFit: 'contain',
-                              maxWidth: '100%',
-                              maxHeight: '100%'
+                          {set.name}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                        >
+                          {set.imageCount} images
+                        </Typography>
+                      </Box>
+
+                      {/* Sample Images */}
+                      <Box sx={{ display: 'flex', gap: 0.75, flexGrow: 1, justifyContent: 'flex-end' }}>
+                        {set.sampleImages.map((image, index) => (
+                          <Box
+                            key={image.id || index}
+                            sx={{
+                              width: 44,
+                              height: 44,
+                              border: '1px solid #e0e0e0',
+                              borderRadius: 1,
+                              overflow: 'hidden',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: '#fafafa',
+                              flexShrink: 0
                             }}
-                            onError={(e) => { 
-                              // Prevent infinite loop by hiding the image instead of loading another URL
-                              e.target.style.display = 'none';
-                            }}
-                          />
-                        </Box>
-                      ))}
+                          >
+                            <CardMedia
+                              component="img"
+                              loading="lazy"
+                              image={(image.image_url && (image.image_url.startsWith('http://') || image.image_url.startsWith('https://')))
+                                ? image.image_url
+                                : (image.image_url ? `${MEDIA_BASE_URL}${image.image_url.startsWith('/') ? '' : '/'}${image.image_url}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><rect width="44" height="44" fill="%23f0f0f0"/><text x="22" y="26" text-anchor="middle" fill="%23666" font-family="Arial" font-size="8">No Image</text></svg>')}
+                              alt={image.description || 'Sample image'}
+                              sx={{
+                                objectFit: 'contain',
+                                width: '100%',
+                                height: '100%'
+                              }}
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          </Box>
+                        ))}
+                      </Box>
                     </Box>
-                    
-                    {/* Set Name and Count */}
-                    <Typography 
-                      variant="subtitle2" 
-                      sx={{ 
-                        fontWeight: selectedSets.has(set.name) ? 600 : 500,
-                        color: selectedSets.has(set.name) ? '#1976d2' : 'text.primary',
-                        fontSize: '0.9rem'
-                      }}
-                    >
-                      {set.name}
-                    </Typography>
-                    <Typography 
-                      variant="caption" 
-                      color="text.secondary"
-                      sx={{ display: 'block', mt: 0.5 }}
-                    >
-                      {set.imageCount} images
-                    </Typography>
-                  </Box>
-                </Grid>
-              ))}
-            </Grid>
-          )}
-          
-          <Box sx={{ mt: 2, textAlign: 'center' }}>
-            <Typography variant="body2" color="text.secondary">
-              Selected: {selectedSets.size} of {imageSets.length} sets
-            </Typography>
-          </Box>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          </Collapse>
           
           {/* Duplicate Prevention Setting */}
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>

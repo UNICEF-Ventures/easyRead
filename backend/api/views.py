@@ -434,7 +434,6 @@ except Exception as e:
 
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
-@permission_classes([AllowAny])
 @csrf_exempt
 def pdf_to_markdown(request):
     """
@@ -500,7 +499,6 @@ def pdf_to_markdown(request):
         return Response({"error": f"Error converting PDF: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def process_page(request):
     """
@@ -676,7 +674,6 @@ def process_page(request):
     }, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def validate_completeness(request):
     """
@@ -810,7 +807,6 @@ def validate_completeness(request):
         return Response({"error": f"LLM call failed during validation. Reason: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def revise_sentences(request):
     """
@@ -946,8 +942,7 @@ def revise_sentences(request):
 
 # --- Updated Image Upload Endpoint ---
 @api_view(['POST'])
-@parser_classes([MultiPartParser, FormParser]) # Allow file uploads and form data
-@permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser])
 @csrf_exempt
 def upload_image(request):
     """
@@ -1047,7 +1042,6 @@ def upload_image(request):
 
 # --- Updated Image Similarity Search Endpoint ---
 @api_view(['POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def find_similar_images(request):
     """
@@ -1162,7 +1156,6 @@ def find_similar_images(request):
 
 # --- New Save Content Endpoint ---
 @api_view(['POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def save_processed_content(request):
     """
@@ -1353,7 +1346,6 @@ def get_saved_content_detail(request, content_id):
 
 # --- Get Saved Content Detail by Token Endpoint ---
 @api_view(['GET', 'DELETE'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def get_saved_content_detail_by_token(request, public_id):
     """Retrieves or deletes the details of a specific saved content by UUID token."""
@@ -1410,7 +1402,6 @@ def get_saved_content_detail_by_token(request, public_id):
             return Response({"error": "Failed to delete content"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['PATCH', 'POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def update_saved_content_image(request, content_id):
     """
@@ -1491,7 +1482,6 @@ def update_saved_content_image(request, content_id):
         return Response({"error": "Failed to update content image"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['PATCH', 'POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def update_saved_content_image_by_token(request, public_id):
     """
@@ -1582,7 +1572,6 @@ def update_saved_content_image_by_token(request, public_id):
         return Response({"error": "Failed to update content image"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def generate_image_view(request):
     """
@@ -1822,10 +1811,12 @@ def get_images_in_set(request, set_name):
 
 # --- Health Check Endpoint ---
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def health_check(request):
     """
     API endpoint for system health monitoring.
     Returns comprehensive health status of the embedding system.
+    Public endpoint for Docker health checks.
     """
     from api.monitoring import EmbeddingHealthCheck
     
@@ -1862,7 +1853,6 @@ def health_check(request):
 
 
 @api_view(['PUT'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def bulk_update_saved_content_images(request, content_id):
     """
@@ -1980,7 +1970,6 @@ def export_content_docx(request, content_id=None):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def export_current_content_docx(request):
     """
@@ -2030,7 +2019,6 @@ def export_current_content_docx(request):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def find_similar_images_batch(request):
     """
@@ -2367,85 +2355,141 @@ def find_similar_images_batch(request):
 
 # --- Image List Endpoint --- (compatibility)
 @api_view(['GET'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def list_images(request):
     """
     API endpoint to list all images grouped by set in a structure used by the frontend.
     Returns { images_by_set: { SetName: [ {id, image_url, relative_path, description, filename, set_name, file_format}, ... ] }, total_images, total_sets }
     Note: image_url is returned as a path under MEDIA_URL (relative to host) so the frontend can prefix with its configured MEDIA_BASE_URL.
+
+    Query parameters:
+    - samples_per_set: Optional int. If provided, only return this many sample images per set (for lightweight listing).
+                       The response will include image_count per set with the actual total.
     """
     from api.models import Image
     from django.conf import settings
     logger = logging.getLogger(__name__)
+
+    # Parse optional samples_per_set parameter
+    samples_per_set = request.query_params.get('samples_per_set')
+    if samples_per_set:
+        try:
+            samples_per_set = int(samples_per_set)
+            if samples_per_set < 1:
+                samples_per_set = None
+        except (ValueError, TypeError):
+            samples_per_set = None
+
     try:
         images = Image.objects.select_related('set').prefetch_related('embeddings').all().order_by('set__name', 'filename')
+
+        # First pass: count images per set and collect samples if needed
+        set_counts = {}
         images_by_set = {}
+
         for img in images:
             set_name = img.set.name if img.set else 'General'
-            if set_name not in images_by_set:
+
+            # Initialize set data
+            if set_name not in set_counts:
+                set_counts[set_name] = 0
                 images_by_set[set_name] = []
+
+            set_counts[set_name] += 1
+
+            # If sampling, only add images up to the limit
+            if samples_per_set and len(images_by_set[set_name]) >= samples_per_set:
+                continue
+
             # Use model helper to get a URL path under MEDIA_URL
             path_under_media = img.get_url()  # e.g., /media/images/...
             # Normalize to ensure it begins with /media
             if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
                 path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
-            # Check if image has embeddings
-            has_embeddings = img.embeddings.exists()
-            
-            # Get latest embedding info if available
-            embedding_info = None
-            if has_embeddings:
-                latest_embedding = img.embeddings.order_by('-created_at').first()
-                if latest_embedding:
-                    embedding_info = {
-                        "provider": latest_embedding.provider_name,
-                        "model": latest_embedding.model_name,
-                        "dimension": latest_embedding.embedding_dimension
+
+            # Skip embedding info for sampled responses (lighter payload)
+            if samples_per_set:
+                images_by_set[set_name].append({
+                    'id': img.id,
+                    'image_url': path_under_media,
+                    'description': img.description,
+                    'filename': img.filename,
+                    'set_name': set_name,
+                })
+            else:
+                # Full response with all details
+                has_embeddings = img.embeddings.exists()
+
+                # Get latest embedding info if available
+                embedding_info = None
+                if has_embeddings:
+                    latest_embedding = img.embeddings.order_by('-created_at').first()
+                    if latest_embedding:
+                        embedding_info = {
+                            "provider": latest_embedding.provider_name,
+                            "model": latest_embedding.model_name,
+                            "dimension": latest_embedding.embedding_dimension
+                        }
+
+                images_by_set[set_name].append({
+                    'id': img.id,
+                    'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
+                    'relative_path': img.original_path,
+                    'description': img.description,
+                    'filename': img.filename,
+                    'set_name': set_name,
+                    'file_format': img.file_format,
+                    'file_size': img.file_size,
+                    'width': img.width,
+                    'height': img.height,
+                    'created_at': img.created_at.isoformat() if img.created_at else None,
+                    'has_embeddings': has_embeddings,
+                    'embedding_info': embedding_info,
+                    'search_ready': has_embeddings  # Indicates if image will work in similarity search
+                })
+
+        total_images = sum(set_counts.values())
+
+        # For sampled responses, add image_count to each set
+        if samples_per_set:
+            response_data = {
+                'images_by_set': {
+                    set_name: {
+                        'images': images_by_set[set_name],
+                        'image_count': set_counts[set_name]
                     }
-            
-            images_by_set[set_name].append({
-                'id': img.id,
-                'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
-                'relative_path': img.original_path,
-                'description': img.description,
-                'filename': img.filename,
-                'set_name': set_name,
-                'file_format': img.file_format,
-                'file_size': img.file_size,
-                'width': img.width,
-                'height': img.height,
-                'created_at': img.created_at.isoformat() if img.created_at else None,
-                'has_embeddings': has_embeddings,
-                'embedding_info': embedding_info,
-                'search_ready': has_embeddings  # Indicates if image will work in similarity search
-            })
-        total_images = sum(len(v) for v in images_by_set.values())
-        
-        # Calculate embedding statistics
-        total_with_embeddings = 0
-        total_without_embeddings = 0
-        for set_images in images_by_set.values():
-            for image_data in set_images:
-                if image_data.get('has_embeddings', False):
-                    total_with_embeddings += 1
-                else:
-                    total_without_embeddings += 1
-        
-        embedding_coverage_percent = round((total_with_embeddings / total_images) * 100, 1) if total_images > 0 else 0
-        
-        embedding_stats = {
-            'with_embeddings': total_with_embeddings,
-            'without_embeddings': total_without_embeddings,
-            'embedding_coverage_percent': embedding_coverage_percent
-        }
-        
-        return Response({
-            'images_by_set': images_by_set,
-            'total_images': total_images,
-            'total_sets': len(images_by_set),
-            'embedding_stats': embedding_stats,
-        }, status=status.HTTP_200_OK)
+                    for set_name in images_by_set
+                },
+                'total_images': total_images,
+                'total_sets': len(images_by_set),
+            }
+        else:
+            # Calculate embedding statistics for full response
+            total_with_embeddings = 0
+            total_without_embeddings = 0
+            for set_images in images_by_set.values():
+                for image_data in set_images:
+                    if image_data.get('has_embeddings', False):
+                        total_with_embeddings += 1
+                    else:
+                        total_without_embeddings += 1
+
+            embedding_coverage_percent = round((total_with_embeddings / total_images) * 100, 1) if total_images > 0 else 0
+
+            embedding_stats = {
+                'with_embeddings': total_with_embeddings,
+                'without_embeddings': total_without_embeddings,
+                'embedding_coverage_percent': embedding_coverage_percent
+            }
+
+            response_data = {
+                'images_by_set': images_by_set,
+                'total_images': total_images,
+                'total_sets': len(images_by_set),
+                'embedding_stats': embedding_stats,
+            }
+
+        return Response(response_data, status=status.HTTP_200_OK)
     except Exception as e:
         logger.exception(f"Error retrieving images: {e}")
         return Response({
@@ -2461,7 +2505,6 @@ upload_progress_store = {}
 
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
-@permission_classes([AllowAny])
 def batch_upload_images(request):
     """
     API endpoint to upload multiple images at once.
@@ -2514,9 +2557,8 @@ def batch_upload_images(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['POST']) 
+@api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
-@permission_classes([AllowAny])
 def optimized_batch_upload(request):
     """
     Optimized batch upload for large numbers of images (100+).
@@ -2588,7 +2630,6 @@ def optimized_batch_upload(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
 def get_upload_progress(request, session_id):
     """
     Get upload progress for a session.
@@ -2616,7 +2657,6 @@ def get_upload_progress(request, session_id):
 
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
-@permission_classes([AllowAny])
 def upload_folder(request):
     """
     Upload a folder structure with automatic set creation based on folder names.
@@ -2760,7 +2800,6 @@ def process_single_image_upload(image_file, description, image_set):
 
 
 @api_view(['PUT'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def update_saved_content_full(request, content_id):
     """

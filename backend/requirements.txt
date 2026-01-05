@@ -17,3 +17,6 @@ Pillow
 numpy
 boto3
 gradio_client
+
+# Email
+resend

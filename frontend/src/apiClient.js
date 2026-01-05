@@ -44,6 +44,24 @@ apiClient.interceptors.request.use(request => {
   return request;
 });
 
+// Add response interceptor to handle authentication errors
+apiClient.interceptors.response.use(
+  response => response,
+  error => {
+    // If we get a 401 or 403, the session has expired or user is not authenticated
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      // Don't redirect for auth endpoints themselves
+      const url = error.config?.url || '';
+      if (!url.includes('/auth/')) {
+        console.warn('Session expired or unauthorized. Redirecting to login...');
+        // Dispatch a custom event that AuthContext can listen to
+        window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Function to extract markdown from PDF
 export const extractMarkdown = (file) => {
   const formData = new FormData();
@@ -213,8 +231,10 @@ export const findSimilarImagesBatch = (queries, excludeIds = [], signal = null, 
 };
 
 // Function to get all images
-export const listImages = () => {
-  return apiClient.get('/list-images/');
+// Optional: pass samplesPerSet to get a lightweight response with only sample images per set
+export const listImages = (samplesPerSet = null) => {
+  const params = samplesPerSet ? { samples_per_set: samplesPerSet } : {};
+  return apiClient.get('/list-images/', { params });
 };
 
 // Function to get image sets
@@ -682,6 +702,30 @@ export const reviseSentencesWithFeedback = (originalMarkdown, currentSentences, 
   }, {
     timeout: 90000 // 90 seconds for revision
   });
+};
+
+// =====================
+// OTP Authentication
+// =====================
+
+// Request OTP code to be sent to email
+export const requestOTP = (email) => {
+  return apiClient.post('/auth/request-otp/', { email });
+};
+
+// Verify OTP code and login
+export const verifyOTP = (email, otp) => {
+  return apiClient.post('/auth/verify-otp/', { email, otp });
+};
+
+// Check current authentication status
+export const getAuthStatus = () => {
+  return apiClient.get('/auth/status/');
+};
+
+// Logout
+export const logout = () => {
+  return apiClient.post('/auth/logout/');
 };
 
 export default apiClient; 

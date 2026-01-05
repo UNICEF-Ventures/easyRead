@@ -6,6 +6,7 @@ Updated to include new endpoints for the refactored embedding system.
 from django.urls import path
 from . import views
 from . import admin_views
+from . import otp_auth
 
 urlpatterns = [
     # Document processing endpoints
@@ -56,4 +57,10 @@ urlpatterns = [
     path('admin/api/login/', admin_views.admin_api_login, name='admin_api_login'),
     path('admin/api/logout/', admin_views.admin_api_logout, name='admin_api_logout'),
     path('admin/api/analytics/', admin_views.analytics_api, name='admin_analytics_api'),
+
+    # OTP Authentication endpoints
+    path('auth/request-otp/', otp_auth.request_otp, name='request_otp'),
+    path('auth/verify-otp/', otp_auth.verify_otp, name='verify_otp'),
+    path('auth/status/', otp_auth.auth_status, name='auth_status'),
+    path('auth/logout/', otp_auth.logout_view, name='auth_logout'),
 ]

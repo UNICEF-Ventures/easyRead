@@ -251,3 +251,63 @@ class ImageSelectionChange(models.Model):
     
     def __str__(self):
         return f"{self.session.session_id} - Sentence {self.sentence_index} - {self.changed_at.strftime('%Y-%m-%d %H:%M:%S')}"
+
+
+# OTP Authentication Models
+
+class WhitelistedEmail(models.Model):
+    """
+    Emails that are allowed to log in to the application.
+    Managed via Django admin.
+    """
+    email = models.EmailField(unique=True)
+    name = models.CharField(max_length=255, blank=True, help_text="Optional name for reference")
+    is_active = models.BooleanField(default=True, help_text="Inactive emails cannot request OTP")
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_login = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['email']
+        verbose_name = "Whitelisted Email"
+        verbose_name_plural = "Whitelisted Emails"
+
+    def save(self, *args, **kwargs):
+        # Normalize email to lowercase to ensure consistent matching
+        self.email = self.email.lower().strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        if self.name:
+            return f"{self.name} <{self.email}>"
+        return self.email
+
+
+class OTPToken(models.Model):
+    """
+    One-Time Password tokens for email-based authentication.
+    Tokens expire after a set time and can only be used once.
+    """
+    email = models.EmailField(db_index=True)
+    token = models.CharField(max_length=6)  # 6-digit OTP
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    # Track failed attempts for rate limiting
+    attempts = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['email', 'token', 'used']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    def is_valid(self):
+        """Check if token is still valid (not expired, not used)."""
+        return not self.used and self.expires_at > timezone.now()
+
+    def __str__(self):
+        status = "used" if self.used else ("expired" if self.expires_at <= timezone.now() else "valid")
+        return f"OTP for {self.email} - {status}"

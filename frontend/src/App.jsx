@@ -6,10 +6,14 @@ import ResultPage from './components/ResultPage';
 import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
+import LoginPage from './components/LoginPage';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
+import LogoutIcon from '@mui/icons-material/Logout';
 
 // Core App component that requires router context
 function AppCore() {
+  const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
   const [markdownContent, setMarkdownContent] = useState('');
   const [easyReadContent, setEasyReadContent] = useState([]);
   const [contentTitle, setContentTitle] = useState('');
@@ -25,8 +29,18 @@ function AppCore() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Only show header on pages that need it (not on intro page)
-  const shouldShowHeader = location.pathname !== '/';
+  // Must call useMemo before any conditional returns (React hooks rule)
+  const progressPercent = useMemo(() => {
+    return totalPages > 0 ? (pagesProcessed / totalPages) * 100 : 0;
+  }, [totalPages, pagesProcessed]);
+
+  // Only show header on pages that need it (not on intro page or login)
+  const shouldShowHeader = location.pathname !== '/' && isAuthenticated;
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
+  };
 
   const AppHeader = () => (
     <AppBar position="static" sx={{ mb: 3 }}>
@@ -40,15 +54,33 @@ function AppCore() {
         <Button color="inherit" component={Link} to="/saved">
           Saved Content
         </Button>
+        {user && (
+          <>
+            <Typography variant="body2" sx={{ ml: 2, mr: 1, opacity: 0.8 }}>
+              {user.email}
+            </Typography>
+            <Button color="inherit" onClick={handleLogout} startIcon={<LogoutIcon />}>
+              Logout
+            </Button>
+          </>
+        )}
       </Toolbar>
     </AppBar>
   );
 
-  const progressPercent = useMemo(() => {
-    return totalPages > 0 ? (pagesProcessed / totalPages) * 100 : 0;
-  }, [totalPages, pagesProcessed]);
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
-
+  // Show login page if not authenticated
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
 
   const handleProcessingComplete = (finalMarkdown, finalEasyRead) => {
     console.log("App: Processing complete");
@@ -101,23 +133,49 @@ function AppCore() {
           </Box>
       )}
       {isProcessingPages && (
-          <Box sx={{ width: '80%', mx: 'auto', my: 3, maxWidth: 'md', p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-            <Typography variant="body1" sx={{ mb: 1, textAlign: 'center', fontWeight: 'bold' }}>
-              Processing page {Math.ceil(pagesProcessed)} of {totalPages}...
-            </Typography>
-            {currentProcessingStep && (
-              <Typography variant="body2" sx={{ mb: 2, textAlign: 'center', color: 'primary.main', fontStyle: 'italic' }}>
-                {currentProcessingStep}
+          <Box
+            sx={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(255, 255, 255, 0.3)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              zIndex: 1300,
+            }}
+          >
+            <Box
+              sx={{
+                width: '90%',
+                maxWidth: 500,
+                p: 4,
+                bgcolor: 'white',
+                borderRadius: 3,
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+              }}
+            >
+              <Typography variant="h6" sx={{ mb: 1, textAlign: 'center', fontWeight: 'bold' }}>
+                Processing page {Math.ceil(pagesProcessed)} of {totalPages}...
               </Typography>
-            )}
-            <LinearProgress 
-              variant="determinate" 
-              value={progressPercent}
-              sx={{ height: 10, borderRadius: 5 }}
-            />
-            <Typography variant="body2" sx={{ mt: 1, textAlign: 'center', color: 'text.secondary' }}>
-              {Math.round(progressPercent)}% complete
-            </Typography>
+              {currentProcessingStep && (
+                <Typography variant="body2" sx={{ mb: 2, textAlign: 'center', color: 'primary.main', fontStyle: 'italic' }}>
+                  {currentProcessingStep}
+                </Typography>
+              )}
+              <LinearProgress
+                variant="determinate"
+                value={progressPercent}
+                sx={{ height: 12, borderRadius: 6 }}
+              />
+              <Typography variant="body1" sx={{ mt: 2, textAlign: 'center', color: 'text.secondary', fontWeight: 500 }}>
+                {Math.round(progressPercent)}% complete
+              </Typography>
+            </Box>
           </Box>
       )}
       {error && (
@@ -178,7 +236,9 @@ function AppCore() {
 function App() {
   return (
     <BrowserRouter>
-      <AppCore />
+      <AuthProvider>
+        <AppCore />
+      </AuthProvider>
     </BrowserRouter>
   );
 }

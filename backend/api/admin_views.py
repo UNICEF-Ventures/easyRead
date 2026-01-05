@@ -24,20 +24,25 @@ def admin_login_view(request):
     Display login form and handle authentication.
     """
     if request.method == 'POST':
-        username = request.POST.get('username', 'admin')
-        password = request.POST.get('password')
-        
-        if password:
-            # Try to authenticate with the provided password
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '')
+
+        if not username:
+            messages.error(request, 'Username is required.')
+        elif not password:
+            messages.error(request, 'Password is required.')
+        else:
             user = authenticate(request, username=username, password=password)
             if user is not None:
                 login(request, user)
+                # Redirect to 'next' parameter if present, otherwise dashboard
+                next_url = request.GET.get('next') or request.POST.get('next')
+                if next_url:
+                    return redirect(next_url)
                 return redirect('admin_dashboard')
             else:
-                messages.error(request, 'Invalid password. Please try again.')
-        else:
-            messages.error(request, 'Password is required.')
-    
+                messages.error(request, 'Invalid username or password.')
+
     return render(request, 'admin/login.html')
 
 
