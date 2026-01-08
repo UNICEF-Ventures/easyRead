@@ -23,12 +23,15 @@ from django.conf import settings
 from dotenv import load_dotenv
 import time
 import threading
-from .models import ProcessedContent, ImageSet, Image
+from .models import Embedding, ProcessedContent, ImageSet, Image
 from .config import get_retry_config, load_prompt_template, VALIDATE_COMPLETENESS_PROMPT_FILE, REVISE_SENTENCES_PROMPT_FILE
 from django.core.files.base import ContentFile
 from django.http import HttpResponse
 from .docx_export import create_docx_export, get_safe_filename
 from django.utils import timezone
+from django.db.models import Prefetch
+from django.db.models import OuterRef, Subquery, Exists, Value, F, CharField
+from django.db.models.functions import Coalesce
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -2212,64 +2215,92 @@ def list_images(request):
     logger = logging.getLogger(__name__)
     try:
         print("hereee 1")
-        images = Image.objects.select_related('set').all().order_by('set__name', 'filename')
+        latest = Embedding.objects.filter(image_id=OuterRef("pk")).order_by("-created_at")
+        images_qs = (
+            Image.objects
+            .select_related("set")
+            .annotate(
+                set_name=Coalesce(F("set__name"), Value("General"), output_field=CharField()),
+                has_embeddings=Exists(Embedding.objects.filter(image_id=OuterRef("pk"))),
+                latest_provider=Subquery(latest.values("provider_name")[:1]),
+                latest_model=Subquery(latest.values("model_name")[:1]),
+                latest_dimension=Subquery(latest.values("embedding_dimension")[:1]),
+            )
+            .order_by("set_name", "filename")
+            .values(
+                "id",
+                "set_id",
+                "original_path",
+                "description",
+                "filename",
+                "file_format",
+                "file_size",
+                "width",
+                "height",
+                "created_at",
+                "set_name",
+                "has_embeddings",
+                "latest_provider",
+                "latest_model",
+                "latest_dimension",
+            )
+        )
+        print("zzzz", images_qs[0])
+        #images = Image.objects.select_related('set').all().order_by('set__name', 'filename')
         images_by_set = {}
-        print("hereee 2", len(images), images[0])
-        # for img in images:
-        #     set_name = img.set.name if img.set else 'General'
-        #     if set_name not in images_by_set:
-        #         images_by_set[set_name] = []
-        #     # Use model helper to get a URL path under MEDIA_URL
-        #     path_under_media = img.get_url()  # e.g., /media/images/...
-
-        #     # Normalize to ensure it begins with /media
-        #     # if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
-        #     #     path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
-            
-        #     # Check if image has embeddings
-        #     has_embeddings = img.embeddings.exists()
-            
-        #     # Get latest embedding info if available
-        #     embedding_info = None
-        #     # if has_embeddings:
-        #     #     latest_embedding = img.embeddings.order_by('-created_at').first()
-        #     #     if latest_embedding:
-        #     #         embedding_info = {
-        #     #             "provider": latest_embedding.provider_name,
-        #     #             "model": latest_embedding.model_name,
-        #     #             "dimension": latest_embedding.embedding_dimension
-        #     #         }
-            
-        #     images_by_set[set_name].append({
-        #         'id': img.id,
-        #         'set_id': img.set.id if img.set else None,
-        #         'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
-        #         'relative_path': img.original_path,
-        #         'description': img.description,
-        #         'filename': img.filename,
-        #         'set_name': set_name,
-        #         'file_format': img.file_format,
-        #         'file_size': img.file_size,
-        #         'width': img.width,
-        #         'height': img.height,
-        #         'created_at': img.created_at.isoformat() if img.created_at else None,
-        #         'has_embeddings': has_embeddings,
-        #         'embedding_info': embedding_info,
-        #         'search_ready': has_embeddings  # Indicates if image will work in similarity search
-        #     })
-        
-        total_images = sum(len(v) for v in images_by_set.values())
-        print("hereee 3", total_images)
-        # Calculate embedding statistics
         total_with_embeddings = 0
         total_without_embeddings = 0
-        # for set_images in images_by_set.values():
-        #     for image_data in set_images:
-        #         if image_data.get('has_embeddings', False):
-        #             total_with_embeddings += 1
-        #         else:
-        #             total_without_embeddings += 1
+        for img in images_qs:
+            set_name = img['set_name'] if img['set_name'] else 'General'
+            if set_name not in images_by_set:
+                images_by_set[set_name] = []
+            # Use model helper to get a URL path under MEDIA_URL
+            path_under_media = img['original_path'] # e.g., /media/images/...
+
+            # # Normalize to ensure it begins with /media
+            if not path_under_media.startswith('/') and not path_under_media.startswith('https'):  # get_url should already provide proper pathing
+                path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
+            
+            # Check if image has embeddings
+            has_embeddings = img['has_embeddings']
+            if has_embeddings:
+                total_with_embeddings += 1
+            else:
+                total_without_embeddings += 1
+
+            # Get latest embedding info if available
+            embedding_info = None
+            if has_embeddings:
+                if img['latest_provider']:
+                    embedding_info = {
+                        "provider": img['latest_provider'],
+                        "model": img['latest_model'],
+                        "dimension": img['latest_dimension']
+                    }
+            
+            images_by_set[set_name].append({
+                'id': img['id'],
+                'set_id': img['set_id'],
+                'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
+                'relative_path': img['original_path'],
+                'description': img['description'],
+                'filename': img['filename'],
+                'set_name': set_name,
+                'file_format': img['file_format'],
+                'file_size': img['file_size'],
+                'width': img['width'],
+                'height': img['height'],
+                'created_at': img['created_at'].isoformat() if img['created_at'] else None,
+                'has_embeddings': has_embeddings,
+                'embedding_info': embedding_info,
+                'search_ready': has_embeddings  # Indicates if image will work in similarity search
+            })
         
+        #print("dddddd", images1[0:3], images_by_set[0:3])
+        total_images = len(images_qs)
+        print("hereee 3", total_images, len(images_qs))
+
+        # Calculate embedding statistics
         embedding_coverage_percent = round((total_with_embeddings / total_images) * 100, 1) if total_images > 0 else 0
         print("hereee 4", embedding_coverage_percent)
         embedding_stats = {
