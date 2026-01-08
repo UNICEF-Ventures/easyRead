@@ -1,4 +1,4 @@
-name: Deploy to playground dev S3 on dev push
+name: Deploy to dev S3 on dev push
 
 on:
   push:

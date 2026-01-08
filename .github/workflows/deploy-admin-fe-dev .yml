@@ -1,4 +1,4 @@
-name: Deploy to playground dev S3 on dev push
+name: Deploy admin FE S3 on push
 
 on:
   push:
