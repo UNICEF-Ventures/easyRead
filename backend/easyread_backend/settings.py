@@ -231,7 +231,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5001", # Frontend dev server port (alternative)
     "http://127.0.0.1:5001",
     "https://ooiplayground.com",
-    "https://dev.ooiplayground.com"
+    "https://dev.ooiplayground.com",
+    "https://easyreadadminportal.ooiplayground.com"
 ]
 
 # Allow credentials for admin authentication
