@@ -27,6 +27,7 @@ const STORAGE_KEYS = {
   refreshToken: 'oauth_refresh_token',
   user: 'oauth_user',
   expiresAt: 'oauth_expires_at',
+  callbackProcessing: 'oauth_callback_processing',
 };
 
 // Use sessionStorage for tokens (more secure - cleared on tab close)
@@ -113,7 +114,14 @@ export async function initiateOAuthLogin() {
  */
 export function hasOAuthCallback() {
   const params = new URLSearchParams(window.location.search);
-  return params.has('code') && params.has('state');
+  const hasCallback = params.has('code') && params.has('state');
+
+  // Don't process if we're already processing or have already processed this callback
+  if (hasCallback && sessionStorage.getItem(STORAGE_KEYS.callbackProcessing)) {
+    return false;
+  }
+
+  return hasCallback;
 }
 
 /**
@@ -126,63 +134,72 @@ export async function handleOAuthCallback() {
   const error = params.get('error');
   const errorDescription = params.get('error_description');
 
-  // Check for errors
-  if (error) {
-    throw new Error(errorDescription || error);
-  }
+  // Mark that we're processing to prevent double execution (React Strict Mode, etc.)
+  sessionStorage.setItem(STORAGE_KEYS.callbackProcessing, 'true');
 
-  if (!code || !state) {
-    throw new Error('Missing code or state in callback');
-  }
-
-  // Verify state
-  const storedState = sessionStorage.getItem(STORAGE_KEYS.state);
-  if (state !== storedState) {
-    throw new Error('State mismatch - possible CSRF attack');
-  }
-
-  // Get code verifier
-  const codeVerifier = sessionStorage.getItem(STORAGE_KEYS.codeVerifier);
-  if (!codeVerifier) {
-    throw new Error('Code verifier not found - session may have expired');
-  }
-
-  // Exchange code for tokens
-  const tokenResponse = await fetch(`${AUTH_CONFIG.domain}/oauth/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: AUTH_CONFIG.clientId,
-      code: code,
-      redirect_uri: AUTH_CONFIG.redirectUri,
-      code_verifier: codeVerifier,
-    }),
-  });
-
-  if (!tokenResponse.ok) {
-    const errorData = await tokenResponse.json().catch(() => ({}));
-    throw new Error(errorData.error_description || errorData.error || 'Token exchange failed');
-  }
-
-  const tokens = await tokenResponse.json();
-
-  // Clean up URL (remove code and state from URL)
+  // Clean up URL immediately to prevent re-processing on re-renders
+  // Do this early because the code is single-use
   window.history.replaceState({}, document.title, window.location.pathname);
 
-  // Clean up session storage
-  sessionStorage.removeItem(STORAGE_KEYS.codeVerifier);
-  sessionStorage.removeItem(STORAGE_KEYS.state);
+  try {
+    // Check for errors
+    if (error) {
+      throw new Error(errorDescription || error);
+    }
 
-  // Parse user info from ID token or fetch from userinfo endpoint
-  const user = await getUserFromTokens(tokens);
+    if (!code || !state) {
+      throw new Error('Missing code or state in callback');
+    }
 
-  // Store tokens
-  storeTokens(tokens, user);
+    // Verify state
+    const storedState = sessionStorage.getItem(STORAGE_KEYS.state);
+    if (state !== storedState) {
+      throw new Error('State mismatch - possible CSRF attack');
+    }
 
-  return { tokens, user };
+    // Get code verifier
+    const codeVerifier = sessionStorage.getItem(STORAGE_KEYS.codeVerifier);
+    if (!codeVerifier) {
+      throw new Error('Code verifier not found - session may have expired');
+    }
+
+    // Exchange code for tokens
+    const tokenResponse = await fetch(`${AUTH_CONFIG.domain}/oauth/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: AUTH_CONFIG.clientId,
+        code: code,
+        redirect_uri: AUTH_CONFIG.redirectUri,
+        code_verifier: codeVerifier,
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorData = await tokenResponse.json().catch(() => ({}));
+      throw new Error(errorData.error_description || errorData.error || 'Token exchange failed');
+    }
+
+    const tokens = await tokenResponse.json();
+
+    // Clean up PKCE session storage (no longer needed)
+    sessionStorage.removeItem(STORAGE_KEYS.codeVerifier);
+    sessionStorage.removeItem(STORAGE_KEYS.state);
+
+    // Parse user info from ID token or fetch from userinfo endpoint
+    const user = await getUserFromTokens(tokens);
+
+    // Store tokens
+    storeTokens(tokens, user);
+
+    return { tokens, user };
+  } finally {
+    // Clear the processing flag
+    sessionStorage.removeItem(STORAGE_KEYS.callbackProcessing);
+  }
 }
 
 /**

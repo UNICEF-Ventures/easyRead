@@ -287,14 +287,48 @@ class ErrorResponseMiddleware:
     def process_exception(self, request, exception):
         """
         Process uncaught exceptions and return standardized error responses.
+
+        Note: Middleware must return Django HttpResponse/JsonResponse, not DRF Response,
+        because DRF Responses require the view pipeline to set up renderers.
         """
         # Generate a request ID for tracking
         request_id = getattr(request, 'id', None) or id(request)
-        
-        # Handle API exceptions
+
+        # Handle API exceptions - return JsonResponse (not DRF Response) from middleware
         if request.path.startswith('/api/'):
-            return handle_api_exception(exception, str(request_id))
-        
+            if isinstance(exception, APIError):
+                logger.error(
+                    f"API Error: {exception.error_code} - {exception.message}",
+                    extra={
+                        "error_code": exception.error_code,
+                        "status_code": exception.status_code,
+                        "details": exception.details,
+                        "request_id": request_id
+                    }
+                )
+                response_data = format_error_response(exception, str(request_id))
+                return JsonResponse(response_data, status=exception.status_code)
+            else:
+                # Handle unexpected exceptions
+                logger.error(
+                    f"Unexpected error: {str(exception)}",
+                    extra={
+                        "exception_type": type(exception).__name__,
+                        "request_id": request_id,
+                        "traceback": traceback.format_exc()
+                    }
+                )
+                response_data = {
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "An unexpected error occurred",
+                        "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR
+                    }
+                }
+                if request_id:
+                    response_data["error"]["request_id"] = str(request_id)
+                return JsonResponse(response_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         # Let Django handle non-API exceptions normally
         return None
 

@@ -128,6 +128,9 @@ if os.getenv("DB_ENGINE") == "postgresql" or os.getenv("DATABASE_URL"):
 # Django REST Framework configuration
 # Supports both OTP (session) and Auth0 JWT authentication
 REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [
         'api.permissions.IsPlaygroundOrOTPAuthenticated',
     ],
