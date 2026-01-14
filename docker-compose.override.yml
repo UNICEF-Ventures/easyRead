@@ -16,8 +16,13 @@ services:
       args:
         - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-8001}/api
         - VITE_MEDIA_BASE_URL=http://localhost:${BACKEND_PORT:-8001}
+        - VITE_AUTH_METHOD=${VITE_AUTH_METHOD:-otp}
+        - VITE_OIDC_DOMAIN=${VITE_OIDC_DOMAIN}
+        - VITE_OIDC_AUTH_DOMAIN=${VITE_OIDC_AUTH_DOMAIN}
+        - VITE_OIDC_CLIENT_ID=${VITE_OIDC_CLIENT_ID}
+        - VITE_OAUTH_NAMESPACE=${VITE_OAUTH_NAMESPACE}
     ports:
-      - "5001:5001"  # Vite dev server port
+      - "5173:5173"  # Vite dev server port (5173 is in Auth0 allowed callback URLs)
     volumes:
       - ./frontend/src:/app/src:ro  # Bind mount source code for hot reload
       - ./frontend/public:/app/public:ro  # Bind mount public assets
@@ -30,3 +35,8 @@ services:
       - frontend_node_modules:/app/node_modules  # Named volume for node_modules
     environment:
       - NODE_ENV=development
+      - VITE_AUTH_METHOD=${VITE_AUTH_METHOD:-otp}
+      - VITE_OIDC_DOMAIN=${VITE_OIDC_DOMAIN}
+      - VITE_OIDC_AUTH_DOMAIN=${VITE_OIDC_AUTH_DOMAIN}
+      - VITE_OIDC_CLIENT_ID=${VITE_OIDC_CLIENT_ID}
+      - VITE_OAUTH_NAMESPACE=${VITE_OAUTH_NAMESPACE}

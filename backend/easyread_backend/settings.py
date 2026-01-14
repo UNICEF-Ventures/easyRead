@@ -126,12 +126,14 @@ if os.getenv("DB_ENGINE") == "postgresql" or os.getenv("DATABASE_URL"):
 
 
 # Django REST Framework configuration
+# Supports both OTP (session) and Auth0 JWT authentication
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'api.permissions.IsOTPAuthenticated',
+        'api.permissions.IsPlaygroundOrOTPAuthenticated',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+        'api.jwt_auth.Auth0JWTAuthentication',  # Auth0 JWT (ooiplayground)
+        'rest_framework.authentication.SessionAuthentication',  # OTP sessions
     ],
 }
 
@@ -217,15 +219,20 @@ LOGGING = {
     },
 }
 
-# CORS Settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173", # Default Vite dev server port
+# CORS Settings - read from environment with sensible defaults for development
+_default_cors_origins = [
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:3000", # Docker frontend port
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:5001", # Frontend dev server port (alternative)
+    "http://localhost:5001",
     "http://127.0.0.1:5001",
 ]
+_env_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if _env_cors_origins:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _env_cors_origins.split(",") if origin.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = _default_cors_origins
 
 # Allow credentials for admin authentication
 CORS_ALLOW_CREDENTIALS = True
@@ -233,14 +240,8 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF Configuration for API endpoints
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173", 
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5001",
-    "http://127.0.0.1:5001",
-]
+# CSRF trusted origins - same as CORS origins
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
 
 # Optional: Allow all origins for quick testing (less secure)
 # CORS_ALLOW_ALL_ORIGINS = True
@@ -294,3 +295,16 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = os.getenv('SESSION_EXPIRE_AT_BROWSER_CLOSE', '
 SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'False').lower() in ('true', '1', 'yes')  # Set True in production with HTTPS
 SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to session cookie
 SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
+
+# Auth0/OIDC Configuration for ooiplayground integration
+# These settings are used by api.jwt_auth for JWT token validation
+# All values should be set in .env file
+AUTH0_DOMAIN = os.getenv('VITE_OIDC_AUTH_DOMAIN', '')
+AUTH0_OIDC_DOMAIN = os.getenv('VITE_OIDC_DOMAIN', '')  # Raw Auth0 domain
+AUTH0_ISSUER = os.getenv('AUTH0_ISSUER', f"{AUTH0_DOMAIN.rstrip('/')}/" if AUTH0_DOMAIN else '')
+AUTH0_AUDIENCE = os.getenv('AUTH0_AUDIENCE', f"{AUTH0_OIDC_DOMAIN.rstrip('/')}/api/v2/" if AUTH0_OIDC_DOMAIN else '')
+AUTH0_JWKS_URL = os.getenv('AUTH0_JWKS_URL', f"{AUTH0_DOMAIN.rstrip('/')}/.well-known/jwks.json" if AUTH0_DOMAIN else '')
+AUTH0_ALGORITHMS = ['RS256']
+AUTH0_NAMESPACE = os.getenv('VITE_OAUTH_NAMESPACE', '')
+AUTH0_PROJECT_NAME = os.getenv('VITE_PROJECT_KEY', '')
+AUTH0_CHECK_PROJECT_ACCESS = os.getenv('AUTH0_CHECK_PROJECT_ACCESS', 'False').lower() in ('true', '1', 'yes')

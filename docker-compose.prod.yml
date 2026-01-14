@@ -41,6 +41,11 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION_NAME=${AWS_REGION_NAME:-us-east-1}
+      # Auth0/OAuth Configuration
+      - VITE_OIDC_DOMAIN=${VITE_OIDC_DOMAIN}
+      - VITE_OIDC_AUTH_DOMAIN=${VITE_OIDC_AUTH_DOMAIN}
+      - VITE_OAUTH_NAMESPACE=${VITE_OAUTH_NAMESPACE}
+      - VITE_PROJECT_KEY=${VITE_PROJECT_KEY:-easyread}
     volumes:
       - media_files:/app/media
       - static_files:/app/staticfiles
@@ -59,6 +64,27 @@ services:
       start_period: 60s
     # Don't expose port in production - nginx will proxy
 
+  # React Frontend (built for production)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=/api
+        - VITE_MEDIA_BASE_URL=
+        - VITE_DEBUG_VALIDATION=false
+        - VITE_AUTH_METHOD=${VITE_AUTH_METHOD:-oauth}
+        - VITE_OIDC_DOMAIN=${VITE_OIDC_DOMAIN}
+        - VITE_OIDC_AUTH_DOMAIN=${VITE_OIDC_AUTH_DOMAIN}
+        - VITE_OIDC_CLIENT_ID=${VITE_OIDC_CLIENT_ID}
+        - VITE_OAUTH_NAMESPACE=${VITE_OAUTH_NAMESPACE}
+    container_name: easyread_frontend_prod
+    volumes:
+      - frontend_dist:/usr/share/nginx/html
+    networks:
+      - easyread_network
+    restart: "no"  # One-shot build container
+
   # Nginx Reverse Proxy
   nginx:
     build:
@@ -69,12 +95,15 @@ services:
       - "80:80"
       - "443:443"
     volumes:
+      - frontend_dist:/usr/share/nginx/html:ro  # Serve frontend from build
       - media_files:/app/media:ro
       - static_files:/app/staticfiles:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       backend:
         condition: service_healthy
+      frontend:
+        condition: service_completed_successfully
     networks:
       - easyread_network
     restart: unless-stopped
@@ -105,6 +134,8 @@ volumes:
   media_files:
     driver: local
   static_files:
+    driver: local
+  frontend_dist:
     driver: local
   redis_data:
     driver: local

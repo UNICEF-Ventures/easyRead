@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { config } from './config.js';
+import { getAccessToken, getValidAccessToken, isTokenExpired } from './utils/oauth';
 
 // Function to get CSRF token from cookie
 const getCsrfToken = () => {
@@ -24,13 +25,31 @@ if (import.meta.env.DEV) {
   console.log('🔗 Axios instance baseURL:', apiClient.defaults.baseURL);
 }
 
-// Add request interceptor to include CSRF token
-apiClient.interceptors.request.use(request => {
-  // Add CSRF token to requests that need it (POST, PUT, PATCH, DELETE)
+// Add request interceptor to include auth headers (async to support token refresh)
+apiClient.interceptors.request.use(async (request) => {
+  // Add CSRF token to requests that need it (POST, PUT, PATCH, DELETE) - for OTP mode
   if (['post', 'put', 'patch', 'delete'].includes(request.method.toLowerCase())) {
     const csrfToken = getCsrfToken();
     if (csrfToken) {
       request.headers['X-CSRFToken'] = csrfToken;
+    }
+  }
+
+  // Add Bearer token for OAuth mode
+  if (config.AUTH_METHOD === 'oauth') {
+    // Check if token is expired and try to refresh it
+    let accessToken = getAccessToken();
+
+    if (!accessToken && isTokenExpired()) {
+      // Token is expired, attempt to refresh
+      if (import.meta.env.DEV) {
+        console.log('🔄 Token expired, attempting refresh...');
+      }
+      accessToken = await getValidAccessToken();
+    }
+
+    if (accessToken) {
+      request.headers['Authorization'] = `Bearer ${accessToken}`;
     }
   }
 
@@ -39,6 +58,8 @@ apiClient.interceptors.request.use(request => {
     console.log('🚀 Making request to:', request.baseURL + request.url);
     console.log('🚀 Full request config:', request);
     console.log('🔒 CSRF Token:', request.headers['X-CSRFToken'] || 'None');
+    console.log('🔑 Auth Method:', config.AUTH_METHOD);
+    console.log('🔑 Authorization:', request.headers['Authorization'] ? 'Bearer [token]' : 'None');
   }
 
   return request;

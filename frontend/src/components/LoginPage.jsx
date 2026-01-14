@@ -14,13 +14,15 @@ import {
 } from '@mui/material';
 import EmailIcon from '@mui/icons-material/Email';
 import LockIcon from '@mui/icons-material/Lock';
+import LoginIcon from '@mui/icons-material/Login';
 import { requestOTP, verifyOTP } from '../apiClient';
 import { useAuth } from '../contexts/AuthContext';
+import { config } from '../config';
 
 const steps = ['Enter Email', 'Enter Code'];
 
 function LoginPage() {
-  const { login, error: authError } = useAuth();
+  const { login, loginWithOAuth, error: authError, authMethod } = useAuth();
   const [activeStep, setActiveStep] = useState(0);
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -96,6 +98,71 @@ function LoginPage() {
     }
   };
 
+  const handleOAuthLogin = () => {
+    setLoading(true);
+    loginWithOAuth();
+    // Note: This will redirect, so loading state won't matter
+  };
+
+  // OAuth Login UI
+  if (authMethod === 'oauth') {
+    return (
+      <Container maxWidth="sm">
+        <Box
+          sx={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            py: 4,
+          }}
+        >
+          <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+            {/* Header */}
+            <Box sx={{ textAlign: 'center', mb: 4 }}>
+              <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 600 }}>
+                EasyRead
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                Sign in with your OOI Playground account
+              </Typography>
+            </Box>
+
+            {/* Error Display */}
+            {displayError && (
+              <Alert severity="error" sx={{ mb: 3 }}>
+                {displayError}
+              </Alert>
+            )}
+
+            {/* OAuth Login Button */}
+            <Button
+              fullWidth
+              variant="contained"
+              size="large"
+              onClick={handleOAuthLogin}
+              disabled={loading}
+              startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <LoginIcon />}
+              sx={{ py: 1.5, fontSize: '1rem' }}
+            >
+              {loading ? 'Redirecting...' : 'Sign in with Playground'}
+            </Button>
+
+            {/* Footer */}
+            <Box sx={{ mt: 4, textAlign: 'center' }}>
+              <Typography variant="caption" color="text.secondary">
+                You will be redirected to the OOI Playground login page.
+                <br />
+                After signing in, you will be returned to EasyRead.
+              </Typography>
+            </Box>
+          </Paper>
+        </Box>
+      </Container>
+    );
+  }
+
+  // OTP Login UI (default)
   return (
     <Container maxWidth="sm">
       <Box

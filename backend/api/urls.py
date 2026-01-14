@@ -7,6 +7,7 @@ from django.urls import path
 from . import views
 from . import admin_views
 from . import otp_auth
+from . import jwt_auth_views
 
 urlpatterns = [
     # Document processing endpoints
@@ -63,4 +64,7 @@ urlpatterns = [
     path('auth/verify-otp/', otp_auth.verify_otp, name='verify_otp'),
     path('auth/status/', otp_auth.auth_status, name='auth_status'),
     path('auth/logout/', otp_auth.logout_view, name='auth_logout'),
+
+    # JWT Authentication test endpoint (for playground integration)
+    path('auth/jwt-test/', jwt_auth_views.jwt_test, name='jwt_test'),
 ]
