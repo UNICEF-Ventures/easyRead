@@ -23,6 +23,7 @@ import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { extractMarkdown, generateEasyRead, getImageSets, listImages } from '../apiClient';
 import { config } from '../config.js';
+import { useAuth } from '../contexts/AuthContext';
 
 // Base URL for serving media files from Django dev server
 const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
@@ -44,17 +45,18 @@ const DropZone = styled(Box)(({ theme }) => ({
   marginBottom: theme.spacing(3),
 }));
 
-function HomePage({ 
-  setMarkdownContent, 
-  setIsLoading, 
+function HomePage({
+  setMarkdownContent,
+  setIsLoading,
   setIsProcessingPages,
   setTotalPages,
   setPagesProcessed,
   setCurrentProcessingStep,
-  setError, 
+  setError,
   currentMarkdown,
   onProcessingComplete
 }) {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [fileName, setFileName] = useState('');
   const [imageSets, setImageSets] = useState([]);
   const [selectedSets, setSelectedSets] = useState(new Set());
@@ -62,8 +64,13 @@ function HomePage({
   const [preventDuplicateImages, setPreventDuplicateImages] = useState(true);
   const [setsExpanded, setSetsExpanded] = useState(false);
 
-  // Load image sets and sample images on component mount
+  // Load image sets and sample images on component mount (only if authenticated)
   useEffect(() => {
+    // Don't load images if still checking auth or not authenticated
+    if (authLoading || !isAuthenticated) {
+      return;
+    }
+
     const loadImageSets = async () => {
       setSetsLoading(true);
       try {
@@ -93,7 +100,7 @@ function HomePage({
     };
 
     loadImageSets();
-  }, [setError]);
+  }, [setError, isAuthenticated, authLoading]);
 
   const handleSetSelection = (setName) => {
     const newSelectedSets = new Set(selectedSets);
