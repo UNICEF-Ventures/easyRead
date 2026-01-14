@@ -7,6 +7,12 @@ export default defineConfig(({ mode }) => {
   // Load env file based on mode (development/production)
   const env = loadEnv(mode, process.cwd(), '');
 
+  // Debug: Log loaded environment variables
+  console.log('Vite build mode:', mode);
+  console.log('Vite cwd:', process.cwd());
+  console.log('VITE_AUTH_METHOD from env:', env.VITE_AUTH_METHOD);
+  console.log('VITE_OIDC_CLIENT_ID from env:', env.VITE_OIDC_CLIENT_ID);
+
   return {
     plugins: [
       react(),
@@ -31,17 +37,6 @@ export default defineConfig(({ mode }) => {
     base: env.VITE_BASE_URL || '/',
     build: {
       target: 'esnext'
-    },
-    // Explicitly define environment variables to ensure they're embedded
-    define: {
-      'import.meta.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || '/api'),
-      'import.meta.env.VITE_MEDIA_BASE_URL': JSON.stringify(env.VITE_MEDIA_BASE_URL || ''),
-      'import.meta.env.VITE_AUTH_METHOD': JSON.stringify(env.VITE_AUTH_METHOD || 'otp'),
-      'import.meta.env.VITE_OIDC_DOMAIN': JSON.stringify(env.VITE_OIDC_DOMAIN || ''),
-      'import.meta.env.VITE_OIDC_AUTH_DOMAIN': JSON.stringify(env.VITE_OIDC_AUTH_DOMAIN || 'https://auth.ooiplayground.com'),
-      'import.meta.env.VITE_OIDC_CLIENT_ID': JSON.stringify(env.VITE_OIDC_CLIENT_ID || ''),
-      'import.meta.env.VITE_OAUTH_NAMESPACE': JSON.stringify(env.VITE_OAUTH_NAMESPACE || 'https://ooi-playground.com'),
-      'import.meta.env.VITE_PROJECT_KEY': JSON.stringify(env.VITE_PROJECT_KEY || 'easyread'),
     }
   }
 })
