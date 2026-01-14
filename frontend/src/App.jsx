@@ -1,15 +1,15 @@
-import React, { useState, useMemo } from 'react';
-import { Routes, Route, useNavigate, Link, BrowserRouter, useLocation } from 'react-router-dom';
+import React, { useState, useMemo, useContext } from 'react';
+import { Routes, Route, useNavigate, Link, BrowserRouter, useLocation, Outlet, Navigate } from 'react-router-dom';
 import IntroPage from './components/IntroPage';
 import HomePage from './components/HomePage';
 import ResultPage from './components/ResultPage';
 import AdminRoute from './components/AdminRoute';
 import SavedContentPage from './components/SavedContentPage';
 import SavedContentDetailPage from './components/SavedContentDetailPage';
-import LoginPage from './components/LoginPage';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Box, CssBaseline, Typography, Alert, CircularProgress, LinearProgress, AppBar, Toolbar, Button } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
+import { PrivateRoute } from './auth/PrivateRoute';
+import { AuthContext, useAuth } from './auth/auth';
 
 // Core App component that requires router context
 function AppCore() {
@@ -36,10 +36,17 @@ function AppCore() {
 
   // Only show header on pages that need it (not on intro page or login)
   const shouldShowHeader = location.pathname !== '/' && isAuthenticated;
+  const { removeAccessToken, getAccessToken } = useContext(AuthContext);
 
   const handleLogout = async () => {
     await logout();
     navigate('/');
+    removeAccessToken();
+    await logout({
+      logoutParams: {
+        returnTo: `${window.location.origin}/logout`
+      }
+    });
   };
 
   const AppHeader = () => (
@@ -68,20 +75,6 @@ function AppCore() {
     </AppBar>
   );
 
-  // Show loading while checking auth
-  if (authLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  // Show login page if not authenticated
-  if (!isAuthenticated) {
-    return <LoginPage />;
-  }
-
   const handleProcessingComplete = (finalMarkdown, finalEasyRead) => {
     console.log("App: Processing complete");
     let newTitle = 'Untitled';
@@ -97,14 +90,14 @@ function AppCore() {
       newSelectedSets = finalEasyRead.selected_sets || [];
       newPreventDuplicates = finalEasyRead.prevent_duplicate_images ?? true;
     } else {
-      newTitle = 'Processing Error'; 
-      newContent = []; 
+      newTitle = 'Processing Error';
+      newContent = [];
       newSelectedSets = [];
       newPreventDuplicates = true;
       errorMsg = 'Received invalid format from easy read generation.';
       console.error('Invalid easy read content format:', finalEasyRead);
     }
-    
+
     // Update all state at once before navigating
     setMarkdownContent(finalMarkdown);
     setContentTitle(newTitle);
@@ -116,7 +109,7 @@ function AppCore() {
     setTotalPages(0);
     setPagesProcessed(0);
     setError(errorMsg);
-    
+
     // Navigate after state updates
     navigate('/results', { state: { fromProcessing: true } });
   };
@@ -126,107 +119,113 @@ function AppCore() {
     <Box>
       <CssBaseline />
       {shouldShowHeader && <AppHeader />}
-      
+
       {isLoading && !isProcessingPages && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-             <CircularProgress />
-          </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+          <CircularProgress />
+        </Box>
       )}
       {isProcessingPages && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            zIndex: 1300,
+          }}
+        >
           <Box
             sx={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: 'rgba(255, 255, 255, 0.3)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              zIndex: 1300,
+              width: '90%',
+              maxWidth: 500,
+              p: 4,
+              bgcolor: 'white',
+              borderRadius: 3,
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
             }}
           >
-            <Box
-              sx={{
-                width: '90%',
-                maxWidth: 500,
-                p: 4,
-                bgcolor: 'white',
-                borderRadius: 3,
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
-              }}
-            >
-              <Typography variant="h6" sx={{ mb: 1, textAlign: 'center', fontWeight: 'bold' }}>
-                Processing page {Math.ceil(pagesProcessed)} of {totalPages}...
+            <Typography variant="h6" sx={{ mb: 1, textAlign: 'center', fontWeight: 'bold' }}>
+              Processing page {Math.ceil(pagesProcessed)} of {totalPages}...
+            </Typography>
+            {currentProcessingStep && (
+              <Typography variant="body2" sx={{ mb: 2, textAlign: 'center', color: 'primary.main', fontStyle: 'italic' }}>
+                {currentProcessingStep}
               </Typography>
-              {currentProcessingStep && (
-                <Typography variant="body2" sx={{ mb: 2, textAlign: 'center', color: 'primary.main', fontStyle: 'italic' }}>
-                  {currentProcessingStep}
-                </Typography>
-              )}
-              <LinearProgress
-                variant="determinate"
-                value={progressPercent}
-                sx={{ height: 12, borderRadius: 6 }}
-              />
-              <Typography variant="body1" sx={{ mt: 2, textAlign: 'center', color: 'text.secondary', fontWeight: 500 }}>
-                {Math.round(progressPercent)}% complete
-              </Typography>
-            </Box>
+            )}
+            <LinearProgress
+              variant="determinate"
+              value={progressPercent}
+              sx={{ height: 12, borderRadius: 6 }}
+            />
+            <Typography variant="body1" sx={{ mt: 2, textAlign: 'center', color: 'text.secondary', fontWeight: 500 }}>
+              {Math.round(progressPercent)}% complete
+            </Typography>
           </Box>
+        </Box>
       )}
       {error && (
-          <Alert severity="error" sx={{ mx: 'auto', maxWidth: 'md', my: 2 }}>{error}</Alert>
+        <Alert severity="error" sx={{ mx: 'auto', maxWidth: 'md', my: 2 }}>{error}</Alert>
       )}
 
       <Routes>
-        <Route 
-          path="/" 
-          element={<IntroPage />}
-        />
-        <Route 
-          path="/easyread" 
-          element={
-            <HomePage 
-              setMarkdownContent={setMarkdownContent}
-              setIsLoading={setIsLoading}
-              setIsProcessingPages={setIsProcessingPages}
-              setTotalPages={setTotalPages}
-              setPagesProcessed={setPagesProcessed}
-              setCurrentProcessingStep={setCurrentProcessingStep}
-              setError={setError}
-              currentMarkdown={markdownContent}
-              onProcessingComplete={handleProcessingComplete}
-            />
-          }
-        />
-        <Route 
-          path="/results" 
-          element={
-             <ResultPage 
+        <Route path="/" element={<PrivateRoute><Outlet /></PrivateRoute>}>
+          <Route
+            index
+            element={<IntroPage />}
+          />
+          <Route
+            path="/easyread"
+            element={
+              <HomePage
+                setMarkdownContent={setMarkdownContent}
+                setIsLoading={setIsLoading}
+                setIsProcessingPages={setIsProcessingPages}
+                setTotalPages={setTotalPages}
+                setPagesProcessed={setPagesProcessed}
+                setCurrentProcessingStep={setCurrentProcessingStep}
+                setError={setError}
+                currentMarkdown={markdownContent}
+                onProcessingComplete={handleProcessingComplete}
+              />
+            }
+          />
+          <Route
+            path="/results"
+            element={
+              <ResultPage
                 title={contentTitle}
                 markdownContent={markdownContent}
                 easyReadContent={easyReadContent}
                 selectedSets={selectedSets}
                 preventDuplicateImages={preventDuplicateImages}
-             />
+              />
             }
-        />
+          />
+          <Route
+            path="/admin"
+            element={<AdminRoute />}
+          />
+          <Route
+            path="/saved"
+            element={<SavedContentPage />}
+          />
+          <Route
+            path="/saved/:id"
+            element={<SavedContentDetailPage />}
+          />
+        </Route>
         <Route
-          path="/admin"
-          element={<AdminRoute />}
-        />
-        <Route 
-          path="/saved" 
-          element={<SavedContentPage />} 
-        />
-        <Route 
-          path="/saved/:id" 
-          element={<SavedContentDetailPage />} 
-        />
+        path="/logout"
+        element={<Navigate to="/" replace />}
+      />
       </Routes>
     </Box>
   );
@@ -236,9 +235,7 @@ function AppCore() {
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
         <AppCore />
-      </AuthProvider>
     </BrowserRouter>
   );
 }
