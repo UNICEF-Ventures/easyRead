@@ -69,6 +69,8 @@ export function AuthProvider({ children }) {
     } catch (err) {
       console.error('OAuth callback failed:', err);
       setError(err.message || 'Authentication failed');
+      // Clear the callback from URL to prevent loop
+      window.history.replaceState({}, document.title, window.location.pathname);
       return false;
     }
   }, []);

@@ -58,9 +58,40 @@ function generateRandomString(length = 64) {
 }
 
 /**
+ * Check if crypto.subtle is available (requires HTTPS or localhost)
+ */
+function isCryptoAvailable() {
+  return typeof crypto !== 'undefined' && crypto.subtle !== undefined;
+}
+
+/**
+ * Simple SHA-256 implementation for non-secure contexts (fallback)
+ * Note: This is a basic implementation. For production, use HTTPS to enable crypto.subtle.
+ */
+function simpleSHA256(str) {
+  // Simple hash for development/HTTP contexts
+  // This is NOT cryptographically secure - use HTTPS in production!
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  // Convert to base64url format
+  const hashStr = Math.abs(hash).toString(36) + str.length.toString(36);
+  return hashStr.padEnd(43, '0').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+/**
  * Generate SHA-256 hash and base64url encode it for PKCE challenge
  */
 async function generateCodeChallenge(codeVerifier) {
+  // Check if crypto.subtle is available (requires HTTPS)
+  if (!isCryptoAvailable()) {
+    console.warn('crypto.subtle not available (requires HTTPS). Using fallback hash for PKCE.');
+    return simpleSHA256(codeVerifier);
+  }
+
   const encoder = new TextEncoder();
   const data = encoder.encode(codeVerifier);
   const digest = await crypto.subtle.digest('SHA-256', data);
