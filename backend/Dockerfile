@@ -34,8 +34,11 @@ RUN pip install --upgrade pip && \
 # Copy project files
 COPY . .
 
-# Create media directory for file uploads
-RUN mkdir -p /app/media
+# Create media and staticfiles directories
+RUN mkdir -p /app/media /app/staticfiles
+
+# Make entrypoint script executable
+RUN chmod +x /app/entrypoint.sh
 
 # Create a non-root user for security
 RUN adduser --disabled-password --gecos '' --uid 1001 appuser && \
@@ -48,6 +51,9 @@ EXPOSE 8000
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/api/health/ || exit 1
+
+# Entrypoint handles migrations and static files
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Default command
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
