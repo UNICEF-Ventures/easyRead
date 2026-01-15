@@ -12,8 +12,14 @@ const isContainerized = () => {
 };
 
 // Authentication method: 'otp' (email code) or 'oauth' (playground OIDC)
+// Can be overridden via URL parameter: ?auth=otp or ?auth=oauth
 const getAuthMethod = () => {
-  const method = import.meta.env.VITE_AUTH_METHOD?.toLowerCase() || 'otp';
+  // Check URL parameter first for override
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlMethod = urlParams.get('auth')?.toLowerCase();
+
+  // Use URL param if valid, otherwise fall back to env var
+  const method = urlMethod || import.meta.env.VITE_AUTH_METHOD?.toLowerCase() || 'otp';
   return ['otp', 'oauth'].includes(method) ? method : 'otp';
 };
 
