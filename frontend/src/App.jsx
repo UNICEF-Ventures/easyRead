@@ -216,7 +216,7 @@ function AppCore() {
             }
         />
         <Route
-          path="/admin"
+          path="/dashboard"
           element={<AdminRoute />}
         />
         <Route 
