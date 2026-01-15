@@ -78,7 +78,8 @@ function AppCore() {
   }
 
   // Show login page if not authenticated
-  if (!isAuthenticated) {
+  // Exception: /dashboard has its own Django admin authentication
+  if (!isAuthenticated && location.pathname !== '/dashboard') {
     return <LoginPage />;
   }
 
