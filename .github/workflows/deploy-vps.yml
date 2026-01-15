@@ -8,7 +8,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to unicef-tailscale VPS
+    name: Deploy to ip-172-26-8-247 VPS
     runs-on: ubuntu-latest
 
     steps:
@@ -28,11 +28,11 @@ jobs:
       - name: Add VPS to known hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H unicef-tailscale >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -H ip-172-26-8-247 >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Deploy to VPS
         run: |
-          ssh ec2-user@unicef-tailscale << 'ENDSSH'
+          ssh ec2-user@ip-172-26-8-247 << 'ENDSSH'
             set -e
 
             echo "🚀 Starting deployment to VPS..."
@@ -64,4 +64,4 @@ jobs:
       - name: Verify deployment
         run: |
           echo "🔍 Verifying deployment..."
-          ssh ec2-user@unicef-tailscale "docker-compose -f ~/easyread/docker-compose.vps.yml ps --format json" || true
+          ssh ec2-user@ip-172-26-8-247 "docker-compose -f ~/easyread/docker-compose.vps.yml ps --format json" || true
