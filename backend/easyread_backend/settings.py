@@ -244,6 +244,7 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF Configuration for API endpoints
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'False').lower() in ('true', '1', 'yes')  # Set True in production with HTTPS
 # CSRF trusted origins - same as CORS origins
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
 

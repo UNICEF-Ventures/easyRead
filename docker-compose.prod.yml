@@ -41,6 +41,12 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION_NAME=${AWS_REGION_NAME:-us-east-1}
+      # OTP Authentication Configuration
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL:-EasyRead <onboarding@resend.dev>}
+      # Cookie security (required for HTTPS)
+      - SESSION_COOKIE_SECURE=True
+      - CSRF_COOKIE_SECURE=True
       # Auth0/OAuth Configuration
       - VITE_OIDC_DOMAIN=${VITE_OIDC_DOMAIN}
       - VITE_OIDC_AUTH_DOMAIN=${VITE_OIDC_AUTH_DOMAIN}
