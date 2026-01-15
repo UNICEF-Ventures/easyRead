@@ -33,13 +33,19 @@ const StyledButton = styled(Button)(({ theme }) => ({
 }));
 
 const AdminLogin = ({ onLoginSuccess }) => {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
+    if (!username.trim()) {
+      setError('Username is required');
+      return;
+    }
+
     if (!password.trim()) {
       setError('Password is required');
       return;
@@ -50,7 +56,7 @@ const AdminLogin = ({ onLoginSuccess }) => {
 
     try {
       const response = await apiClient.post('/admin/api/login/', {
-        username: 'admin',
+        username: username.trim(),
         password: password
       }, {
         withCredentials: true, // Include cookies for session
@@ -88,7 +94,7 @@ const AdminLogin = ({ onLoginSuccess }) => {
         </Box>
         
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3, textAlign: 'center' }}>
-          Enter the admin password to access image management
+          Sign in with your Django admin credentials
         </Typography>
 
         {error && (
@@ -100,6 +106,24 @@ const AdminLogin = ({ onLoginSuccess }) => {
         <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
           <TextField
             fullWidth
+            type="text"
+            label="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            margin="normal"
+            variant="outlined"
+            disabled={loading}
+            autoFocus
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                '&.Mui-focused fieldset': {
+                  borderColor: '#667eea',
+                },
+              },
+            }}
+          />
+          <TextField
+            fullWidth
             type="password"
             label="Password"
             value={password}
@@ -107,7 +131,6 @@ const AdminLogin = ({ onLoginSuccess }) => {
             margin="normal"
             variant="outlined"
             disabled={loading}
-            autoFocus
             sx={{
               '& .MuiOutlinedInput-root': {
                 '&.Mui-focused fieldset': {
