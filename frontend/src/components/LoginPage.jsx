@@ -210,7 +210,7 @@ function LoginPage() {
           {activeStep === 0 && (
             <form onSubmit={handleRequestOTP}>
               <Alert severity="info" sx={{ mb: 2, fontSize: '0.875rem' }}>
-                The login code will be sent from <strong>onboarding@resend.dev</strong>.
+                The login code will be sent from <strong>noreply@ooi.ventures</strong>.
                 Please check your spam folder if you don't receive it.
               </Alert>
               <TextField
