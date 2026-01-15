@@ -248,6 +248,10 @@ CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'False').lower() in ('true'
 # CSRF trusted origins - same as CORS origins
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
 
+# Trust X-Forwarded-Proto header from reverse proxy (nginx)
+# Required for CSRF to work correctly behind HTTPS proxy
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 # Optional: Allow all origins for quick testing (less secure)
 # CORS_ALLOW_ALL_ORIGINS = True
 
