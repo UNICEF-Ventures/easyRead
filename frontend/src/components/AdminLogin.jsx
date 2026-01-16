@@ -71,7 +71,9 @@ const AdminLogin = ({ onLoginSuccess }) => {
       }
     } catch (err) {
       console.error('Login error:', err);
-      setError('Network error. Please try again.');
+      // Show server error message if available, otherwise show generic error
+      const serverError = err.response?.data?.error;
+      setError(serverError || 'Network error. Please try again.');
     } finally {
       setLoading(false);
     }

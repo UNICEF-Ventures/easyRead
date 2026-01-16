@@ -81,7 +81,7 @@ const ImageSetManager = ({ onSetDeleted }) => {
       const response = await listImageSets();
       
       if (response.data.success) {
-        setSets(response.data.sets);
+        setSets(response.data.sets || []);
       } else {
         setError(response.data.error || 'Failed to fetch image sets');
       }

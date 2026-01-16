@@ -73,7 +73,7 @@ apiClient.interceptors.response.use(
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
       // Don't redirect for auth endpoints themselves
       const url = error.config?.url || '';
-      if (!url.includes('/auth/')) {
+      if (!url.includes('/auth/') && !url.includes('/admin/api/login')) {
         console.warn('Session expired or unauthorized. Redirecting to login...');
         // Dispatch a custom event that AuthContext can listen to
         window.dispatchEvent(new CustomEvent('auth:sessionExpired'));

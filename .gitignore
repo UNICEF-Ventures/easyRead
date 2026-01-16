@@ -16,3 +16,4 @@ images/*
 CLAUDE.md
 globalsymbols_images_test.csv
 deployment_env/
+staticfiles/
