@@ -70,7 +70,7 @@ services:
       start_period: 60s
     # Don't expose port in production - nginx will proxy
 
-  # React Frontend (built for production)
+  # React Frontend with Nginx (serves frontend and proxies to backend)
   frontend:
     build:
       context: ./frontend
@@ -85,36 +85,16 @@ services:
         - VITE_OIDC_CLIENT_ID=${VITE_OIDC_CLIENT_ID}
         - VITE_OAUTH_NAMESPACE=${VITE_OAUTH_NAMESPACE}
     container_name: easyread_frontend_prod
-    volumes:
-      - frontend_dist:/usr/share/nginx/html
-    networks:
-      - easyread_network
-    restart: "no"  # One-shot build container
-
-  # Nginx Reverse Proxy
-  nginx:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
-    container_name: easyread_nginx_prod
     ports:
       - "80:80"
-      - "443:443"
-    volumes:
-      - frontend_dist:/usr/share/nginx/html:ro  # Serve frontend from build
-      - media_files:/app/media:ro
-      - static_files:/app/staticfiles:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       backend:
         condition: service_healthy
-      frontend:
-        condition: service_completed_successfully
     networks:
       - easyread_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "nginx", "-t"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -140,8 +120,6 @@ volumes:
   media_files:
     driver: local
   static_files:
-    driver: local
-  frontend_dist:
     driver: local
   redis_data:
     driver: local
