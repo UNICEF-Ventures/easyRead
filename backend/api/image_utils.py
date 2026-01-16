@@ -394,52 +394,6 @@ def get_image_metadata(image_path: Union[str, Path]) -> Optional[dict]:
     return converter.get_image_info(image_path)
 
 
-def parse_s3_url(url: str) -> Tuple[str, str]:
-    """
-    Parse an S3 URL and extract the bucket name and key.
-
-    Supports formats:
-        - s3://bucket-name/key/path
-        - https://bucket-name.s3.amazonaws.com/key/path
-        - https://bucket-name.s3.region.amazonaws.com/key/path
-
-    Args:
-        url: The S3 URL to parse
-
-    Returns:
-        Tuple of (bucket_name, key)
-
-    Raises:
-        ValueError: If the URL format is not recognized
-    """
-    import re
-
-    # s3:// format
-    if url.startswith('s3://'):
-        parts = url[5:].split('/', 1)
-        bucket = parts[0]
-        key = parts[1] if len(parts) > 1 else ''
-        return bucket, key
-
-    # https://bucket.s3.amazonaws.com/key or https://bucket.s3.region.amazonaws.com/key
-    s3_pattern = r'https?://([^.]+)\.s3(?:\.([^.]+))?\.amazonaws\.com/(.+)'
-    match = re.match(s3_pattern, url)
-    if match:
-        bucket = match.group(1)
-        key = match.group(3)
-        return bucket, key
-
-    # https://s3.amazonaws.com/bucket/key or https://s3.region.amazonaws.com/bucket/key
-    s3_path_pattern = r'https?://s3(?:\.([^.]+))?\.amazonaws\.com/([^/]+)/(.+)'
-    match = re.match(s3_path_pattern, url)
-    if match:
-        bucket = match.group(2)
-        key = match.group(3)
-        return bucket, key
-
-    raise ValueError(f"Unable to parse S3 URL: {url}")
-
-
 def generate_description_from_filename(filename: str) -> str:
     """
     Generate a clean description from a filename.

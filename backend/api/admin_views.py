@@ -18,9 +18,6 @@ import json
 import subprocess
 import os
 
-from .image_utils import parse_s3_url
-
-MEDIA_STORE = os.getenv('MEDIA_STORE', 'server')
 
 
 def admin_login_view(request):
@@ -299,29 +296,13 @@ def analytics_api(request):
         }, status=500)
 
 
-import boto3
-
-bucket_name = os.getenv("S3_BUCKET_NAME")
-region_name = os.getenv("S3_BUCKET_REGION")
-s3 = boto3.client("s3", region_name=region_name)
-
-
-def delete_s3_image_by_url(url: str):
-    """
-    Delete a single S3 object given its S3 URL.
-    """
-    bucket, key = parse_s3_url(url)
-    s3.delete_object(Bucket=bucket, Key=key)
-    return {"bucket": bucket, "key": key}
-
-
 @csrf_exempt
 @require_http_methods(["DELETE"])
 @login_required
 def delete_image(request, image_id):
     """
     API endpoint to delete a single image.
-    Removes the image record and optionally deletes the file from disk.
+    Removes the image record and deletes the file from disk.
     """
     try:
         from .models import Image
@@ -334,11 +315,8 @@ def delete_image(request, image_id):
         image.delete()
 
         try:
-            if MEDIA_STORE == "server":
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            elif MEDIA_STORE == "S3":
-                delete_s3_image_by_url(file_path)
+            if os.path.exists(file_path):
+                os.remove(file_path)
         except Exception as file_error:
             print(f"Warning: Could not delete file {file_path}: {file_error}")
 
@@ -395,23 +373,14 @@ def delete_images_batch(request):
         deleted_files = 0
         failed_files = 0
 
-        if MEDIA_STORE == "server":
-            for file_path in file_paths:
-                try:
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                        deleted_files += 1
-                except Exception as file_error:
-                    failed_files += 1
-                    print(f"Warning: Could not delete file {file_path}: {file_error}")
-        elif MEDIA_STORE == "S3":
-            for file_path in file_paths:
-                try:
-                    delete_s3_image_by_url(file_path)
+        for file_path in file_paths:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
                     deleted_files += 1
-                except Exception as file_error:
-                    failed_files += 1
-                    print(f"Warning: Could not delete file {file_path}: {file_error}")
+            except Exception as file_error:
+                failed_files += 1
+                print(f"Warning: Could not delete file {file_path}: {file_error}")
 
         return JsonResponse({
             'success': True,
@@ -431,22 +400,6 @@ def delete_images_batch(request):
             'success': False,
             'error': f'Failed to delete images: {str(e)}'
         }, status=500)
-
-
-def delete_s3_folder(bucket: str, prefix: str):
-    """
-    Deletes all objects under the given prefix (folder) in an S3 bucket.
-    """
-    paginator = s3.get_paginator("list_objects_v2")
-
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        if "Contents" not in page:
-            continue
-
-        deletes = [{"Key": obj["Key"]} for obj in page["Contents"]]
-        s3.delete_objects(Bucket=bucket, Delete={"Objects": deletes})
-
-    print(f"Deleted all objects under: s3://{bucket}/{prefix}")
 
 
 @csrf_exempt
@@ -471,24 +424,14 @@ def delete_image_set(request, set_id):
         deleted_files = 0
         failed_files = 0
 
-        if MEDIA_STORE == "server":
-            for file_path in file_paths:
-                try:
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                        deleted_files += 1
-                except Exception as file_error:
-                    failed_files += 1
-                    print(f"Warning: Could not delete file {file_path}: {file_error}")
-        elif MEDIA_STORE == "S3":
+        for file_path in file_paths:
             try:
-                delete_s3_folder(bucket_name, set_name)
-                deleted_files = image_count
-                failed_files = 0
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    deleted_files += 1
             except Exception as file_error:
-                print(f"Warning: Could not delete folder {set_name}")
-                failed_files = image_count
-                deleted_files = 0
+                failed_files += 1
+                print(f"Warning: Could not delete file {file_path}: {file_error}")
 
         return JsonResponse({
             'success': True,
