@@ -749,4 +749,26 @@ export const logout = () => {
   return apiClient.post('/auth/logout/');
 };
 
+// Delete a single image
+export const deleteImage = (imageId) => {
+  return apiClient.delete(`/admin/api/images/${imageId}/`);
+};
+
+// Delete multiple images in batch
+export const deleteImagesBatch = (imageIds) => {
+  return apiClient.delete('/admin/api/images/batch-delete/', {
+    data: { image_ids: imageIds }
+  });
+};
+
+// Delete an image set
+export const deleteImageSet = (setId) => {
+  return apiClient.delete(`/admin/api/image-sets/${setId}/`);
+};
+
+// List all image sets (admin)
+export const listImageSets = () => {
+  return apiClient.get('/admin/api/image-sets/');
+};
+
 export default apiClient; 

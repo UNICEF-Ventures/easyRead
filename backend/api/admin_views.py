@@ -18,6 +18,10 @@ import json
 import subprocess
 import os
 
+from .image_utils import parse_s3_url
+
+MEDIA_STORE = os.getenv('MEDIA_STORE', 'server')
+
 
 def admin_login_view(request):
     """
@@ -292,4 +296,249 @@ def analytics_api(request):
         return JsonResponse({
             'error': 'Failed to fetch analytics data',
             'details': str(e)
+        }, status=500)
+
+
+import boto3
+
+bucket_name = os.getenv("S3_BUCKET_NAME")
+region_name = os.getenv("S3_BUCKET_REGION")
+s3 = boto3.client("s3", region_name=region_name)
+
+
+def delete_s3_image_by_url(url: str):
+    """
+    Delete a single S3 object given its S3 URL.
+    """
+    bucket, key = parse_s3_url(url)
+    s3.delete_object(Bucket=bucket, Key=key)
+    return {"bucket": bucket, "key": key}
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@login_required
+def delete_image(request, image_id):
+    """
+    API endpoint to delete a single image.
+    Removes the image record and optionally deletes the file from disk.
+    """
+    try:
+        from .models import Image
+
+        image = Image.objects.get(id=image_id)
+        image_filename = image.filename
+        image_set_name = image.set.name
+        file_path = image.get_absolute_path()
+
+        image.delete()
+
+        try:
+            if MEDIA_STORE == "server":
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            elif MEDIA_STORE == "S3":
+                delete_s3_image_by_url(file_path)
+        except Exception as file_error:
+            print(f"Warning: Could not delete file {file_path}: {file_error}")
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Image "{image_filename}" deleted successfully',
+            'deleted_image_id': image_id,
+            'set_name': image_set_name
+        })
+
+    except Image.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Image not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to delete image: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@login_required
+def delete_images_batch(request):
+    """
+    API endpoint to delete multiple images by ID.
+    """
+    try:
+        from .models import Image
+
+        data = json.loads(request.body)
+        image_ids = data.get('image_ids', [])
+
+        if not image_ids:
+            return JsonResponse({
+                'success': False,
+                'error': 'No image IDs provided'
+            }, status=400)
+
+        images = Image.objects.filter(id__in=image_ids)
+        found_count = images.count()
+
+        if found_count == 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'No images found with provided IDs'
+            }, status=404)
+
+        file_paths = [img.get_absolute_path() for img in images]
+        images.delete()
+
+        deleted_files = 0
+        failed_files = 0
+
+        if MEDIA_STORE == "server":
+            for file_path in file_paths:
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        deleted_files += 1
+                except Exception as file_error:
+                    failed_files += 1
+                    print(f"Warning: Could not delete file {file_path}: {file_error}")
+        elif MEDIA_STORE == "S3":
+            for file_path in file_paths:
+                try:
+                    delete_s3_image_by_url(file_path)
+                    deleted_files += 1
+                except Exception as file_error:
+                    failed_files += 1
+                    print(f"Warning: Could not delete file {file_path}: {file_error}")
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Successfully deleted {found_count} images',
+            'deleted_count': found_count,
+            'deleted_files': deleted_files,
+            'failed_files': failed_files
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON payload'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to delete images: {str(e)}'
+        }, status=500)
+
+
+def delete_s3_folder(bucket: str, prefix: str):
+    """
+    Deletes all objects under the given prefix (folder) in an S3 bucket.
+    """
+    paginator = s3.get_paginator("list_objects_v2")
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        if "Contents" not in page:
+            continue
+
+        deletes = [{"Key": obj["Key"]} for obj in page["Contents"]]
+        s3.delete_objects(Bucket=bucket, Delete={"Objects": deletes})
+
+    print(f"Deleted all objects under: s3://{bucket}/{prefix}")
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@login_required
+def delete_image_set(request, set_id):
+    """
+    API endpoint to delete an entire image set and all its images.
+    """
+    try:
+        from .models import ImageSet, Image
+
+        image_set = ImageSet.objects.get(id=set_id)
+        set_name = image_set.name
+
+        images = Image.objects.filter(set=image_set)
+        image_count = images.count()
+
+        file_paths = [img.get_absolute_path() for img in images]
+        image_set.delete()
+
+        deleted_files = 0
+        failed_files = 0
+
+        if MEDIA_STORE == "server":
+            for file_path in file_paths:
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        deleted_files += 1
+                except Exception as file_error:
+                    failed_files += 1
+                    print(f"Warning: Could not delete file {file_path}: {file_error}")
+        elif MEDIA_STORE == "S3":
+            try:
+                delete_s3_folder(bucket_name, set_name)
+                deleted_files = image_count
+                failed_files = 0
+            except Exception as file_error:
+                print(f"Warning: Could not delete folder {set_name}")
+                failed_files = image_count
+                deleted_files = 0
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Image set "{set_name}" and {image_count} images deleted successfully',
+            'deleted_set_name': set_name,
+            'deleted_image_count': image_count,
+            'deleted_files': deleted_files,
+            'failed_files': failed_files
+        })
+
+    except ImageSet.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Image set not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to delete image set: {str(e)}'
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+@login_required
+def list_image_sets_admin(request):
+    """
+    API endpoint to list all image sets with their image counts.
+    """
+    try:
+        from .models import ImageSet
+
+        image_sets = ImageSet.objects.annotate(
+            image_count=Count('images')
+        ).order_by('name')
+
+        sets_data = [{
+            'id': s.id,
+            'name': s.name,
+            'description': s.description,
+            'image_count': s.image_count,
+            'created_at': s.created_at.isoformat() if hasattr(s, 'created_at') else None
+        } for s in image_sets]
+
+        return JsonResponse({
+            'success': True,
+            'image_sets': sets_data
+        })
+
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to list image sets: {str(e)}'
         }, status=500)
