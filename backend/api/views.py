@@ -150,7 +150,7 @@ def convert_relative_paths_to_urls(easy_read_data, request):
         for img in images:
             # Map both relative and absolute paths to metadata
             relative_path = img.original_path.lstrip('/')
-            full_url = request.build_absolute_uri(img.get_url())
+            full_url = img.get_url()
             
             metadata = {
                 'id': img.id,
@@ -180,30 +180,30 @@ def convert_relative_paths_to_urls(easy_read_data, request):
                 # Build full URL from relative path
                 if not relative_path.startswith('/'):
                     relative_path = '/' + relative_path
-                full_url = request.build_absolute_uri(relative_path)
-                new_item['selected_image_path'] = full_url
+                new_item['selected_image_path'] = relative_path
         
         # Convert alternative_images to enhanced objects if they exist
         if new_item.get('alternative_images') and isinstance(new_item['alternative_images'], list):
             enhanced_alternatives = []
             for alt_path in new_item['alternative_images']:
+                # Keep HTTP URLs as-is, ensure relative paths start with /
                 if alt_path.startswith('http'):
-                    full_url = alt_path
+                    img_url = alt_path
                 else:
                     if not alt_path.startswith('/'):
                         alt_path = '/' + alt_path
-                    full_url = request.build_absolute_uri(alt_path)
-                
+                    img_url = alt_path
+
                 # Create enhanced image object
-                img_obj = {'url': full_url}
-                
+                img_obj = {'url': img_url}
+
                 # Add metadata if available
-                metadata = image_metadata.get(alt_path) or image_metadata.get(full_url)
+                metadata = image_metadata.get(alt_path) or image_metadata.get(img_url)
                 if metadata:
                     img_obj.update(metadata)
-                
+
                 enhanced_alternatives.append(img_obj)
-            
+
             new_item['alternative_images'] = enhanced_alternatives
         
         result_data.append(new_item)
@@ -1001,7 +1001,7 @@ def upload_image(request):
         
         # Build image URL for response
         try:
-            image_url = request.build_absolute_uri(settings.MEDIA_URL + result['image_path'])
+            image_url = f"{settings.MEDIA_URL.rstrip('/')}/{result['image_path'].lstrip('/')}"
         except Exception as e:
             logger.error(f"Error building image URL: {e}")
             image_url = None
@@ -1120,7 +1120,7 @@ def find_similar_images(request):
                 
                 if image_obj:
                     # Use the model's get_url method for consistent URL handling
-                    image_url = request.build_absolute_uri(image_obj.get_url())
+                    image_url = image_obj.get_url()
                 else:
                     # Fallback if image object not found
                     logger.warning(f"Image object not found for ID {img_id}")
@@ -1678,7 +1678,7 @@ def generate_image_view(request):
                 if upload_result.get("success"):
                     generated_images_details.append({
                         "id": upload_result["image_id"],
-                        "url": request.build_absolute_uri(settings.MEDIA_URL + upload_result["image_path"]),
+                        "url": f"{settings.MEDIA_URL.rstrip('/')}/{upload_result['image_path'].lstrip('/')}",
                         "embeddings_created": upload_result["embeddings_created"],
                         "filename": upload_result["filename"],
                         "set_name": upload_result["set_name"]
@@ -1786,7 +1786,7 @@ def get_images_in_set(request, set_name):
                 image_obj = image_objects.get(img_id)
                 
                 if image_obj:
-                    image['url'] = request.build_absolute_uri(image_obj.get_url())
+                    image['url'] = image_obj.get_url()
                 else:
                     logger.warning(f"Image object not found for ID {img_id}")
                     image['url'] = None
@@ -2145,7 +2145,7 @@ def find_similar_images_batch(request):
                             image_obj = image_objects.get(img_id)
                             
                             if image_obj:
-                                image_url = request.build_absolute_uri(image_obj.get_url())
+                                image_url = image_obj.get_url()
                             else:
                                 logger.warning(f"Image object not found for ID {img_id} in query {index}")
                                 image_url = None
@@ -2225,7 +2225,7 @@ def find_similar_images_batch(request):
                     image_obj = image_objects.get(img_id)
                     
                     if image_obj:
-                        image_url = request.build_absolute_uri(image_obj.get_url())
+                        image_url = image_obj.get_url()
                     else:
                         logger.warning(f"Image object not found for ID {img_id} in query {index}")
                         image_url = None

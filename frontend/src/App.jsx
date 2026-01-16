@@ -48,10 +48,20 @@ function AppCore() {
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
           EasyRead Generator
         </Typography>
-        <Button color="inherit" component={Link} to="/easyread">
+        <Button
+          color="inherit"
+          component={Link}
+          to="/easyread"
+          sx={{ color: 'white', '&:hover': { color: 'white', backgroundColor: 'rgba(255,255,255,0.1)' } }}
+        >
           Home
         </Button>
-        <Button color="inherit" component={Link} to="/saved">
+        <Button
+          color="inherit"
+          component={Link}
+          to="/saved"
+          sx={{ color: 'white', '&:hover': { color: 'white', backgroundColor: 'rgba(255,255,255,0.1)' } }}
+        >
           Saved Content
         </Button>
         {user && (
@@ -59,7 +69,12 @@ function AppCore() {
             <Typography variant="body2" sx={{ ml: 2, mr: 1, opacity: 0.8 }}>
               {user.email}
             </Typography>
-            <Button color="inherit" onClick={handleLogout} startIcon={<LogoutIcon />}>
+            <Button
+              color="inherit"
+              onClick={handleLogout}
+              startIcon={<LogoutIcon />}
+              sx={{ color: 'white', '&:hover': { color: 'white', backgroundColor: 'rgba(255,255,255,0.1)' } }}
+            >
               Logout
             </Button>
           </>
