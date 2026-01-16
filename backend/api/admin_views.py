@@ -458,26 +458,47 @@ def delete_image_set(request, set_id):
 @login_required
 def list_image_sets_admin(request):
     """
-    API endpoint to list all image sets with their image counts.
+    API endpoint to list all image sets with their image counts and embedding stats.
     """
     try:
-        from .models import ImageSet
+        from .models import ImageSet, Image, Embedding
 
         image_sets = ImageSet.objects.annotate(
-            image_count=Count('images')
+            image_count=Count('images'),
+            images_with_embeddings=Count('images', filter=Q(images__embeddings__isnull=False), distinct=True)
         ).order_by('name')
 
-        sets_data = [{
-            'id': s.id,
-            'name': s.name,
-            'description': s.description,
-            'image_count': s.image_count,
-            'created_at': s.created_at.isoformat() if hasattr(s, 'created_at') else None
-        } for s in image_sets]
+        sets_data = []
+        for s in image_sets:
+            # Calculate embedding coverage percentage
+            embedding_coverage = 0
+            if s.image_count > 0:
+                embedding_coverage = round((s.images_with_embeddings / s.image_count) * 100)
+
+            # Get sample images (up to 6 for preview)
+            sample_images = []
+            images = Image.objects.filter(set=s).order_by('-id')[:6]
+            for img in images:
+                sample_images.append({
+                    'id': img.id,
+                    'url': img.get_url(),
+                    'description': img.description
+                })
+
+            sets_data.append({
+                'id': s.id,
+                'name': s.name,
+                'description': s.description,
+                'image_count': s.image_count,
+                'images_with_embeddings': s.images_with_embeddings,
+                'embedding_coverage_percent': embedding_coverage,
+                'sample_images': sample_images,
+                'created_at': s.created_at.isoformat() if hasattr(s, 'created_at') else None
+            })
 
         return JsonResponse({
             'success': True,
-            'image_sets': sets_data
+            'sets': sets_data  # Frontend expects 'sets' not 'image_sets'
         })
 
     except Exception as e:

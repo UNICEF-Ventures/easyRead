@@ -138,47 +138,57 @@ def handle_optimized_batch_upload(
         all_results = []
         total_successful = 0
         total_failed = 0
-        
+        total_skipped = 0
+
         # Split images into batches
         for batch_num in range(0, total_images, batch_size):
             batch_files = image_files[batch_num:batch_num + batch_size]
             current_batch_num = (batch_num // batch_size) + 1
-            
+
             logger.info(f"Processing batch {current_batch_num}: {len(batch_files)} images")
             progress.update_progress(batch_num, total_successful, total_failed, current_batch_num, "processing")
-            
+
             # Process batch with bulk operations
             batch_results = _process_image_batch(
                 batch_files, image_set, embedding_model, model_metadata,
                 description, batch_num, request
             )
-            
+
             all_results.extend(batch_results['results'])
             total_successful += batch_results['successful']
             total_failed += batch_results['failed']
-            
+            total_skipped += batch_results.get('skipped', 0)
+
             # Update progress
             processed = batch_num + len(batch_files)
             progress.update_progress(processed, total_successful, total_failed, current_batch_num, "processing")
-            
+
             # Memory cleanup between batches
             _cleanup_batch_memory()
-            
-            logger.info(f"Batch {current_batch_num} completed: {batch_results['successful']} successful, {batch_results['failed']} failed")
+
+            logger.info(f"Batch {current_batch_num} completed: {batch_results['successful']} successful, {batch_results['failed']} failed, {batch_results.get('skipped', 0)} skipped")
         
         # Final progress update
         progress.update_progress(total_images, total_successful, total_failed, current_batch_num, "completed")
-        
-        logger.info(f"Optimized batch upload completed: {total_successful}/{total_images} successful")
-        
+
+        # Build status message
+        status_parts = [f"{total_successful} succeeded"]
+        if total_skipped > 0:
+            status_parts.append(f"{total_skipped} skipped (already exist)")
+        if total_failed > 0:
+            status_parts.append(f"{total_failed} failed")
+
+        logger.info(f"Optimized batch upload completed: {total_successful}/{total_images} successful, {total_skipped} skipped")
+
         return {
             "success": True,
-            "message": f"Processed {total_images} images: {total_successful} succeeded, {total_failed} failed",
+            "message": f"Processed {total_images} images: {', '.join(status_parts)}",
             "results": all_results,
             "successful_uploads": total_successful,
             "total_successful": total_successful,     # Frontend expects this field name
             "total_uploads": total_images,
             "failed_uploads": total_failed,
+            "skipped_uploads": total_skipped,
             "sets_created": 1,                        # Always 1 for batch upload to single set
             "description": description,
             "set_name": set_name,
@@ -218,15 +228,46 @@ def _process_image_batch(
     batch_results = []
     successful_count = 0
     failed_count = 0
-    
+    skipped_count = 0
+
     # Lists for bulk operations
     images_to_create = []
     embeddings_to_create = []
     processed_files = []
-    
+
+    # Pre-check for existing filenames to avoid duplicate key errors
+    # Get all potential filenames for this batch
+    potential_filenames = set()
+    for image_file in batch_files:
+        safe_filename = FileSecurityValidator.sanitize_filename(image_file.name)
+        potential_filenames.add(safe_filename)
+
+    # Query existing filenames in this set
+    existing_filenames = set(
+        Image.objects.filter(
+            set=image_set,
+            filename__in=potential_filenames
+        ).values_list('filename', flat=True)
+    )
+
+    if existing_filenames:
+        logger.info(f"Found {len(existing_filenames)} existing images in set '{image_set.name}', will skip duplicates")
+
     # Phase 1: File processing and validation
     for i, image_file in enumerate(batch_files):
         try:
+            # Check for duplicates before processing
+            safe_filename = FileSecurityValidator.sanitize_filename(image_file.name)
+            if safe_filename in existing_filenames:
+                batch_results.append({
+                    "success": False,
+                    "filename": image_file.name,
+                    "error": f"Image already exists in set '{image_set.name}'",
+                    "skipped": True
+                })
+                skipped_count += 1
+                continue
+
             # Validate file before processing
             if request:
                 validation = validate_upload_request(request, image_file, 'image')
@@ -238,7 +279,7 @@ def _process_image_batch(
                     })
                     failed_count += 1
                     continue
-            
+
             # Process file (save and validate)
             file_result = _process_single_file(image_file, image_set, description)
             if not file_result['success']:
@@ -323,7 +364,8 @@ def _process_image_batch(
     return {
         "results": batch_results,
         "successful": successful_count,
-        "failed": failed_count
+        "failed": failed_count,
+        "skipped": skipped_count
     }
 
 def _process_single_file(image_file, image_set: ImageSet, description: str) -> Dict[str, Any]:

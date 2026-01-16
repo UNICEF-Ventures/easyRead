@@ -2366,8 +2366,10 @@ def list_images(request):
     - samples_per_set: Optional int. If provided, only return this many sample images per set (for lightweight listing).
                        The response will include image_count per set with the actual total.
     """
-    from api.models import Image
+    from api.models import Image, ImageSet, Embedding
     from django.conf import settings
+    from django.db.models import Count, Exists, OuterRef, Subquery, F, Q
+    from collections import defaultdict
     logger = logging.getLogger(__name__)
 
     # Parse optional samples_per_set parameter
@@ -2381,33 +2383,56 @@ def list_images(request):
             samples_per_set = None
 
     try:
-        images = Image.objects.select_related('set').prefetch_related('embeddings').all().order_by('set__name', 'filename')
+        media_url = settings.MEDIA_URL.rstrip('/')
 
-        # First pass: count images per set and collect samples if needed
-        set_counts = {}
-        images_by_set = {}
+        # Optimized: Get counts and embedding stats in single queries
+        set_stats = ImageSet.objects.annotate(
+            image_count=Count('images'),
+            images_with_embeddings=Count('images', filter=Q(images__embeddings__isnull=False), distinct=True)
+        ).values('id', 'name', 'image_count', 'images_with_embeddings')
 
-        for img in images:
+        set_info = {s['name']: s for s in set_stats}
+        set_id_to_name = {s['id']: s['name'] for s in set_stats}
+
+        # Build the query with embedding existence annotated (avoids N+1)
+        images_qs = Image.objects.select_related('set').annotate(
+            has_embeddings=Exists(Embedding.objects.filter(image=OuterRef('pk')))
+        ).order_by('set__name', 'filename')
+
+        # For full response, also get latest embedding info in a single query
+        if not samples_per_set:
+            # Get the latest embedding for each image that has one
+            latest_embeddings = {}
+            embedding_qs = Embedding.objects.filter(
+                image__in=images_qs.filter(has_embeddings=True).values('pk')
+            ).order_by('image_id', '-created_at').distinct('image_id').values(
+                'image_id', 'provider_name', 'model_name', 'embedding_dimension'
+            )
+            for emb in embedding_qs:
+                latest_embeddings[emb['image_id']] = {
+                    'provider': emb['provider_name'],
+                    'model': emb['model_name'],
+                    'dimension': emb['embedding_dimension']
+                }
+
+        # Process images efficiently
+        images_by_set = defaultdict(list)
+        set_sample_counts = defaultdict(int)
+
+        # Use iterator for memory efficiency with large datasets
+        for img in images_qs.iterator(chunk_size=1000):
             set_name = img.set.name if img.set else 'General'
-
-            # Initialize set data
-            if set_name not in set_counts:
-                set_counts[set_name] = 0
-                images_by_set[set_name] = []
-
-            set_counts[set_name] += 1
+            set_sample_counts[set_name] += 1
 
             # If sampling, only add images up to the limit
             if samples_per_set and len(images_by_set[set_name]) >= samples_per_set:
                 continue
 
-            # Use model helper to get a URL path under MEDIA_URL
-            path_under_media = img.get_url()  # e.g., /media/images/...
-            # Normalize to ensure it begins with /media
-            if not path_under_media.startswith('/'):  # get_url should already provide proper pathing
-                path_under_media = f"{settings.MEDIA_URL.rstrip('/')}/{path_under_media}"
+            # Build URL path efficiently
+            path_under_media = img.get_url()
+            if not path_under_media.startswith('/'):
+                path_under_media = f"{media_url}/{path_under_media}"
 
-            # Skip embedding info for sampled responses (lighter payload)
             if samples_per_set:
                 images_by_set[set_name].append({
                     'id': img.id,
@@ -2417,23 +2442,12 @@ def list_images(request):
                     'set_name': set_name,
                 })
             else:
-                # Full response with all details
-                has_embeddings = img.embeddings.exists()
-
-                # Get latest embedding info if available
-                embedding_info = None
-                if has_embeddings:
-                    latest_embedding = img.embeddings.order_by('-created_at').first()
-                    if latest_embedding:
-                        embedding_info = {
-                            "provider": latest_embedding.provider_name,
-                            "model": latest_embedding.model_name,
-                            "dimension": latest_embedding.embedding_dimension
-                        }
+                # Full response - use annotated has_embeddings instead of extra query
+                embedding_info = latest_embeddings.get(img.id) if img.has_embeddings else None
 
                 images_by_set[set_name].append({
                     'id': img.id,
-                    'image_url': path_under_media,  # relative path; frontend will prefix MEDIA_BASE_URL
+                    'image_url': path_under_media,
                     'relative_path': img.original_path,
                     'description': img.description,
                     'filename': img.filename,
@@ -2443,50 +2457,39 @@ def list_images(request):
                     'width': img.width,
                     'height': img.height,
                     'created_at': img.created_at.isoformat() if img.created_at else None,
-                    'has_embeddings': has_embeddings,
+                    'has_embeddings': img.has_embeddings,
                     'embedding_info': embedding_info,
-                    'search_ready': has_embeddings  # Indicates if image will work in similarity search
+                    'search_ready': img.has_embeddings
                 })
 
-        total_images = sum(set_counts.values())
+        # Calculate totals from pre-fetched stats (much faster)
+        total_images = sum(s['image_count'] for s in set_info.values())
+        total_with_embeddings = sum(s['images_with_embeddings'] for s in set_info.values())
 
-        # For sampled responses, add image_count to each set
         if samples_per_set:
             response_data = {
                 'images_by_set': {
                     set_name: {
                         'images': images_by_set[set_name],
-                        'image_count': set_counts[set_name]
+                        'image_count': set_info.get(set_name, {}).get('image_count', len(images_by_set[set_name]))
                     }
                     for set_name in images_by_set
                 },
                 'total_images': total_images,
-                'total_sets': len(images_by_set),
+                'total_sets': len(set_info),
             }
         else:
-            # Calculate embedding statistics for full response
-            total_with_embeddings = 0
-            total_without_embeddings = 0
-            for set_images in images_by_set.values():
-                for image_data in set_images:
-                    if image_data.get('has_embeddings', False):
-                        total_with_embeddings += 1
-                    else:
-                        total_without_embeddings += 1
-
             embedding_coverage_percent = round((total_with_embeddings / total_images) * 100, 1) if total_images > 0 else 0
 
-            embedding_stats = {
-                'with_embeddings': total_with_embeddings,
-                'without_embeddings': total_without_embeddings,
-                'embedding_coverage_percent': embedding_coverage_percent
-            }
-
             response_data = {
-                'images_by_set': images_by_set,
+                'images_by_set': dict(images_by_set),
                 'total_images': total_images,
-                'total_sets': len(images_by_set),
-                'embedding_stats': embedding_stats,
+                'total_sets': len(set_info),
+                'embedding_stats': {
+                    'with_embeddings': total_with_embeddings,
+                    'without_embeddings': total_images - total_with_embeddings,
+                    'embedding_coverage_percent': embedding_coverage_percent
+                },
             }
 
         return Response(response_data, status=status.HTTP_200_OK)
