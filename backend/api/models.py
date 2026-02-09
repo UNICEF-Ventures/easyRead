@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 import uuid
-from pgvector.django import VectorField
+from pgvector.django import VectorField, HnswIndex
 
 # Create your models here.
 
@@ -120,6 +120,11 @@ class Embedding(models.Model):
             models.Index(fields=['provider_name', 'model_name', 'embedding_type']),
             models.Index(fields=['image', 'embedding_type', 'provider_name']),
             models.Index(fields=['embedding_dimension']),
+            HnswIndex(
+                name='idx_embedding_vector_cosine',
+                fields=['vector'],
+                opclasses=['vector_cosine_ops'],
+            ),
         ]
     
     def __str__(self):

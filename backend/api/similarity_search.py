@@ -184,65 +184,58 @@ class SimilaritySearcher:
             search_provider = provider_name or self.model_metadata['provider_name']
             search_model = model_name or self.model_metadata['model_name']
             
-            # Build the base query for text embeddings - filter by ORIGINAL dimension stored in DB
+            # Use pgvector for efficient similarity search
+            query_vector = list(padded_query_embedding)
+
+            # Validate query vector length
+            if len(query_vector) != 2000:
+                logger.error(f"Query vector dimension {len(query_vector)} doesn't match database field (2000)")
+                return []
+
+            # Build a single query with filters + vector search so pgvector can use the HNSW index
             embeddings_query = Embedding.objects.filter(
                 embedding_type='text',
                 provider_name=search_provider,
                 model_name=search_model,
                 embedding_dimension=original_query_dim
             )
-            
+
             # Filter by image set(s) if specified
             if image_sets:
                 embeddings_query = embeddings_query.filter(image__set__name__in=image_sets)
             elif image_set:
                 embeddings_query = embeddings_query.filter(image__set__name=image_set)
-            
+
             # Exclude specific image IDs if provided
             if exclude_image_ids:
                 embeddings_query = embeddings_query.exclude(image_id__in=exclude_image_ids)
-            
-            # Select related fields to avoid additional queries
-            embeddings_query = embeddings_query.select_related('image', 'image__set')
-            
-            # Get all text embeddings that match the criteria
-            text_embeddings = list(embeddings_query)
-            
-            if not text_embeddings:
-                # Try fallback to any compatible dimension from the same provider/model
+
+            # Annotate with cosine distance and order - single query allows HNSW index usage
+            similar_embeddings = (embeddings_query
+                                .annotate(distance=CosineDistance('vector', query_vector))
+                                .select_related('image', 'image__set')
+                                .order_by('distance')[:n_results])
+
+            # If no results, try fallback without dimension filter
+            if not similar_embeddings:
                 fallback_query = Embedding.objects.filter(
                     embedding_type='text',
                     provider_name=search_provider,
                     model_name=search_model
-                ).select_related('image', 'image__set')
-                
+                )
+
                 if image_sets:
                     fallback_query = fallback_query.filter(image__set__name__in=image_sets)
                 elif image_set:
                     fallback_query = fallback_query.filter(image__set__name=image_set)
-                
+
                 if exclude_image_ids:
                     fallback_query = fallback_query.exclude(image_id__in=exclude_image_ids)
-                
-                text_embeddings = list(fallback_query)
-                
-                if not text_embeddings:
-                    return []
-            
-            # Use pgvector for efficient similarity search
-            query_vector = list(padded_query_embedding)
-            
-            # Validate query vector length
-            if len(query_vector) != 2000:
-                logger.error(f"Query vector dimension {len(query_vector)} doesn't match database field (2000)")
-                return []
-            
-            # Get embeddings with their cosine distances
-            similar_embeddings = (Embedding.objects
-                                .filter(id__in=[emb.id for emb in text_embeddings])
-                                .annotate(distance=CosineDistance('vector', query_vector))
-                                .select_related('image', 'image__set')
-                                .order_by('distance')[:n_results])
+
+                similar_embeddings = (fallback_query
+                                    .annotate(distance=CosineDistance('vector', query_vector))
+                                    .select_related('image', 'image__set')
+                                    .order_by('distance')[:n_results])
             
             similarities = []
             for embedding_obj in similar_embeddings:
