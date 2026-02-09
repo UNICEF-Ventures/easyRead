@@ -413,6 +413,48 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
                 }
             });
 
+            // Inline frontend allocation for sentences not allocated by backend
+            // This must happen here (not in a separate effect) to avoid race conditions
+            if (preventDuplicateImages) {
+                const usedImageIds = new Set();
+
+                // Collect image IDs already used by backend-allocated sentences
+                Object.keys(stateUpdates).forEach(index => {
+                    const state = stateUpdates[index];
+                    if (state && state.backendAllocated && state.selectedPath) {
+                        const selectedImg = (state.images || []).find(img => img.url === state.selectedPath);
+                        if (selectedImg) {
+                            usedImageIds.add(selectedImg.id || selectedImg.url);
+                        }
+                    }
+                });
+
+                // Assign unused images to unallocated sentences
+                Object.keys(stateUpdates).forEach(index => {
+                    const state = stateUpdates[index];
+                    if (state && state.isLoading && !state.backendAllocated && state.images && state.images.length > 0) {
+                        let selectedImage = null;
+                        for (const img of state.images) {
+                            const imageId = img.id || img.url;
+                            if (!usedImageIds.has(imageId)) {
+                                selectedImage = img;
+                                usedImageIds.add(imageId);
+                                break;
+                            }
+                        }
+                        stateUpdates[index] = {
+                            ...state,
+                            selectedPath: selectedImage ? selectedImage.url : null,
+                            isLoading: false,
+                            error: selectedImage ? null : 'No unique images available'
+                        };
+                    }
+                });
+
+                usedImagesRef.current = usedImageIds;
+                sequentialAttributionAppliedRef.current = true;
+            }
+
             // Apply all updates at once
             setImageState(prev => ({
                 ...prev,
