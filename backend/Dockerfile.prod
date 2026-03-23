@@ -1,4 +1,4 @@
-# Production Dockerfile for Django Backend
+# Dockerfile for the Django backend image used by the evaluation/production-like stack
 FROM python:3.11-slim
 
 # Set environment variables
@@ -10,6 +10,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Set work directory
 WORKDIR /app
+
+# Build-time Django defaults so collectstatic can run without runtime secrets
+ENV SECRET_KEY=build-only-secret-key \
+    DEBUG=False \
+    ALLOWED_HOSTS=localhost,127.0.0.1 \
+    DB_ENGINE=django.db.backends.postgresql \
+    DB_NAME=easyread \
+    DB_USER=easyread_user \
+    DB_PASSWORD=easyread_password \
+    DB_HOST=localhost \
+    DB_PORT=5432
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \

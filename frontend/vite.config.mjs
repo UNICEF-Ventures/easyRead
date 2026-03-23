@@ -8,6 +8,8 @@ import tailwindcss from "@tailwindcss/vite";
 
 dotenvExpand.expand(dotenv.config())
 
+const devHost = process.env.VITE_HOST || '127.0.0.1';
+const devPort = Number(process.env.VITE_PORT || '5173');
 
 export default defineConfig({
   plugins: [
@@ -37,6 +39,11 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, 'src'), // This makes @ point to /src
     },
+  },
+  server: {
+    host: devHost,
+    port: devPort,
+    strictPort: true,
   },
   base: process.env.NODE_ENV == 'production' ? process.env.VITE_BASE_URL_PROD : process.env.VITE_BASE_URL,
   build: {

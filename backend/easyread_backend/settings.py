@@ -159,7 +159,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Media files (User-uploaded files)
 # https://docs.djangoproject.com/en/5.2/topics/files/
@@ -207,13 +208,15 @@ LOGGING = {
 }
 
 # CORS Settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173", # Default Vite dev server port
-    "http://127.0.0.1:5173",
-    "http://localhost:3000", # Docker frontend port
-    "http://127.0.0.1:3000",
-    "http://localhost:5001", # Frontend dev server port (alternative)
-    "http://127.0.0.1:5001",
+_frontend_dev_ports = ["3000", "5001", "5173", os.getenv("VITE_PORT", "5173")]
+_frontend_dev_origins = []
+for _port in _frontend_dev_ports:
+    for _host in ("localhost", "127.0.0.1"):
+        _origin = f"http://{_host}:{_port}"
+        if _origin not in _frontend_dev_origins:
+            _frontend_dev_origins.append(_origin)
+
+CORS_ALLOWED_ORIGINS = _frontend_dev_origins + [
     "https://ooiplayground.com",
     "https://dev.ooiplayground.com"
 ]
@@ -224,14 +227,8 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF Configuration for API endpoints
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173", 
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5001",
-    "http://127.0.0.1:5001",
-     "https://ooiplayground.com",
+CSRF_TRUSTED_ORIGINS = _frontend_dev_origins + [
+    "https://ooiplayground.com",
     "https://dev.ooiplayground.com"
 ]
 

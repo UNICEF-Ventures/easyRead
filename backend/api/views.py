@@ -18,6 +18,7 @@ import uuid
 import yaml
 import json
 import boto3
+from botocore.config import Config as BotoConfig
 import re
 from django.conf import settings
 from dotenv import load_dotenv
@@ -238,8 +239,22 @@ def convert_url_to_relative_path(url):
 # Initialize Bedrock client for LLM calls
 bedrock_runtime = None
 try:
-    bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
-    logger.info("Bedrock runtime client initialized successfully.")
+    bedrock_region = os.getenv('AWS_REGION_NAME', 'us-east-1')
+    bedrock_connect_timeout = int(os.getenv('AWS_BEDROCK_CONNECT_TIMEOUT', '30'))
+    bedrock_read_timeout = int(os.getenv('AWS_BEDROCK_READ_TIMEOUT', '180'))
+    bedrock_max_attempts = int(os.getenv('AWS_BEDROCK_MAX_ATTEMPTS', '3'))
+    bedrock_runtime = boto3.client(
+        'bedrock-runtime',
+        region_name=bedrock_region,
+        config=BotoConfig(
+            connect_timeout=bedrock_connect_timeout,
+            read_timeout=bedrock_read_timeout,
+            retries={'max_attempts': bedrock_max_attempts, 'mode': 'standard'}
+        )
+    )
+    logger.info(
+        f"Bedrock runtime client initialized successfully (region={bedrock_region}, read_timeout={bedrock_read_timeout}s)."
+    )
 except Exception as e:
     logger.error(f"Failed to initialize Bedrock runtime client: {e}")
 

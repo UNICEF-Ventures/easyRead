@@ -19,12 +19,32 @@ import {
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
-import { extractMarkdown, generateEasyRead, getImageSets, listImages } from '../apiClient';
+import { extractMarkdown, generateEasyRead, listImages } from '../apiClient';
 import { config } from '../config.js';
 import LoadingOverlay from './LoadingOverlay';
 
 // Base URL for serving media files from Django dev server
 const MEDIA_BASE_URL = config.MEDIA_BASE_URL;
+
+const RECOMMENDED_IMAGE_SET_NAMES = [
+  'ARASAAC UNICEF Targeted',
+  'AAC Image Library UNICEF Targeted',
+  'OCHA Humanitarian Icons',
+  'PiCom Symbols',
+];
+
+const isRecommendedImageSet = (setName) => RECOMMENDED_IMAGE_SET_NAMES.includes(setName);
+
+const sortImageSets = (sets) => ([...sets].sort((firstSet, secondSet) => {
+  const firstRecommended = isRecommendedImageSet(firstSet.name);
+  const secondRecommended = isRecommendedImageSet(secondSet.name);
+
+  if (firstRecommended !== secondRecommended) {
+    return firstRecommended ? -1 : 1;
+  }
+
+  return firstSet.name.localeCompare(secondSet.name);
+}));
 
 // Styled component for the drop zone
 const DropZone = styled(Box)(({ theme }) => ({
@@ -62,12 +82,16 @@ function HomePage({
   const [fileName, setFileName] = useState('');
   const [imageSets, setImageSets] = useState([]);
   const [selectedSets, setSelectedSets] = useState(new Set());
+  const [showAllSets, setShowAllSets] = useState(false);
   const [setsLoading, setSetsLoading] = useState(false);
   const [preventDuplicateImages, setPreventDuplicateImages] = useState(true);
   const [conversionProgress, setConversionProgress] = useState('');
   const [showConversionOverlay, setShowConversionOverlay] = useState(false);
 
   const navigate = useNavigate();
+  const recommendedImageSets = imageSets.filter(set => isRecommendedImageSet(set.name));
+  const visibleImageSets = showAllSets || recommendedImageSets.length === 0 ? imageSets : recommendedImageSets;
+  const areVisibleSetsSelected = visibleImageSets.length > 0 && visibleImageSets.every(set => selectedSets.has(set.name));
 
   // Get PDF converter credentials (props take precedence over env vars)
   const getCredentials = useCallback(() => ({
@@ -98,9 +122,17 @@ function HomePage({
           };
         });
 
-        setImageSets(setsArray);
-        // Select all sets by default
-        setSelectedSets(new Set(setsArray.map(set => set.name)));
+        const orderedSets = sortImageSets(setsArray);
+        const recommendedDefaults = orderedSets
+          .filter(set => isRecommendedImageSet(set.name))
+          .map(set => set.name);
+
+        setImageSets(orderedSets);
+        setSelectedSets(new Set(
+          recommendedDefaults.length > 0
+            ? recommendedDefaults
+            : orderedSets.map(set => set.name)
+        ));
       } catch (error) {
         console.error('Error loading image sets:', error);
         setError('Failed to load image sets');
@@ -123,7 +155,7 @@ function HomePage({
   };
 
   const handleSelectAll = () => {
-    setSelectedSets(new Set(imageSets.map(set => set.name)));
+    setSelectedSets(new Set(visibleImageSets.map(set => set.name)));
   };
 
   const handleSelectNone = () => {
@@ -567,19 +599,35 @@ function HomePage({
               </Typography>
             </Box>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                Available Symbol Collections
-              </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, gap: 2, flexWrap: 'wrap' }}>
+              <Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                  Available Symbol Collections
+                </Typography>
+                {!setsLoading && recommendedImageSets.length > 0 && (
+                  <Typography variant="body2" color="text.secondary">
+                    Showing {showAllSets ? imageSets.length : recommendedImageSets.length} collections with a UNICEF-focused default shortlist.
+                  </Typography>
+                )}
+              </Box>
               {!setsLoading && imageSets.length > 0 && (
-                <Box sx={{ display: 'flex', gap: 1 }}>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  {recommendedImageSets.length > 0 && (
+                    <Button
+                      variant={showAllSets ? 'outlined' : 'contained'}
+                      size="small"
+                      onClick={() => setShowAllSets(!showAllSets)}
+                    >
+                      {showAllSets ? 'Show Recommended' : `Show All (${imageSets.length})`}
+                    </Button>
+                  )}
                   <Button
                     variant="outlined"
                     size="small"
                     onClick={handleSelectAll}
-                    disabled={selectedSets.size === imageSets.length}
+                    disabled={areVisibleSetsSelected}
                   >
-                    Select All
+                    {showAllSets || recommendedImageSets.length === 0 ? 'Select All' : 'Select Recommended'}
                   </Button>
                   <Button
                     variant="outlined"
@@ -599,7 +647,7 @@ function HomePage({
               </Box>
             ) : (
               <Grid container spacing={2}>
-                {imageSets.map((set) => (
+                {visibleImageSets.map((set) => (
                   <Grid item xs={12} sm={6} md={4} key={set.name}>
                     <Box
                       sx={{
@@ -680,6 +728,17 @@ function HomePage({
                       >
                         {set.imageCount} images
                       </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: 'block',
+                          mt: 0.75,
+                          color: isRecommendedImageSet(set.name) ? '#1976d2' : 'text.secondary',
+                          fontWeight: isRecommendedImageSet(set.name) ? 600 : 400,
+                        }}
+                      >
+                        {isRecommendedImageSet(set.name) ? 'Recommended default' : 'Optional add-on'}
+                      </Typography>
                     </Box>
                   </Grid>
                 ))}
@@ -688,7 +747,7 @@ function HomePage({
 
             <Box sx={{ mt: 2, textAlign: 'center' }}>
               <Typography variant="body2" color="text.secondary">
-                Selected: {selectedSets.size} of {imageSets.length} sets
+                Selected: {selectedSets.size} set{selectedSets.size === 1 ? '' : 's'} · Showing {visibleImageSets.length} of {imageSets.length} collections
               </Typography>
             </Box>
 
