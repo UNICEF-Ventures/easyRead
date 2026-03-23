@@ -24,6 +24,7 @@ const debouncedFindSimilarImages = debounce(findSimilarImages, 300);
 
 // Cache for preventing duplicate concurrent requests
 const requestCache = new Map();
+const INITIAL_IMAGE_FETCH_CHUNK_SIZE = parseInt(import.meta.env.VITE_INITIAL_IMAGE_FETCH_CHUNK_SIZE || '20', 10);
 
 // Enhanced findSimilarImages with caching and deduplication
 const cachedFindSimilarImages = (query, n_results, excludeList = [], signal, imageSets = null) => {
@@ -262,19 +263,17 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
        });
     }
 
-    // Fetch initial images using batch processing
+    // Fetch initial images using smaller chunks for better reliability on large documents
     const fetchMissingImages = async () => {
         if (needsFetching.length === 0) {
-          // Ensure fetchingRef is cleared even if no fetch happens
           needsFetching.forEach(index => { fetchingRef.current[index] = false; }); 
           return;
         }
 
-        // Ensure isLoading is true for items we are about to fetch
         setImageState(prev => {
             const loadingUpdates = { ...prev }; 
             needsFetching.forEach(index => {
-                if(!loadingUpdates[index]) {
+                if (!loadingUpdates[index]) {
                     loadingUpdates[index] = { 
                         images: [], 
                         selectedPath: null, 
@@ -284,70 +283,73 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
                 } else {
                     loadingUpdates[index] = {
                         ...loadingUpdates[index],
-                        isLoading: true
+                        isLoading: true,
+                        error: null
                     };
                 }
             });
             return loadingUpdates;
         });
 
+        const fetchableEntries = [];
+        const invalidUpdates = {};
+        const assignedImageUrls = new Set(
+          Object.values(currentImageSelectionsRef.current).filter(value => typeof value === 'string' && value.length > 0)
+        );
+
+        needsFetching.forEach(index => {
+          const item = initialContent[index];
+          if (item.image_retrieval && item.image_retrieval !== 'error') {
+            fetchableEntries.push({ sentenceIndex: index, query: item.image_retrieval });
+          } else {
+            invalidUpdates[index] = {
+              isLoading: false,
+              error: 'Invalid keyword'
+            };
+            fetchingRef.current[index] = false;
+          }
+        });
+
+        if (Object.keys(invalidUpdates).length > 0) {
+          setImageState(prev => ({
+            ...prev,
+            ...invalidUpdates
+          }));
+        }
+
+        if (fetchableEntries.length === 0) {
+          return;
+        }
+
         try {
-            // Prepare batch queries - collect all valid queries
-            const batchQueries = [];
-            const queryIndexMap = {}; // Map to track which query corresponds to which sentence index
-            
-            needsFetching.forEach(index => {
-                const item = initialContent[index];
-                if (item.image_retrieval && item.image_retrieval !== 'error') {
-                    const queryIndex = batchQueries.length;
-                    batchQueries.push({
-                        index: queryIndex,
-                        query: item.image_retrieval,
-                        n_results: 10
-                    });
-                    queryIndexMap[queryIndex] = index;
-                }
-            });
+          for (let startIndex = 0; startIndex < fetchableEntries.length; startIndex += INITIAL_IMAGE_FETCH_CHUNK_SIZE) {
+            const chunkEntries = fetchableEntries.slice(startIndex, startIndex + INITIAL_IMAGE_FETCH_CHUNK_SIZE);
+            const batchQueries = chunkEntries.map((entry, queryIndex) => ({
+              index: queryIndex,
+              query: entry.query,
+              n_results: 10
+            }));
 
-            if (batchQueries.length === 0) {
-                // No valid queries to process - set all to "No image"
-                const noImageUpdates = {};
-                needsFetching.forEach(index => {
-                    fetchingRef.current[index] = false;
-                    noImageUpdates[index] = {
-                        isLoading: false,
-                        error: 'No image'
-                    };
-                });
-                
-                setImageState(prev => ({
-                    ...prev,
-                    ...noImageUpdates
-                }));
-                return;
-            }
-
-            // Make single batch API call (includes image allocation optimization)
             if (import.meta.env.DEV) {
-                console.log('🔍 Fetching images and optimizing allocation for', batchQueries.length, 'sentences...');
+              console.log('🔍 Fetching image chunk', {
+                chunkStart: startIndex,
+                chunkSize: chunkEntries.length,
+                totalQueries: fetchableEntries.length
+              });
             }
-            
+
             const response = await Promise.race([
-                findSimilarImagesBatch(batchQueries, [], signal, selectedSets),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Batch request timeout')), 300000) // 5 minutes timeout for large batches
-                )
+              findSimilarImagesBatch(batchQueries, [], signal, selectedSets),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Batch request timeout')), 180000)
+              )
             ]);
 
-            // Check if request was aborted
             if (signal.aborted) {
-                if (import.meta.env.DEV) {
-                    console.log('🚫 Batch image request was aborted after completion');
-                }
-                needsFetching.forEach(index => {
-                    fetchingRef.current[index] = false;
-                });
-                return;
+              if (import.meta.env.DEV) {
+                console.log('🚫 Chunked image request was aborted after completion');
+              }
+              return;
             }
 
             const batchResults = response.data.results || {};
@@ -355,107 +357,84 @@ function useEasyReadImageManager(initialContent = [], contentId = null, selected
             const allocationMetrics = response.data.allocation_metrics || {};
             const stateUpdates = {};
 
-            // Log allocation metrics in development
             if (import.meta.env.DEV && Object.keys(allocationMetrics).length > 0) {
-                console.log('🎯 Backend image allocation metrics:', allocationMetrics);
+              console.log('🎯 Backend image allocation metrics:', allocationMetrics);
             }
 
-            // Process batch results with optimal allocation
-            Object.keys(batchResults).forEach(queryIndexStr => {
-                const queryIndex = parseInt(queryIndexStr);
-                const sentenceIndex = queryIndexMap[queryIndex];
-                const images = batchResults[queryIndexStr] || [];
+            chunkEntries.forEach((entry, queryIndex) => {
+              const images = batchResults[String(queryIndex)] || [];
+              const backendAllocation = optimalAllocation[String(queryIndex)] || optimalAllocation[queryIndex];
+              let selectedPath = null;
+              let isLoading = false;
 
-                if (sentenceIndex !== undefined) {
-                    // Check if backend provided optimal allocation for this sentence
-                    const backendAllocation = optimalAllocation[sentenceIndex];
-                    let selectedPath = null;
-                    let isLoading = false;
+              if (backendAllocation && backendAllocation.image_url) {
+                const allocatedUrl = backendAllocation.image_url;
+                const duplicateAllocation = preventDuplicateImages && assignedImageUrls.has(allocatedUrl);
 
-                    if (backendAllocation && backendAllocation.image_url) {
-                        // Use backend's optimal selection
-                        selectedPath = backendAllocation.image_url;
-                        if (import.meta.env.DEV) {
-                            console.log(`📍 Sentence ${sentenceIndex}: Using backend allocation (similarity: ${backendAllocation.similarity?.toFixed(3)})`);
-                        }
-                    } else if (preventDuplicateImages && images.length > 0) {
-                        // No backend allocation - will be handled by frontend allocation effect
-                        selectedPath = null;
-                        isLoading = true;
-                    } else if (images.length > 0) {
-                        // No duplicate prevention - use first image
-                        selectedPath = images[0].url;
-                    }
-
-                    stateUpdates[sentenceIndex] = {
-                        images: images,
-                        selectedPath: selectedPath,
-                        isLoading: isLoading,
-                        error: images.length === 0 ? 'No images found' : null,
-                        backendAllocated: !!backendAllocation
-                    };
-                }
-            });
-
-            // Handle queries that didn't return results (failed on backend)
-            needsFetching.forEach(index => {
-                const item = initialContent[index];
-                if (item.image_retrieval && item.image_retrieval !== 'error' && !stateUpdates[index]) {
-                    stateUpdates[index] = {
-                        isLoading: false,
-                        error: 'Failed to fetch'
-                    };
-                } else if (!item.image_retrieval || item.image_retrieval === 'error') {
-                    stateUpdates[index] = {
-                        isLoading: false,
-                        error: 'Invalid keyword'
-                    };
-                }
-            });
-
-            // Apply all updates at once
-            setImageState(prev => ({
-                ...prev,
-                ...stateUpdates
-            }));
-
-        } catch (error) {
-            // Handle batch request failure
-            if (import.meta.env.DEV) {
-                if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
-                    console.log('🚫 Batch image fetch was cancelled:', error.message);
+                if (!duplicateAllocation) {
+                  selectedPath = allocatedUrl;
+                  assignedImageUrls.add(allocatedUrl);
+                  currentImageSelectionsRef.current[entry.sentenceIndex] = allocatedUrl;
                 } else {
-                    console.error('❌ Batch image fetch failed with error:', error);
+                  isLoading = images.length > 0;
                 }
-            }
-            
-            const errorUpdates = {};
-            needsFetching.forEach(index => {
-                // If request was cancelled, it might be due to no images being available
-                // Show a more user-friendly message
-                let errorMessage = 'No image';
-                
-                // Only show technical error messages for non-cancellation errors
-                if (!signal.aborted && error.name !== 'CanceledError') {
-                    errorMessage = 'Failed to fetch';
+
+                if (import.meta.env.DEV) {
+                  console.log(`📍 Sentence ${entry.sentenceIndex}: backend allocation ${duplicateAllocation ? 'deferred' : 'applied'}`);
                 }
-                
-                errorUpdates[index] = {
-                    isLoading: false,
-                    error: errorMessage
-                };
+              } else if (preventDuplicateImages && images.length > 0) {
+                isLoading = true;
+              } else if (images.length > 0) {
+                selectedPath = images[0].url;
+                if (selectedPath) {
+                  currentImageSelectionsRef.current[entry.sentenceIndex] = selectedPath;
+                }
+              }
+
+              stateUpdates[entry.sentenceIndex] = {
+                images: images,
+                selectedPath: selectedPath,
+                isLoading: isLoading,
+                error: images.length === 0 ? 'No images found' : null,
+                backendAllocated: !!backendAllocation
+              };
+              fetchingRef.current[entry.sentenceIndex] = false;
             });
 
             setImageState(prev => ({
-                ...prev,
-                ...errorUpdates
+              ...prev,
+              ...stateUpdates
             }));
+          }
+        } catch (error) {
+          if (import.meta.env.DEV) {
+            if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
+              console.log('🚫 Chunked image fetch was cancelled:', error.message);
+            } else {
+              console.error('❌ Chunked image fetch failed with error:', error);
+            }
+          }
+
+          const errorUpdates = {};
+          fetchableEntries.forEach(({ sentenceIndex }) => {
+            let errorMessage = 'No image';
+
+            if (!signal.aborted && error.name !== 'CanceledError') {
+              errorMessage = 'Failed to fetch';
+            }
+
+            errorUpdates[sentenceIndex] = {
+              isLoading: false,
+              error: errorMessage
+            };
+            fetchingRef.current[sentenceIndex] = false;
+          });
+
+          setImageState(prev => ({
+            ...prev,
+            ...errorUpdates
+          }));
         }
-        
-        // Reset fetching status for all initially targeted indices
-        needsFetching.forEach(index => {
-          fetchingRef.current[index] = false;
-        });
     };
 
     fetchMissingImages();

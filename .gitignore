@@ -29,3 +29,5 @@ experiments/.env
 *.swo
 .claude
 *.zip
+nginx/.htpasswd
+nginx/ssl/

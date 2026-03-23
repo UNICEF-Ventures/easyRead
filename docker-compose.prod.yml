@@ -1,5 +1,9 @@
+# Example Docker Compose stack for temporary AWS / EC2 evaluation deployments.
+# This file is not intended to be a complete production hardening guide.
+# It assumes an Nginx front end serving EasyRead from /easyread/ over HTTPS.
+
 services:
-  # PostgreSQL Database with pgvector
+  # PostgreSQL database with pgvector for evaluator deployments
   postgres:
     image: pgvector/pgvector:pg17
     container_name: easyread_postgres_prod
@@ -19,9 +23,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-    # Don't expose port in production - only internal access
+    # Kept internal to the Docker network for the evaluation stack
 
-  # Django Backend API
+  # Django backend API for the evaluation stack
   backend:
     build:
       context: ./backend
@@ -60,13 +64,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-    # Don't expose port in production - nginx will proxy
+    # Kept internal to the Docker network for the evaluation stack; nginx proxies it
 
-  # Nginx Reverse Proxy
+  # Nginx front end for the AWS / EC2 evaluation example
   nginx:
     build:
-      context: ./nginx
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: nginx/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_MEDIA_BASE_URL: ${VITE_MEDIA_BASE_URL:-}
+        VITE_USE_EXTERNAL_PDF_CONVERTER: ${VITE_USE_EXTERNAL_PDF_CONVERTER:-false}
+        VITE_PDF_CONVERTER_URL: ${VITE_PDF_CONVERTER_URL:-}
+        VITE_PDF_CONVERTER_API_KEY: ${VITE_PDF_CONVERTER_API_KEY:-}
+        VITE_PDF_CONVERTER_TOKEN: ${VITE_PDF_CONVERTER_TOKEN:-}
+        VITE_PDF_CONVERTER_EMAIL: ${VITE_PDF_CONVERTER_EMAIL:-}
+        VITE_API_STAGE: ${VITE_API_STAGE:-}
+        VITE_PROJECT_KEY: ${VITE_PROJECT_KEY:-}
+        # Default to serving the app from /easyread/ in this evaluation example
+        VITE_BASE_URL: ${VITE_BASE_URL:-/easyread/}
+        VITE_BASE_URL_PROD: ${VITE_BASE_URL_PROD:-/easyread/}
     container_name: easyread_nginx_prod
     ports:
       - "80:80"
@@ -74,7 +91,9 @@ services:
     volumes:
       - media_files:/app/media:ro
       - static_files:/app/staticfiles:ro
+      # Required by this example: mounted TLS cert/key and tester Basic Auth file
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
     depends_on:
       backend:
         condition: service_healthy
@@ -87,7 +106,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # Redis for caching (optional but recommended for production)
+  # Redis for caching (optional in this evaluation example)
   redis:
     image: redis:7-alpine
     container_name: easyread_redis_prod

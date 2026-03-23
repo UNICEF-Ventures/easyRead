@@ -385,6 +385,7 @@ class AtomicFileHandler:
         result = {
             'success': False,
             'path': None,
+            'name': None,
             'errors': []
         }
         
@@ -430,7 +431,7 @@ class AtomicFileHandler:
             
             result['success'] = True
             result['path'] = target_path
-            result['path'] = target_path.name
+            result['name'] = target_path.name
 
             
         except Exception as e:
@@ -461,6 +462,7 @@ class AtomicFileHandler:
         result = {
             'success': False,
             'path': None,
+            'name': None,
             'errors': []
         }
         
@@ -515,7 +517,7 @@ class AtomicFileHandler:
                 base_url = f"https://{bucket}.s3.{region_name}.amazonaws.com"
 
             # URL-encode the key for safety (spaces, etc.)
-            url = f"{base_url}/{filename}"    
+            url = f"{base_url}/{filename}"
             result['success'] = True
             result['path'] = url
             result['name'] = key_escaped
@@ -598,26 +600,32 @@ class SecurityLogger:
         cache.set(cache_key, logs, 86400)  # Keep for 24 hours
 
 
-def get_safe_upload_path(filename: str, upload_type: str = 'images') -> Path:
+def get_safe_upload_path(filename: str, upload_type: str = 'images', foldername: str | None = None) -> Path:
     """
     Get a safe upload path for a file.
     
     Args:
         filename: Original filename
         upload_type: Type of upload (images, documents, etc.)
+        foldername: Optional subfolder name within the upload type
         
     Returns:
         Safe Path object for file storage
     """
-    # Sanitize the filename
     safe_filename = FileSecurityValidator.sanitize_filename(filename)
-    
-    # Create date-based subdirectory for organization
     date_path = datetime.now().strftime('%Y/%m/%d')
-    
-    # Build full path
-    upload_path = settings.MEDIA_ROOT / upload_type / date_path / safe_filename
-    
+
+    path_parts = [settings.MEDIA_ROOT, upload_type]
+    if foldername:
+        safe_foldername = FileSecurityValidator.sanitize_filename(foldername)
+        if safe_foldername:
+            path_parts.append(safe_foldername)
+    path_parts.extend([date_path, safe_filename])
+
+    upload_path = Path(path_parts[0])
+    for part in path_parts[1:]:
+        upload_path /= part
+
     return upload_path
 
 

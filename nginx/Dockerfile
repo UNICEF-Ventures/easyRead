@@ -1,32 +1,50 @@
-# Nginx for production
+# Multi-stage nginx image with bundled frontend
+FROM node:20-alpine AS frontend_build
+
+WORKDIR /app/frontend
+
+ARG VITE_API_BASE_URL=/api
+ARG VITE_MEDIA_BASE_URL=
+ARG VITE_DEBUG_VALIDATION=false
+ARG VITE_USE_EXTERNAL_PDF_CONVERTER=false
+ARG VITE_PDF_CONVERTER_URL=
+ARG VITE_PDF_CONVERTER_API_KEY=
+ARG VITE_PDF_CONVERTER_TOKEN=
+ARG VITE_PDF_CONVERTER_EMAIL=
+ARG VITE_API_STAGE=
+ARG VITE_PROJECT_KEY=
+ARG VITE_BASE_URL=/easyread/
+ARG VITE_BASE_URL_PROD=/easyread/
+
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
+    VITE_MEDIA_BASE_URL=$VITE_MEDIA_BASE_URL \
+    VITE_DEBUG_VALIDATION=$VITE_DEBUG_VALIDATION \
+    VITE_USE_EXTERNAL_PDF_CONVERTER=$VITE_USE_EXTERNAL_PDF_CONVERTER \
+    VITE_PDF_CONVERTER_URL=$VITE_PDF_CONVERTER_URL \
+    VITE_PDF_CONVERTER_API_KEY=$VITE_PDF_CONVERTER_API_KEY \
+    VITE_PDF_CONVERTER_TOKEN=$VITE_PDF_CONVERTER_TOKEN \
+    VITE_PDF_CONVERTER_EMAIL=$VITE_PDF_CONVERTER_EMAIL \
+    VITE_API_STAGE=$VITE_API_STAGE \
+    VITE_PROJECT_KEY=$VITE_PROJECT_KEY \
+    VITE_BASE_URL=$VITE_BASE_URL \
+    VITE_BASE_URL_PROD=$VITE_BASE_URL_PROD
+
+COPY frontend/package*.json ./
+COPY frontend/vendor ./vendor
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
+
 FROM nginx:alpine
 
-# Remove default nginx configuration
 RUN rm /etc/nginx/conf.d/default.conf
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY --from=frontend_build /app/frontend/dist /usr/share/nginx/html
 
-# Copy custom nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
-COPY default.conf /etc/nginx/conf.d/default.conf
-
-# Copy built React app
-COPY --from=frontend_build /app/dist /usr/share/nginx/html
-
-# Create a non-root user for security
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -S appuser -u 1001 -G appgroup
-
-# Set ownership of nginx directories
-RUN chown -R appuser:appgroup /var/cache/nginx /var/run /var/log/nginx /usr/share/nginx/html
-
-# Switch to non-root user
-USER appuser
-
-# Expose ports
 EXPOSE 80 443
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
 
-# Start nginx
 CMD ["nginx", "-g", "daemon off;"]

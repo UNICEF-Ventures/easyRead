@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 try:
     import boto3
     import json
+    from botocore.config import Config as BotoConfig
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
@@ -93,18 +94,32 @@ class BedrockEmbeddingProvider(EmbeddingProvider):
         self.aws_secret_access_key = (config or {}).get('aws_secret_access_key') or os.environ.get('AWS_SECRET_ACCESS_KEY')
         self.aws_region = (config or {}).get('aws_region') or os.environ.get('AWS_REGION_NAME', 'us-east-1')
         
+        bedrock_client_config = BotoConfig(
+            connect_timeout=int(os.environ.get('AWS_BEDROCK_CONNECT_TIMEOUT', '30')),
+            read_timeout=int(os.environ.get('AWS_BEDROCK_READ_TIMEOUT', '180')),
+            retries={
+                'max_attempts': int(os.environ.get('AWS_BEDROCK_MAX_ATTEMPTS', '3')),
+                'mode': 'standard'
+            }
+        )
+
         # Initialize boto3 client
         if all([self.aws_access_key_id, self.aws_secret_access_key]):
             self.bedrock_client = boto3.client(
                 'bedrock-runtime',
                 aws_access_key_id=self.aws_access_key_id,
                 aws_secret_access_key=self.aws_secret_access_key,
-                region_name=self.aws_region
+                region_name=self.aws_region,
+                config=bedrock_client_config
             )
         else:
             # Try to use default credentials
             try:
-                self.bedrock_client = boto3.client('bedrock-runtime', region_name=self.aws_region)
+                self.bedrock_client = boto3.client(
+                    'bedrock-runtime',
+                    region_name=self.aws_region,
+                    config=bedrock_client_config
+                )
             except Exception as e:
                 raise ProviderNotAvailableError(f"AWS credentials not found and default credentials failed: {e}")
     

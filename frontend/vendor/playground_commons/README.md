@@ -1,0 +1,1 @@
+This is a package to share common utilities for playground prototypes.
